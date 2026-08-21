@@ -1,0 +1,259 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --font-sketch: 'Cabin Sketch', cursive, system-ui, sans-serif;
+    --font-sans: 'Cabin Sketch', cursive, system-ui, sans-serif;
+    --font-body: 'Plus Jakarta Sans', system-ui, sans-serif;
+    --color-paper: #f2efe9;
+    --color-paper-soft: #fbfaf7;
+    --color-paper-rule: #d1d5db;
+    --color-ink-black: #1a1a1a;
+    --color-ink-blue: #1a365d;
+    --color-ink-red: #9b2c2c;
+  }
+
+  body {
+    font-family: var(--font-sketch);
+    background-color: var(--color-paper);
+    color: var(--color-ink-black);
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    min-height: 100vh;
+    background-image: repeating-linear-gradient(
+      var(--color-paper) 0px,
+      var(--color-paper) 23px,
+      var(--color-paper-rule) 24px
+    );
+    background-size: 100% 24px;
+  }
+}
+
+/* 4real Typography Utility */
+.font-sketch {
+  font-family: 'Cabin Sketch', cursive, system-ui, sans-serif;
+}
+
+.font-body {
+  font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+}
+
+/* 4real Dot-Grid & Paper Backgrounds */
+.bg-blueprint-grid {
+  background-color: #f2efe9;
+  background-image: radial-gradient(circle, #1a365d 1px, transparent 1px);
+  background-size: 14px 14px;
+}
+
+.bg-dot-grid-dark {
+  background-color: #fbfaf7;
+  background-image: radial-gradient(circle, #1a1a1a 1px, transparent 1px);
+  background-size: 12px 12px;
+}
+
+.bg-emerald-grid {
+  background-color: #dcfce7;
+  background-image: radial-gradient(circle, #166534 1px, transparent 1px);
+  background-size: 12px 12px;
+}
+
+.bg-amber-grid {
+  background-color: #fff9c4;
+  background-image: radial-gradient(circle, #854d0e 1px, transparent 1px);
+  background-size: 12px 12px;
+}
+
+.bg-notebook-ruled {
+  background-color: #fbfaf7;
+  background-image: repeating-linear-gradient(
+    #fbfaf7 0px,
+    #fbfaf7 23px,
+    #d1d5db 24px
+  );
+  background-size: 100% 24px;
+}
+
+/* 4real Hand-Drawn Wobbly Borders & Sticky Notes */
+.sketchy-border, .rough-border {
+  border: 2.5px solid #1a1a1a;
+  border-radius: 255px 15px 225px 15px / 15px 225px 15px 255px;
+}
+
+.sticky-note {
+  background-color: #fff9c4;
+  border-left: 3px solid #fbc02d;
+  box-shadow: 3px 3px 6px rgba(0, 0, 0, 0.08);
+}
+
+.tape {
+  pointer-events: none;
+  background: rgba(255, 255, 255, 0.45);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.highlighter {
+  background: rgba(255, 255, 0, 0.4);
+  z-index: -1;
+  height: 10px;
+  position: absolute;
+  transform: rotate(-1deg);
+}
+
+/* 4real Neo-Brutalist Solid 3D Hard Shadows (Zero Blur) */
+.sketch-shadow-xs {
+  box-shadow: 1.5px 1.5px 0px 0px #1a1a1a;
+}
+
+.sketch-shadow-sm {
+  box-shadow: 2.5px 2.5px 0px 0px #1a1a1a;
+}
+
+.sketch-shadow {
+  box-shadow: 3.5px 3.5px 0px 0px #1a1a1a;
+}
+
+.sketch-shadow-lg {
+  box-shadow: 5px 5px 0px 0px #1a1a1a;
+}
+
+.sketch-shadow-xl {
+  box-shadow: 6px 6px 0px 0px #1a1a1a;
+}
+
+.sketch-shadow-green {
+  box-shadow: 3.5px 3.5px 0px 0px #15803d;
+}
+
+.sketch-shadow-cyan {
+  box-shadow: 3.5px 3.5px 0px 0px #1a365d;
+}
+
+.sketch-shadow-amber {
+  box-shadow: 3.5px 3.5px 0px 0px #ca8a04;
+}
+
+/* 4real Physical Mechanical Button Press Physics */
+.sketch-btn-press {
+  transition: transform 0.06s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.06s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.sketch-btn-press:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 4.5px 4.5px 0px 0px #1a1a1a;
+}
+
+.sketch-btn-press:active {
+  transform: translate(3px, 3px) !important;
+  box-shadow: 0.5px 0.5px 0px 0px #1a1a1a !important;
+}
+
+/* Smooth fade-in animation */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Floating Emote Animation */
+@keyframes floatUp {
+  0% {
+    opacity: 0;
+    transform: translateY(0) scale(0.6);
+  }
+  20% {
+    opacity: 1;
+    transform: translateY(-20px) scale(1.2);
+  }
+  80% {
+    opacity: 1;
+    transform: translateY(-80px) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-110px) scale(0.8);
+  }
+}
+
+@keyframes bounceSubtle {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-3px);
+  }
+}
+
+.animate-bounce-subtle {
+  animation: bounceSubtle 2.2s ease-in-out infinite;
+}
+
+/* Custom Scrollbar Hide */
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* 3D Dice Transformations & Tumble Animations */
+.perspective-container {
+  perspective: 600px;
+  perspective-origin: 50% 50%;
+}
+
+.dice-cube-3d {
+  transform-style: preserve-3d;
+  transition: transform 0.65s cubic-bezier(0.2, 0.85, 0.4, 1.15);
+}
+
+@keyframes diceRollTumble {
+  0% {
+    transform: rotateX(0deg) rotateY(0deg) rotateZ(0deg) translateY(0px) scale(0.95);
+  }
+  25% {
+    transform: rotateX(220deg) rotateY(380deg) rotateZ(90deg) translateY(-28px) scale(1.1);
+  }
+  50% {
+    transform: rotateX(460deg) rotateY(740deg) rotateZ(180deg) translateY(-38px) scale(1.2);
+  }
+  75% {
+    transform: rotateX(680deg) rotateY(1060deg) rotateZ(270deg) translateY(-18px) scale(1.1);
+  }
+  100% {
+    transform: rotateX(900deg) rotateY(1440deg) rotateZ(360deg) translateY(0px) scale(0.95);
+  }
+}
+
+.animate-dice-roll-3d {
+  animation: diceRollTumble 0.55s cubic-bezier(0.35, 0, 0.25, 1) infinite;
+}
+
+@keyframes shadowPulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.35;
+  }
+  50% {
+    transform: scale(0.65);
+    opacity: 0.15;
+  }
+}
+
+.animate-shadow-pulse {
+  animation: shadowPulse 0.55s cubic-bezier(0.35, 0, 0.25, 1) infinite;
+}
+
+
