@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { useGameEngine } from './hooks/useGameEngine';
 import { useTelegram } from './hooks/useTelegram';
+import { useMultiplayer } from './hooks/useMultiplayer';
+import { ConnectionBanner } from './components/ui/ConnectionBanner';
 import { GameTitle, PlayerId, ScreenState } from './types/game';
 import { HomeScreen } from './components/home/HomeScreen';
 import { LobbyScreen } from './components/lobby/LobbyScreen';
@@ -14,6 +16,8 @@ export const App: React.FC = () => {
   const [selectedGame, setSelectedGame] = useState<GameTitle>('snake');
   const [userBalance, setUserBalance] = useState<number>(2450);
   const [customWinner, setCustomWinner] = useState<PlayerId | null>(null);
+
+  const { connectionState, service } = useMultiplayer();
 
   const {
     gameState,
@@ -59,6 +63,11 @@ export const App: React.FC = () => {
     <div className="min-h-screen w-full bg-[#e8e0d0] flex items-center justify-center p-0 sm:p-3 text-[#1a1a1a] overflow-hidden select-none">
       {/* Mobile Device Mockup Frame */}
       <div className="w-full max-w-[420px] h-screen sm:h-[860px] sm:max-h-[96vh] bg-[#fbfaf7] sm:rounded-[36px] sm:border-[4px] sm:border-[#1a1a1a] shadow-[0_8px_30px_rgba(0,0,0,0.12)] overflow-y-auto overflow-x-hidden relative flex flex-col justify-between scrollbar-none">
+        <ConnectionBanner
+          connectionState={connectionState}
+          onReconnect={() => service.connect()}
+        />
+
         {/* 1. Main Landing Page Hub */}
         {currentScreen === 'home' && (
           <HomeScreen
