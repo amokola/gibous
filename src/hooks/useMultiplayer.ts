@@ -113,9 +113,9 @@ export function useMultiplayer() {
     };
   }, []);
 
-  const authenticate = useCallback((telegramId: number, playerName: string, avatarUrl?: string) => {
+  const authenticate = useCallback((telegramId: number, playerName: string, avatarUrl?: string, initData?: string) => {
     myTgIdRef.current = telegramId;
-    multiplayerService.send('AUTH', { telegramId, playerName, avatarUrl });
+    multiplayerService.send('AUTH', { telegramId, playerName, avatarUrl, initData });
   }, []);
 
   const joinRoom = useCallback((roomCode: string, telegramId: number, playerName: string, avatarUrl?: string) => {

@@ -167,7 +167,34 @@ wss.on('connection', (ws: WebSocket) => {
 
         // --- 2. AUTHENTICATION ---
         case 'AUTH': {
-          const { telegramId, playerName, avatarUrl } = message.payload;
+          const { telegramId, playerName, avatarUrl, initData } = message.payload;
+
+          if (initData) {
+            const verification = auth.verifyInitData(initData);
+            if (!verification.valid) {
+              sendError(ws, 'AUTH_FAILED', verification.error || 'Authentication signature verification failed', requestId);
+              break;
+            }
+
+            const verifiedId = verification.user?.id || telegramId;
+            const verifiedName = verification.user?.first_name || playerName;
+            const verifiedPhoto = verification.user?.photo_url || avatarUrl;
+
+            const user = await storage.getOrCreateUser({ id: verifiedId, first_name: verifiedName, photo_url: verifiedPhoto });
+            sessionManager.register(ws, verifiedId, verifiedName, verifiedPhoto);
+            connectionManager.registerConnection(verifiedId, ws);
+
+            ws.send(
+              JSON.stringify({
+                type: 'AUTH_OK',
+                requestId,
+                payload: { telegramId: verifiedId, user },
+              })
+            );
+            break;
+          }
+
+          // Fallback for demo / development preview when standalone without Telegram initData
           const user = await storage.getOrCreateUser({ id: telegramId, first_name: playerName, photo_url: avatarUrl });
           sessionManager.register(ws, telegramId, playerName, avatarUrl);
           connectionManager.registerConnection(telegramId, ws);

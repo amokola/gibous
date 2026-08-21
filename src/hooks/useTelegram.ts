@@ -150,10 +150,15 @@ export function useTelegram() {
     }
   };
 
+  const initData = useMemo(() => {
+    return tg?.initData || '';
+  }, [tg]);
+
   return {
     tg,
     isAvailable,
     user,
+    initData,
     haptic,
     startParam,
     shareRoomInvite,

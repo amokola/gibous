@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useGameEngine } from './hooks/useGameEngine';
 import { useTelegram } from './hooks/useTelegram';
 import { useMultiplayer } from './hooks/useMultiplayer';
@@ -18,7 +18,8 @@ export const App: React.FC = () => {
   const [userBalance, setUserBalance] = useState<number>(2450);
   const [customWinner, setCustomWinner] = useState<PlayerId | null>(null);
 
-  const { connectionState, service, opponentDisconnected, opponentReconnected } = useMultiplayer();
+  const { connectionState, service, opponentDisconnected, opponentReconnected, authenticate } = useMultiplayer();
+  const { shareRoomInvite, user: tgUser, initData } = useTelegram();
 
   const {
     gameState,
@@ -34,7 +35,11 @@ export const App: React.FC = () => {
     setMatchType,
   } = useGameEngine();
 
-  const { shareRoomInvite, user: tgUser } = useTelegram();
+  useEffect(() => {
+    if (connectionState === 'CONNECTED') {
+      authenticate(tgUser.id, tgUser.first_name || 'Player 1', tgUser.photo_url, initData);
+    }
+  }, [connectionState, tgUser, initData, authenticate]);
 
   const handleShare = () => {
     shareRoomInvite(gameState.roomCode, gameState.settings.winningAmount);
