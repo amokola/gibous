@@ -179,6 +179,7 @@ export const GameOverPayloadSchema = z.object({
   arenaFee: z.number(),
   xpEarned: z.number(),
   version: z.number(),
+  isForfeit: z.boolean().optional(),
 });
 
 export const ErrorPayloadSchema = z.object({
@@ -202,7 +203,7 @@ export const ServerMessageSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('RPS_ROUND_RESOLVED'), requestId: z.string().optional(), payload: RPSRoundResolvedPayloadSchema }),
   z.object({ type: z.literal('GAME_OVER'), requestId: z.string().optional(), payload: GameOverPayloadSchema }),
   z.object({ type: z.literal('PLAYER_JOINED'), requestId: z.string().optional(), payload: z.object({ player: RoomPlayerStateSchema, version: z.number() }) }),
-  z.object({ type: z.literal('PLAYER_DISCONNECTED'), requestId: z.string().optional(), payload: z.object({ player: PlayerRoleSchema, version: z.number() }) }),
+  z.object({ type: z.literal('PLAYER_DISCONNECTED'), requestId: z.string().optional(), payload: z.object({ player: PlayerRoleSchema, version: z.number(), timeoutMs: z.number().optional() }) }),
   z.object({ type: z.literal('PLAYER_RECONNECTED'), requestId: z.string().optional(), payload: z.object({ player: PlayerRoleSchema, version: z.number() }) }),
   z.object({ type: z.literal('EMOTE'), requestId: z.string().optional(), payload: z.object({ player: PlayerRoleSchema, emoji: z.string() }) }),
   z.object({ type: z.literal('ERROR'), requestId: z.string().optional(), payload: ErrorPayloadSchema }),

@@ -199,11 +199,13 @@ wss.on('connection', (ws: WebSocket) => {
           if (reconnectResult.room && reconnectResult.role) {
             sessionManager.attachRoom(ws, code, reconnectResult.role);
             const snapshot = roomManager.getRoomSnapshot(reconnectResult.room);
-            connectionManager.broadcast(reconnectResult.room, {
-              type: 'ROOM_STATE',
-              requestId,
-              payload: snapshot,
-            });
+            ws.send(
+              JSON.stringify({
+                type: 'ROOM_STATE',
+                requestId,
+                payload: snapshot,
+              })
+            );
             break;
           }
 

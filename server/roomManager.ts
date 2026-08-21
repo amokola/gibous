@@ -4,6 +4,9 @@ import { ServerSnakeLadderEngine } from './engines/SnakeLadderEngine';
 import { ServerConnect4Engine } from './engines/Connect4Engine';
 import { ServerRPSEngine } from './engines/RPSEngine';
 import { connectionManager } from './connectionManager';
+import { StorageService } from './storage';
+
+export const DISCONNECT_FORFEIT_TIMEOUT_MS = 45000;
 
 export interface RoomPlayer {
   id: PlayerRole;
@@ -34,6 +37,7 @@ export interface GameRoom {
 
 export class RoomManager {
   private rooms: Map<string, GameRoom> = new Map();
+  private storage: StorageService = new StorageService();
   private readonly MAX_ROOM_CAPACITY = 1000;
   private readonly WAITING_ROOM_EXPIRY_MS = 10 * 60 * 1000; // 10 minutes
 
@@ -134,32 +138,32 @@ export class RoomManager {
     const room = this.rooms.get(code);
     if (!room) return {};
 
+    let role: PlayerRole | undefined;
+
     if (room.p1 && room.p1.telegramId === tgId) {
       room.p1.isConnected = true;
-      room.version += 1;
-      room.lastActivityAt = Date.now();
-
-      // Cancel disconnect cleanup timer if present
-      if (room.disconnectTimer) {
-        clearTimeout(room.disconnectTimer);
-        room.disconnectTimer = undefined;
-      }
-
-      return { room, role: 'p1' };
+      role = 'p1';
+    } else if (room.p2 && room.p2.telegramId === tgId) {
+      room.p2.isConnected = true;
+      role = 'p2';
     }
 
-    if (room.p2 && room.p2.telegramId === tgId) {
-      room.p2.isConnected = true;
+    if (role) {
       room.version += 1;
       room.lastActivityAt = Date.now();
 
-      // Cancel disconnect cleanup timer if present
+      // Clear disconnect forfeit timer if active
       if (room.disconnectTimer) {
         clearTimeout(room.disconnectTimer);
         room.disconnectTimer = undefined;
       }
 
-      return { room, role: 'p2' };
+      connectionManager.broadcast(room, {
+        type: 'PLAYER_RECONNECTED',
+        payload: { player: role, version: room.version },
+      });
+
+      return { room, role };
     }
 
     return {};
@@ -181,25 +185,102 @@ export class RoomManager {
         room.version += 1;
         room.lastActivityAt = Date.now();
 
-        connectionManager.broadcast(room, {
-          type: 'PLAYER_DISCONNECTED',
-          payload: { player: playerRole, version: room.version },
-        });
+        if (room.status === 'playing') {
+          connectionManager.broadcast(room, {
+            type: 'PLAYER_DISCONNECTED',
+            payload: {
+              player: playerRole,
+              version: room.version,
+              timeoutMs: DISCONNECT_FORFEIT_TIMEOUT_MS,
+            },
+          });
 
-        // If both players are disconnected, schedule 30-second graceful room cleanup
-        const isP1Disconnected = !room.p1 || !room.p1.isConnected;
-        const isP2Disconnected = !room.p2 || !room.p2.isConnected;
+          if (!room.disconnectTimer) {
+            room.disconnectTimer = setTimeout(() => {
+              this.handleForfeitTimeout(code, playerRole!);
+            }, DISCONNECT_FORFEIT_TIMEOUT_MS);
+          }
+        } else {
+          connectionManager.broadcast(room, {
+            type: 'PLAYER_DISCONNECTED',
+            payload: { player: playerRole, version: room.version },
+          });
 
-        if (isP1Disconnected && isP2Disconnected && !room.disconnectTimer) {
-          room.disconnectTimer = setTimeout(() => {
-            const currentRoom = this.rooms.get(code);
-            if (currentRoom && (!currentRoom.p1 || !currentRoom.p1.isConnected) && (!currentRoom.p2 || !currentRoom.p2.isConnected)) {
-              this.deleteRoom(code);
-            }
-          }, 30000);
+          // If both players are disconnected, schedule 30-second graceful room cleanup
+          const isP1Disconnected = !room.p1 || !room.p1.isConnected;
+          const isP2Disconnected = !room.p2 || !room.p2.isConnected;
+
+          if (isP1Disconnected && isP2Disconnected && !room.disconnectTimer) {
+            room.disconnectTimer = setTimeout(() => {
+              const currentRoom = this.rooms.get(code);
+              if (
+                currentRoom &&
+                (!currentRoom.p1 || !currentRoom.p1.isConnected) &&
+                (!currentRoom.p2 || !currentRoom.p2.isConnected)
+              ) {
+                this.deleteRoom(code);
+              }
+            }, 30000);
+          }
         }
       }
     }
+  }
+
+  async handleForfeitTimeout(code: string, disconnectedRole: PlayerRole) {
+    const room = this.rooms.get(code);
+    if (!room) return;
+
+    if (room.status !== 'playing') return;
+    const disconnectedPlayer = disconnectedRole === 'p1' ? room.p1 : room.p2;
+    if (!disconnectedPlayer || disconnectedPlayer.isConnected) return;
+
+    const winnerRole: PlayerRole = disconnectedRole === 'p1' ? 'p2' : 'p1';
+    room.status = 'gameover';
+    room.winner = winnerRole;
+    room.version += 1;
+    room.lastActivityAt = Date.now();
+    room.disconnectTimer = undefined;
+
+    const winnerTgId = winnerRole === 'p1' ? room.p1?.telegramId : room.p2?.telegramId;
+    const loserTgId = winnerRole === 'p1' ? room.p2?.telegramId : room.p1?.telegramId;
+
+    let winnerPayout = Math.floor(room.potAmount * 0.9);
+    let loserPayout = 0;
+    let arenaFee = room.potAmount - winnerPayout;
+    const xpEarned = 150;
+
+    if (winnerTgId && loserTgId) {
+      try {
+        const payout = await this.storage.finalizeWinMatch(
+          code,
+          room.gameType,
+          room.stakeAmount,
+          winnerTgId,
+          loserTgId
+        );
+        winnerPayout = payout.winnerPayout;
+        loserPayout = payout.loserPayout;
+        arenaFee = payout.arenaFee;
+      } catch (err) {
+        console.error(`❌ Error finalizing forfeit match ${code}:`, err);
+      }
+    }
+
+    connectionManager.broadcast(room, {
+      type: 'GAME_OVER',
+      payload: {
+        roomCode: code,
+        winner: winnerRole,
+        potAmount: room.potAmount,
+        winnerPayout,
+        loserPayout,
+        arenaFee,
+        xpEarned,
+        version: room.version,
+        isForfeit: true,
+      },
+    });
   }
 
   executeAction(

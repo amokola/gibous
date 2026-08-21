@@ -3,6 +3,7 @@ import { useGameEngine } from './hooks/useGameEngine';
 import { useTelegram } from './hooks/useTelegram';
 import { useMultiplayer } from './hooks/useMultiplayer';
 import { ConnectionBanner } from './components/ui/ConnectionBanner';
+import { OpponentStatusOverlay } from './components/game/OpponentStatusOverlay';
 import { GameTitle, PlayerId, ScreenState } from './types/game';
 import { HomeScreen } from './components/home/HomeScreen';
 import { LobbyScreen } from './components/lobby/LobbyScreen';
@@ -17,7 +18,7 @@ export const App: React.FC = () => {
   const [userBalance, setUserBalance] = useState<number>(2450);
   const [customWinner, setCustomWinner] = useState<PlayerId | null>(null);
 
-  const { connectionState, service } = useMultiplayer();
+  const { connectionState, service, opponentDisconnected, opponentReconnected } = useMultiplayer();
 
   const {
     gameState,
@@ -67,6 +68,13 @@ export const App: React.FC = () => {
           connectionState={connectionState}
           onReconnect={() => service.connect()}
         />
+
+        {currentScreen === 'game' && (
+          <OpponentStatusOverlay
+            opponentDisconnected={opponentDisconnected}
+            opponentReconnected={opponentReconnected}
+          />
+        )}
 
         {/* 1. Main Landing Page Hub */}
         {currentScreen === 'home' && (
