@@ -47,6 +47,12 @@ export function useMultiplayer() {
     multiplayerService.send('JOIN_ROOM', { roomCode, telegramId, playerName, avatarUrl });
   }, []);
 
+  const leaveRoom = useCallback((roomCode: string) => {
+    multiplayerService.send('LEAVE_ROOM', { roomCode });
+    multiplayerService.setCurrentRoomCode(null);
+    setCurrentRoom(null);
+  }, []);
+
   const syncRoom = useCallback((roomCode: string) => {
     multiplayerService.send('SYNC_ROOM', { roomCode });
   }, []);
@@ -75,6 +81,7 @@ export function useMultiplayer() {
     currentRoom,
     authenticate,
     joinRoom,
+    leaveRoom,
     syncRoom,
     sendSnakeRoll,
     sendConnect4Drop,

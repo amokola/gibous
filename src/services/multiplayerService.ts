@@ -32,6 +32,7 @@ export class MultiplayerService {
   private url: string;
   private state: ConnectionState = 'DISCONNECTED';
   private isIntentionalClose: boolean = false;
+  private currentRoomCode: string | null = null;
 
   private reconnectAttempts: number = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -103,6 +104,14 @@ export class MultiplayerService {
     return this.state;
   }
 
+  public setCurrentRoomCode(roomCode: string | null): void {
+    this.currentRoomCode = roomCode;
+  }
+
+  public getCurrentRoomCode(): string | null {
+    return this.currentRoomCode;
+  }
+
   public onStateChange(listener: (state: ConnectionState) => void): () => void {
     this.stateListeners.add(listener);
     listener(this.state);
@@ -140,10 +149,17 @@ export class MultiplayerService {
     socket.onopen = () => {
       if (socket !== this.ws || currentGeneration !== this.socketGeneration) return;
 
+      const isReconnecting = this.reconnectAttempts > 0 || this.state === 'RECONNECTING';
       this.reconnectAttempts = 0;
       this.setConnectionState('CONNECTED');
       this.startHeartbeat();
       this.flushQueue();
+
+      // Auto-sync if we were previously in a room
+      if (isReconnecting && this.currentRoomCode) {
+        console.log(`🔄 Connection restored. Auto-syncing room state for ${this.currentRoomCode}...`);
+        this.send('SYNC_ROOM', { roomCode: this.currentRoomCode });
+      }
     };
 
     socket.onmessage = (event: MessageEvent) => {
@@ -211,6 +227,7 @@ export class MultiplayerService {
     }
 
     this.sendQueue = [];
+    this.currentRoomCode = null;
     this.setConnectionState('DISCONNECTED');
   }
 
@@ -304,6 +321,14 @@ export class MultiplayerService {
   }
 
   private dispatchMessage(message: ServerMessage) {
+    if (message.type === 'GAME_START' || message.type === 'ROOM_STATE') {
+      this.currentRoomCode = message.payload.code;
+    } else if (message.type === 'ROOM_CANCELLED') {
+      if (this.currentRoomCode === message.roomCode) {
+        this.currentRoomCode = null;
+      }
+    }
+
     const typeListeners = this.listeners.get(message.type);
     if (typeListeners) {
       typeListeners.forEach((listener) => {
