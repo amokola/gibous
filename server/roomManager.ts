@@ -401,6 +401,96 @@ export class RoomManager {
     return list.sort((a, b) => b.createdAt - a.createdAt);
   }
 
+  async handleLeaveRoom(code: string, requesterTgId: number): Promise<{ resigned?: boolean; deleted?: boolean; error?: string }> {
+    const room = this.rooms.get(code);
+    if (!room) {
+      return { error: 'Room not found' };
+    }
+
+    let leaverRole: PlayerRole | null = null;
+    if (room.p1 && room.p1.telegramId === requesterTgId) {
+      leaverRole = 'p1';
+    } else if (room.p2 && room.p2.telegramId === requesterTgId) {
+      leaverRole = 'p2';
+    }
+
+    if (!leaverRole) {
+      return { error: 'Not a member of this room' };
+    }
+
+    // 1. Active match in progress: Forfeit / Resignation
+    if (room.status === 'playing') {
+      const winnerRole: PlayerRole = leaverRole === 'p1' ? 'p2' : 'p1';
+      room.status = 'gameover';
+      room.winner = winnerRole;
+      room.version += 1;
+      room.lastActivityAt = Date.now();
+
+      if (room.disconnectTimer) {
+        clearTimeout(room.disconnectTimer);
+        room.disconnectTimer = undefined;
+      }
+
+      const winnerTgId = winnerRole === 'p1' ? room.p1?.telegramId : room.p2?.telegramId;
+      const loserTgId = winnerRole === 'p1' ? room.p2?.telegramId : room.p1?.telegramId;
+
+      let winnerPayout = Math.floor(room.potAmount * 0.9);
+      let loserPayout = 0;
+      let arenaFee = room.potAmount - winnerPayout;
+      const xpEarned = 150;
+
+      if (winnerTgId && loserTgId) {
+        try {
+          const payout = await this.storage.finalizeWinMatch(
+            code,
+            room.gameType,
+            room.stakeAmount,
+            winnerTgId,
+            loserTgId
+          );
+          winnerPayout = payout.winnerPayout;
+          loserPayout = payout.loserPayout;
+          arenaFee = payout.arenaFee;
+        } catch (err) {
+          console.error(`❌ Error finalizing resignation match ${code}:`, err);
+        }
+      }
+
+      connectionManager.broadcast(room, {
+        type: 'GAME_OVER',
+        payload: {
+          roomCode: code,
+          winner: winnerRole,
+          potAmount: room.potAmount,
+          winnerPayout,
+          loserPayout,
+          arenaFee,
+          xpEarned,
+          version: room.version,
+          isForfeit: true,
+        },
+      });
+
+      return { resigned: true };
+    }
+
+    // 2. Waiting in lobby
+    if (room.status === 'waiting') {
+      if (leaverRole === 'p1') {
+        this.deleteRoom(code);
+        return { deleted: true };
+      }
+      if (leaverRole === 'p2') {
+        room.p2 = null;
+        room.version += 1;
+        return { resigned: false };
+      }
+    }
+
+    // 3. Game already over
+    return { resigned: false };
+  }
+
   deleteRoom(code: string, requesterTgId?: number): boolean {
     const room = this.rooms.get(code);
     if (!room) return false;

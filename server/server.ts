@@ -277,8 +277,13 @@ wss.on('connection', (ws: WebSocket) => {
 
         case 'LEAVE_ROOM': {
           const code = message.payload.roomCode.toUpperCase();
+          const session = sessionManager.getSession(ws);
+          if (session) {
+            await roomManager.handleLeaveRoom(code, session.telegramId);
+          } else {
+            roomManager.deleteRoom(code);
+          }
           sessionManager.detachRoom(ws);
-          roomManager.deleteRoom(code);
           broadcastOpenRooms();
           break;
         }
