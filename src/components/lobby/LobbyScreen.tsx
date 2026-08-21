@@ -17,10 +17,12 @@ import {
 } from 'lucide-react';
 import { GameSettings, GameTitle, MatchType, Player } from '../../types/game';
 import { GameTypeSelector } from './GameTypeSelector';
+import { StakeConfirmModal } from './StakeConfirmModal';
 import { GramIcon } from '../ui/GramIcon';
 import { Avatar } from '../ui/Avatar';
 import { useSoundEffects } from '../../hooks/useSoundEffects';
 import { MultiplayerService } from '../../services/multiplayerService';
+import { ERROR_MESSAGES, ErrorCode } from '../../../shared';
 
 export interface OpenRoomSummary {
   code: string;
@@ -78,6 +80,13 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
   const [customStake, setCustomStake] = useState<number>(settings.winningAmount || 100);
   const [copiedCode, setCopiedCode] = useState(false);
   const [joinError, setJoinError] = useState<string | null>(null);
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    mode: 'create' | 'join';
+    room?: OpenRoomSummary;
+    stake: number;
+    game: GameTitle;
+  } | null>(null);
 
   const sounds = useSoundEffects();
 
@@ -123,8 +132,15 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
       }
     };
 
+    const handleError = (payload: { code?: ErrorCode; message?: string }) => {
+      const msg = (payload.code && ERROR_MESSAGES[payload.code]) || payload.message || 'Error occurred';
+      setJoinError(msg);
+      setTimeout(() => setJoinError(null), 4000);
+    };
+
     const unsubRooms = multiplayer.on('ROOMS_LIST' as any, handleRoomsList);
     const unsubStart = multiplayer.on('GAME_START' as any, handleGameStart);
+    const unsubError = multiplayer.on('ERROR' as any, handleError);
     multiplayer.send('GET_ROOMS' as any);
     fetchRooms();
 
@@ -133,6 +149,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
     return () => {
       unsubRooms();
       unsubStart();
+      unsubError();
       clearInterval(interval);
     };
   }, [onSelectGame, onChangeSettings, onSetMatchType, onStartGame, selectedGame, sounds]);
@@ -144,7 +161,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
     }
   }, [settings.winningAmount]);
 
-  const handleCreateRoomAction = () => {
+  const executeCreateRoom = () => {
     sounds.playClick();
     const newCode = Math.random().toString(36).substring(2, 8).toUpperCase();
     const multiplayer = MultiplayerService.getInstance();
@@ -189,6 +206,17 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
     setCreatedRoom(newRoom);
     setOpenRooms(prev => [newRoom, ...prev.filter(r => r.code !== newCode)]);
     onChangeSettings({ winningAmount: customStake });
+    setConfirmModal(null);
+  };
+
+  const handleCreateRoomAction = () => {
+    sounds.playClick();
+    setConfirmModal({
+      isOpen: true,
+      mode: 'create',
+      stake: customStake,
+      game: selectedGame,
+    });
   };
 
   const handleCancelCreatedRoom = () => {
@@ -205,7 +233,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
     }
   };
 
-  const handleJoinSpecificRoom = (room: OpenRoomSummary) => {
+  const executeJoinRoom = (room: OpenRoomSummary) => {
     sounds.playMatchFound();
     onSelectGame(room.gameType);
     onChangeSettings({ winningAmount: room.stakeAmount });
@@ -219,7 +247,19 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
       avatarUrl: p1.avatarUrl,
     });
 
+    setConfirmModal(null);
     onStartGame();
+  };
+
+  const handleJoinSpecificRoom = (room: OpenRoomSummary) => {
+    sounds.playClick();
+    setConfirmModal({
+      isOpen: true,
+      mode: 'join',
+      room,
+      stake: room.stakeAmount,
+      game: room.gameType,
+    });
   };
 
   const handleQuickJoinByCode = (e: React.FormEvent) => {
@@ -395,9 +435,9 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
             </div>
 
             <div className="flex items-center justify-between text-[11px] font-sketch font-bold text-[#854d0e]">
-              <span>Stake: {createdRoom.stakeAmount} GRAM</span>
-              <span>Total Pot: {createdRoom.potAmount} GRAM</span>
-              <span className="text-[#166534]">Win Net: {Math.floor(createdRoom.potAmount * 0.9)} GRAM</span>
+              <span>Your Stake: {createdRoom.stakeAmount} GRAM</span>
+              <span>Matched Pot: {createdRoom.stakeAmount * 2} GRAM</span>
+              <span className="text-[#166534]">Win Net: {Math.floor(createdRoom.stakeAmount * 2 * 0.9)} GRAM</span>
             </div>
           </div>
         )}
@@ -666,6 +706,24 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
               )}
             </div>
           </div>
+        )}
+
+        {/* Stake Confirmation Modal */}
+        {confirmModal && (
+          <StakeConfirmModal
+            isOpen={confirmModal.isOpen}
+            mode={confirmModal.mode}
+            gameType={confirmModal.game}
+            stakeAmount={confirmModal.stake}
+            onConfirm={() => {
+              if (confirmModal.mode === 'create') {
+                executeCreateRoom();
+              } else if (confirmModal.room) {
+                executeJoinRoom(confirmModal.room);
+              }
+            }}
+            onCancel={() => setConfirmModal(null)}
+          />
         )}
       </div>
     </div>
