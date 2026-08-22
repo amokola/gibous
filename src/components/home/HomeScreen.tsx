@@ -63,7 +63,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     <div className="w-full max-w-[420px] mx-auto min-h-screen flex flex-col justify-between select-none animate-fade-in bg-[#fbfaf7]">
       {/* Tab 1: Games Home View */}
       {activeTab === 'home' && (
-        <div className="flex-1 overflow-y-auto px-4 py-3 pb-6 scrollbar-none">
+        <main className="flex-1 overflow-y-auto px-4 py-3 pb-6 scrollbar-none">
           {/* User Profile & Wallet Bar with Sound Toggle */}
           <UserHeaderBar
             name={userProfile.name}
@@ -139,34 +139,34 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
               onPlay={onSelectAndPlayGame}
             />
           </div>
-        </div>
+        </main>
       )}
 
       {/* Tab 2: Full-Page Ranks / Leaderboard View (No Modal) */}
       {activeTab === 'leaderboard' && (
-        <div className="flex-1 overflow-y-auto scrollbar-none">
+        <main className="flex-1 overflow-y-auto scrollbar-none">
           <LeaderboardScreen />
-        </div>
+        </main>
       )}
 
       {/* Tab 3: Full-Page Boastable Profile View (No Modal) */}
       {activeTab === 'profile' && (
-        <div className="flex-1 overflow-y-auto scrollbar-none">
+        <main className="flex-1 overflow-y-auto scrollbar-none">
           <ProfileScreen
             userProfile={userProfile}
             onOpenBank={() => setActiveTab('wallet')}
           />
-        </div>
+        </main>
       )}
 
       {/* Tab 4: Full-Page Bank Gaming Vault View (No Modal) */}
       {activeTab === 'wallet' && (
-        <div className="flex-1 overflow-y-auto scrollbar-none">
+        <main className="flex-1 overflow-y-auto scrollbar-none">
           <BankScreen
             balance={balance}
             onDeposit={handleDeposit}
           />
-        </div>
+        </main>
       )}
 
       {/* Bottom Telegram Mini App Nav Bar (Always Available on All Tabs) */}

@@ -73,42 +73,45 @@ export const RPSScreen: React.FC<RPSScreenProps> = ({
         </span>
       </div>
 
-      {/* Center Duel Arena */}
-      <div className="my-auto py-2">
-        <ClashAnimation
-          p1Choice={p1Choice}
-          p2Choice={p2Choice}
-          countdown={countdown}
-          roundWinner={roundWinner}
-          isClashing={isProcessing}
-          p1Wins={p1Wins}
-          p2Wins={p2Wins}
-          targetWins={targetWins}
-          isDoubleClash={isDoubleClash}
-        />
-      </div>
-
-      {/* Bottom Weapon Selection Deck */}
-      <div className="w-full pb-3 flex flex-col gap-2">
-        <div className="flex items-center justify-between px-1">
-          <span className="text-xs font-bold text-[#1a1a1a]/80 font-sketch">
-            {isProcessing ? 'Showdown in progress...' : 'Select your weapon:'}
-          </span>
-          <EmoteReactionOverlay />
+      {/* Main Game Arena */}
+      <main className="flex-1 flex flex-col justify-between">
+        {/* Center Duel Arena */}
+        <div className="my-auto py-2">
+          <ClashAnimation
+            p1Choice={p1Choice}
+            p2Choice={p2Choice}
+            countdown={countdown}
+            roundWinner={roundWinner}
+            isClashing={isProcessing}
+            p1Wins={p1Wins}
+            p2Wins={p2Wins}
+            targetWins={targetWins}
+            isDoubleClash={isDoubleClash}
+          />
         </div>
 
-        <div className="flex gap-2">
-          {(['rock', 'paper', 'scissors'] as RPSChoice[]).map((choice) => (
-            <RPSCard
-              key={choice}
-              choice={choice}
-              isSelected={p1Choice === choice}
-              disabled={isProcessing}
-              onSelect={playMove}
-            />
-          ))}
+        {/* Bottom Weapon Selection Deck */}
+        <div className="w-full pb-3 flex flex-col gap-2">
+          <div className="flex items-center justify-between px-1">
+            <span className="text-xs font-bold text-[#1a1a1a]/80 font-sketch">
+              {isProcessing ? 'Showdown in progress...' : 'Select your weapon:'}
+            </span>
+            <EmoteReactionOverlay />
+          </div>
+
+          <div className="flex gap-2">
+            {(['rock', 'paper', 'scissors'] as RPSChoice[]).map((choice) => (
+              <RPSCard
+                key={choice}
+                choice={choice}
+                isSelected={p1Choice === choice}
+                disabled={isProcessing}
+                onSelect={playMove}
+              />
+            ))}
+          </div>
         </div>
-      </div>
+      </main>
 
       {/* Resign Confirmation Modal */}
       <ConfirmDialog

@@ -303,13 +303,13 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
   return (
     <div className="w-full max-w-[420px] mx-auto min-h-screen flex flex-col justify-between p-3 sm:p-4 select-none animate-fade-in pb-16 bg-[#fbfaf7] text-[#1a1a1a]">
       {/* Top Header Bar */}
-      <div>
+      <header className="w-full">
         <div className="flex items-center justify-between mb-3 px-1">
           <button
             type="button"
             onClick={onBack}
             aria-label="Back to home"
-            className="p-2 bg-white hover:bg-[#f2efe9] border-2 border-black rounded-none text-[#1a1a1a] transition-colors sketch-shadow-xs active:translate-x-[1px] active:translate-y-[1px] active:shadow-none"
+            className="p-2 bg-white hover:bg-[#f2efe9] border-2 border-black rounded-none text-[#1a1a1a] transition-colors sketch-shadow-xs active:translate-x-[1px] active:translate-y-[1px] active:shadow-none cursor-pointer"
           >
             <ArrowLeft className="w-4 h-4" />
           </button>
@@ -385,7 +385,9 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
             </div>
           </div>
         )}
+      </header>
 
+      <main className="w-full">
         {/* PINNED HOSTED ROOM CARD (If user currently has an open room) */}
         {createdRoom && (
           <div className="w-full bg-[#fff9c4] border-2 border-black p-3.5 mb-3 sketch-shadow rounded-none flex flex-col gap-2 animate-fade-in">
@@ -725,7 +727,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
             onCancel={() => setConfirmModal(null)}
           />
         )}
-      </div>
+      </main>
     </div>
   );
 };

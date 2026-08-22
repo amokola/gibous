@@ -20,7 +20,10 @@ export const BottomNav: React.FC<BottomNavProps> = ({
   ];
 
   return (
-    <div className="w-full bg-[#f2efe9] border-t-2 border-black px-1.5 py-1.5 flex items-center justify-around select-none z-30 shadow-[0_-2px_8px_rgba(0,0,0,0.06)]">
+    <nav
+      aria-label="Main Navigation"
+      className="w-full bg-[#f2efe9] border-t-2 border-black px-1.5 py-1.5 flex items-center justify-around select-none z-30 shadow-[0_-2px_8px_rgba(0,0,0,0.06)]"
+    >
       {tabs.map((tab) => {
         const isActive = activeTab === tab.id;
 
@@ -29,7 +32,8 @@ export const BottomNav: React.FC<BottomNavProps> = ({
             key={tab.id}
             type="button"
             onClick={() => onSelectTab(tab.id)}
-            className={`flex flex-col items-center justify-center py-1 px-2 transition-all duration-150 active:scale-95 ${
+            aria-current={isActive ? 'page' : undefined}
+            className={`min-w-[48px] min-h-[48px] flex flex-col items-center justify-center py-1 px-2 transition-all duration-150 active:scale-95 cursor-pointer ${
               isActive
                 ? 'text-[#1a1a1a]'
                 : 'text-[#1a1a1a]/50 hover:text-[#1a1a1a]'
@@ -57,6 +61,6 @@ export const BottomNav: React.FC<BottomNavProps> = ({
           </button>
         );
       })}
-    </div>
+    </nav>
   );
 };

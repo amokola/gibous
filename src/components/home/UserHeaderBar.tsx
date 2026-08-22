@@ -27,7 +27,7 @@ export const UserHeaderBar: React.FC<UserHeaderBarProps> = ({
   onOpenWallet,
 }) => {
   return (
-    <div className="w-full flex items-center justify-between py-2 select-none">
+    <header className="w-full flex items-center justify-between py-2 select-none">
       {/* Left User Profile (Clickable to open profile career stats) */}
       <div
         onClick={onOpenProfile}
@@ -96,6 +96,6 @@ export const UserHeaderBar: React.FC<UserHeaderBarProps> = ({
           </div>
         </button>
       </div>
-    </div>
+    </header>
   );
 };

@@ -59,39 +59,42 @@ export const Connect4Screen: React.FC<Connect4ScreenProps> = ({
         onLeaveRoom={handleLeaveTrigger}
       />
 
-      {/* Center 7x6 Connect 4 4real Blueprint Board */}
-      <div className="my-auto py-2">
-        <Connect4Board
-          board={board}
-          activePlayer={activePlayer}
-          winningCells={winningCells || []}
-          isLocked={isProcessing}
-          onDropDisc={dropDisc}
-        />
-      </div>
-
-      {/* Bottom Status / Guidance Pill & Emote Bar */}
-      <div className="w-full pb-3 flex items-center justify-between px-2">
-        <div className="w-8" />
-
-        <div
-          role="status"
-          aria-live="polite"
-          className={`px-4 py-1.5 rounded-2xl border-2 border-black font-sketch text-sm sm:text-base font-bold tracking-wide transition-all sketch-shadow-xs ${
-            isP1Turn
-              ? 'bg-[#fff9c4] text-[#854d0e]'
-              : 'bg-[#e0f2fe] text-[#1a365d]'
-          }`}
-        >
-          {isP1Turn
-            ? `${p1.name}'s Turn (Drop Disc)`
-            : `${p2.name}'s Turn (Drop Disc)`}
+      {/* Main Game Arena */}
+      <main className="flex-1 flex flex-col justify-between">
+        {/* Center 7x6 Connect 4 4real Blueprint Board */}
+        <div className="my-auto py-2">
+          <Connect4Board
+            board={board}
+            activePlayer={activePlayer}
+            winningCells={winningCells || []}
+            isLocked={isProcessing}
+            onDropDisc={dropDisc}
+          />
         </div>
 
-        <div className="flex items-center">
-          <EmoteReactionOverlay />
+        {/* Bottom Status / Guidance Pill & Emote Bar */}
+        <div className="w-full pb-3 flex items-center justify-between px-2">
+          <div className="w-8" />
+
+          <div
+            role="status"
+            aria-live="polite"
+            className={`px-4 py-1.5 rounded-2xl border-2 border-black font-sketch text-sm sm:text-base font-bold tracking-wide transition-all sketch-shadow-xs ${
+              isP1Turn
+                ? 'bg-[#fff9c4] text-[#854d0e]'
+                : 'bg-[#e0f2fe] text-[#1a365d]'
+            }`}
+          >
+            {isP1Turn
+              ? `${p1.name}'s Turn (Drop Disc)`
+              : `${p2.name}'s Turn (Drop Disc)`}
+          </div>
+
+          <div className="flex items-center">
+            <EmoteReactionOverlay />
+          </div>
         </div>
-      </div>
+      </main>
 
       {/* Resign Confirmation Modal */}
       <ConfirmDialog

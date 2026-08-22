@@ -45,7 +45,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   return (
     <div className="w-full max-w-[420px] mx-auto min-h-screen flex flex-col justify-between p-3 sm:p-4 select-none animate-fade-in bg-[#fbfaf7] text-[#1a1a1a]">
       {/* Top Scoreboard Header */}
-      <div>
+      <header>
         <ScoreHeader
           p1={players.p1}
           p2={players.p2}
@@ -62,40 +62,43 @@ export const GameScreen: React.FC<GameScreenProps> = ({
             type={actionTicker.type}
           />
         )}
-      </div>
+      </header>
 
-      {/* Center 10x10 Board Grid */}
-      <div className="my-auto py-1">
-        <BoardGrid
-          p1Position={players.p1.score}
-          p2Position={players.p2.score}
-          activePlayer={activePlayer}
-          p1Trail={p1Trail}
-          p2Trail={p2Trail}
-          highlightedTile={highlightedTile}
-        />
-      </div>
-
-      {/* Bottom Interactive Area */}
-      <div className="w-full pt-1 pb-2 flex flex-col items-center gap-2">
-        {/* Center Controls: 3D Dice + Emote Reactions */}
-        <div className="w-full flex items-center justify-between px-3">
-          <div className="w-8" />
-
-          <Dice3D
-            value={lastDiceRoll}
-            isRolling={isRolling}
+      {/* Main Game Arena */}
+      <main className="flex-1 flex flex-col justify-between">
+        {/* Center 10x10 Board Grid */}
+        <div className="my-auto py-1">
+          <BoardGrid
+            p1Position={players.p1.score}
+            p2Position={players.p2.score}
             activePlayer={activePlayer}
-            canRoll={canRoll}
-            statusText={statusText}
-            onRoll={onRollDice}
+            p1Trail={p1Trail}
+            p2Trail={p2Trail}
+            highlightedTile={highlightedTile}
           />
+        </div>
 
-          <div className="flex items-center">
-            <EmoteReactionOverlay />
+        {/* Bottom Interactive Area */}
+        <div className="w-full pt-1 pb-2 flex flex-col items-center gap-2">
+          {/* Center Controls: 3D Dice + Emote Reactions */}
+          <div className="w-full flex items-center justify-between px-3">
+            <div className="w-8" />
+
+            <Dice3D
+              value={lastDiceRoll}
+              isRolling={isRolling}
+              activePlayer={activePlayer}
+              canRoll={canRoll}
+              statusText={statusText}
+              onRoll={onRollDice}
+            />
+
+            <div className="flex items-center">
+              <EmoteReactionOverlay />
+            </div>
           </div>
         </div>
-      </div>
+      </main>
 
       {/* Resign Confirmation Modal */}
       <ConfirmDialog
