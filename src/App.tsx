@@ -2,9 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { useGameEngine } from './hooks/useGameEngine';
 import { useTelegram } from './hooks/useTelegram';
 import { useMultiplayer } from './hooks/useMultiplayer';
+import { useToast } from './hooks/useToast';
 import { ConnectionBanner } from './components/ui/ConnectionBanner';
 import { OpponentStatusOverlay } from './components/game/OpponentStatusOverlay';
+import { Toast } from './components/ui/Toast';
 import { GameTitle, PlayerId, ScreenState } from './types/game';
+import { ERROR_MESSAGES, ErrorCode } from '../shared';
 import { HomeScreen } from './components/home/HomeScreen';
 import { LobbyScreen } from './components/lobby/LobbyScreen';
 import { GameScreen } from './components/game/GameScreen';
@@ -20,6 +23,7 @@ export const App: React.FC = () => {
 
   const { connectionState, service, opponentDisconnected, opponentReconnected, authenticate } = useMultiplayer();
   const { shareRoomInvite, user: tgUser, initData } = useTelegram();
+  const { toasts, error, removeToast } = useToast();
 
   const {
     gameState,
@@ -40,6 +44,14 @@ export const App: React.FC = () => {
       authenticate(tgUser.id, tgUser.first_name || 'Player 1', tgUser.photo_url, initData);
     }
   }, [connectionState, tgUser, initData, authenticate]);
+
+  useEffect(() => {
+    const unsubError = service.on<{ code?: ErrorCode; message?: string }>('ERROR', (payload) => {
+      const userMsg = (payload.code && ERROR_MESSAGES[payload.code]) || payload.message || 'Something went wrong';
+      error(userMsg);
+    });
+    return () => unsubError();
+  }, [service, error]);
 
   const handleShare = () => {
     shareRoomInvite(gameState.roomCode, gameState.settings.winningAmount);
@@ -79,6 +91,21 @@ export const App: React.FC = () => {
             opponentDisconnected={opponentDisconnected}
             opponentReconnected={opponentReconnected}
           />
+        )}
+
+        {/* Global Toast Notification Stack */}
+        {toasts.length > 0 && (
+          <div className="absolute top-3 left-3 right-3 z-50 flex flex-col gap-2 pointer-events-auto">
+            {toasts.map((toast) => (
+              <Toast
+                key={toast.id}
+                type={toast.type}
+                message={toast.message}
+                duration={toast.duration}
+                onClose={() => removeToast(toast.id)}
+              />
+            ))}
+          </div>
         )}
 
         {/* 1. Main Landing Page Hub */}
