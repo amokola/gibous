@@ -75,6 +75,8 @@ export const Connect4Screen: React.FC<Connect4ScreenProps> = ({
         <div className="w-8" />
 
         <div
+          role="status"
+          aria-live="polite"
           className={`px-4 py-1.5 rounded-2xl border-2 border-black font-sketch text-sm sm:text-base font-bold tracking-wide transition-all sketch-shadow-xs ${
             isP1Turn
               ? 'bg-[#fff9c4] text-[#854d0e]'

@@ -64,7 +64,11 @@ export const RPSScreen: React.FC<RPSScreenProps> = ({
 
       {/* Target Series Info Badge */}
       <div className="w-full flex justify-center -mt-1 mb-1">
-        <span className="text-[10px] sm:text-[11px] font-bold text-[#1a1a1a]/70 bg-white px-3 py-0.5 rounded-full border border-black/20 font-sketch shadow-sm">
+        <span
+          role="status"
+          aria-live="polite"
+          className="text-[10px] sm:text-[11px] font-bold text-[#1a1a1a]/70 bg-white px-3 py-0.5 rounded-full border border-black/20 font-sketch shadow-sm"
+        >
           First to {targetWins} series gems takes the {potAmount} GRAM pot
         </span>
       </div>
