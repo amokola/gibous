@@ -16,7 +16,7 @@ export const App: React.FC = () => {
   const [currentScreen, setCurrentScreen] = useState<ScreenState>('home');
   const [selectedGame, setSelectedGame] = useState<GameTitle>('snake');
   const [userBalance, setUserBalance] = useState<number>(2450);
-  const [customWinner, setCustomWinner] = useState<PlayerId | null>(null);
+  const [customWinner, setCustomWinner] = useState<PlayerId | 'draw' | null>(null);
 
   const { connectionState, service, opponentDisconnected, opponentReconnected, authenticate } = useMultiplayer();
   const { shareRoomInvite, user: tgUser, initData } = useTelegram();
@@ -58,7 +58,7 @@ export const App: React.FC = () => {
     setCurrentScreen('game');
   };
 
-  const handleCustomGameOver = (winner: PlayerId, _pot: number) => {
+  const handleCustomGameOver = (winner: PlayerId | 'draw', _pot: number) => {
     setCustomWinner(winner);
     setCurrentScreen('gameover');
   };
@@ -162,7 +162,7 @@ export const App: React.FC = () => {
         )}
 
         {/* 6. Game Over / Victory Screen */}
-        {currentScreen === 'gameover' && activeWinner && (
+        {currentScreen === 'gameover' && activeWinner !== null && (
           <div className="flex-1 flex flex-col justify-between">
             <GameOverScreen
               winnerId={activeWinner}

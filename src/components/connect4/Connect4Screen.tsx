@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Player, PlayerId } from '../../types/game';
 import { ScoreHeader } from '../game/ScoreHeader';
 import { Connect4Board } from './Connect4Board';
 import { EmoteReactionOverlay } from '../game/EmoteReactionOverlay';
+import { ConfirmDialog } from '../ui/ConfirmDialog';
 import { useConnect4Engine } from '../../hooks/useConnect4Engine';
 
 interface Connect4ScreenProps {
@@ -22,6 +23,7 @@ export const Connect4Screen: React.FC<Connect4ScreenProps> = ({
   onGameOver,
   onBack,
 }) => {
+  const [showResignModal, setShowResignModal] = useState(false);
   const {
     board,
     activePlayer,
@@ -36,6 +38,15 @@ export const Connect4Screen: React.FC<Connect4ScreenProps> = ({
   const player1WithScore = { ...p1, score: p1Wins };
   const player2WithScore = { ...p2, score: p2Wins };
 
+  const handleLeaveTrigger = () => {
+    setShowResignModal(true);
+  };
+
+  const handleConfirmResign = () => {
+    setShowResignModal(false);
+    onBack();
+  };
+
   return (
     <div className="w-full max-w-[420px] mx-auto min-h-screen flex flex-col justify-between p-3 sm:p-4 select-none animate-fade-in bg-[#fbfaf7] text-[#1a1a1a]">
       {/* Top Turn & Scoreboard Header */}
@@ -43,8 +54,9 @@ export const Connect4Screen: React.FC<Connect4ScreenProps> = ({
         p1={player1WithScore}
         p2={player2WithScore}
         activePlayer={activePlayer}
-        onBack={onBack}
-        onLeaveRoom={onBack}
+        scoreLabel="Wins"
+        onBack={handleLeaveTrigger}
+        onLeaveRoom={handleLeaveTrigger}
       />
 
       {/* Center 7x6 Connect 4 4real Blueprint Board */}
@@ -78,6 +90,19 @@ export const Connect4Screen: React.FC<Connect4ScreenProps> = ({
           <EmoteReactionOverlay />
         </div>
       </div>
+
+      {/* Resign Confirmation Modal */}
+      <ConfirmDialog
+        isOpen={showResignModal}
+        title="Leave Match?"
+        message="Leaving now will count as a resignation. Your opponent will win the match."
+        detail={`Stake: ${potAmount / 2} Play GRAM will be forfeited.`}
+        confirmText="Resign & Leave"
+        cancelText="Stay & Play"
+        variant="danger"
+        onConfirm={handleConfirmResign}
+        onCancel={() => setShowResignModal(false)}
+      />
     </div>
   );
 };

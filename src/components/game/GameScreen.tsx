@@ -1,10 +1,11 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { GameState } from '../../types/game';
 import { ScoreHeader } from './ScoreHeader';
 import { BoardGrid } from './BoardGrid';
 import { Dice3D } from './Dice3D';
 import { GameActionTicker } from './GameActionTicker';
 import { EmoteReactionOverlay } from './EmoteReactionOverlay';
+import { ConfirmDialog } from '../ui/ConfirmDialog';
 
 interface GameScreenProps {
   gameState: GameState;
@@ -27,9 +28,19 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   onRollDice,
   onBack,
 }) => {
+  const [showResignModal, setShowResignModal] = useState(false);
   const { activePlayer, players, turnPhase, lastDiceRoll } = gameState;
   const isRolling = turnPhase === 'ROLLING';
   const canRoll = turnPhase === 'WAITING_ROLL';
+
+  const handleLeaveTrigger = () => {
+    setShowResignModal(true);
+  };
+
+  const handleConfirmResign = () => {
+    setShowResignModal(false);
+    onBack();
+  };
 
   return (
     <div className="w-full max-w-[420px] mx-auto min-h-screen flex flex-col justify-between p-3 sm:p-4 select-none animate-fade-in bg-[#fbfaf7] text-[#1a1a1a]">
@@ -39,8 +50,9 @@ export const GameScreen: React.FC<GameScreenProps> = ({
           p1={players.p1}
           p2={players.p2}
           activePlayer={activePlayer}
-          onBack={onBack}
-          onLeaveRoom={onBack}
+          scoreLabel="Tile"
+          onBack={handleLeaveTrigger}
+          onLeaveRoom={handleLeaveTrigger}
         />
 
         {/* Live Match Action Feed Ticker */}
@@ -84,6 +96,19 @@ export const GameScreen: React.FC<GameScreenProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Resign Confirmation Modal */}
+      <ConfirmDialog
+        isOpen={showResignModal}
+        title="Leave Match?"
+        message="Leaving now will count as a resignation. Your opponent will win the match."
+        detail={`Stake: ${gameState.settings.winningAmount || 100} Play GRAM will be forfeited.`}
+        confirmText="Resign & Leave"
+        cancelText="Stay & Play"
+        variant="danger"
+        onConfirm={handleConfirmResign}
+        onCancel={() => setShowResignModal(false)}
+      />
     </div>
   );
 };

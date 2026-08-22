@@ -1,9 +1,10 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Player, PlayerId, RPSChoice } from '../../types/game';
 import { ScoreHeader } from '../game/ScoreHeader';
 import { ClashAnimation } from './ClashAnimation';
 import { RPSCard } from './RPSCard';
 import { EmoteReactionOverlay } from '../game/EmoteReactionOverlay';
+import { ConfirmDialog } from '../ui/ConfirmDialog';
 import { useRPSEngine } from '../../hooks/useRPSEngine';
 
 interface RPSScreenProps {
@@ -23,6 +24,7 @@ export const RPSScreen: React.FC<RPSScreenProps> = ({
   onGameOver,
   onBack,
 }) => {
+  const [showResignModal, setShowResignModal] = useState(false);
   const {
     p1Wins,
     p2Wins,
@@ -39,6 +41,15 @@ export const RPSScreen: React.FC<RPSScreenProps> = ({
   const player1WithScore = { ...p1, score: p1Wins };
   const player2WithScore = { ...p2, score: p2Wins };
 
+  const handleLeaveTrigger = () => {
+    setShowResignModal(true);
+  };
+
+  const handleConfirmResign = () => {
+    setShowResignModal(false);
+    onBack();
+  };
+
   return (
     <div className="w-full max-w-[420px] mx-auto min-h-screen flex flex-col justify-between p-3 sm:p-4 select-none animate-fade-in bg-[#fbfaf7] text-[#1a1a1a]">
       {/* Top Turn & Series Scoreboard */}
@@ -46,8 +57,9 @@ export const RPSScreen: React.FC<RPSScreenProps> = ({
         p1={player1WithScore}
         p2={player2WithScore}
         activePlayer="p1"
-        onBack={onBack}
-        onLeaveRoom={onBack}
+        scoreLabel="Wins"
+        onBack={handleLeaveTrigger}
+        onLeaveRoom={handleLeaveTrigger}
       />
 
       {/* Target Series Info Badge */}
@@ -93,6 +105,19 @@ export const RPSScreen: React.FC<RPSScreenProps> = ({
           ))}
         </div>
       </div>
+
+      {/* Resign Confirmation Modal */}
+      <ConfirmDialog
+        isOpen={showResignModal}
+        title="Leave Match?"
+        message="Leaving now will count as a resignation. Your opponent will win the match."
+        detail={`Stake: ${potAmount / 2} Play GRAM will be forfeited.`}
+        confirmText="Resign & Leave"
+        cancelText="Stay & Play"
+        variant="danger"
+        onConfirm={handleConfirmResign}
+        onCancel={() => setShowResignModal(false)}
+      />
     </div>
   );
 };

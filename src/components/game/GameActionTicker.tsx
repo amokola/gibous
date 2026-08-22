@@ -37,7 +37,11 @@ export const GameActionTicker: React.FC<GameActionTickerProps> = ({
   };
 
   return (
-    <div className="w-full flex items-center justify-center my-1 select-none animate-fade-in">
+    <div
+      role="status"
+      aria-live="polite"
+      className="w-full flex items-center justify-center my-1 select-none animate-fade-in"
+    >
       <div
         className={`px-3 py-1 rounded-none border-2 border-black flex items-center gap-1.5 font-sketch text-xs font-bold tracking-wide sketch-shadow-xs transition-all ${getStyle()}`}
       >
