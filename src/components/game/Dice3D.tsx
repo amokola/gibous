@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { PlayerId } from '../../types/game';
+import { DiceFace } from './dice/DiceFace';
+import { getRotationForValue } from './dice/diceGeometry';
 
 interface Dice3DProps {
   value: number | null;
@@ -21,103 +23,14 @@ export const Dice3D: React.FC<Dice3DProps> = ({
   const isP1 = activePlayer === 'p1';
   const [spinCount, setSpinCount] = useState(0);
 
-  // Increment spin accumulator on every roll so the die spins multiple full 3D rotations
+  // Increment spin accumulator on every roll so the die spins forward
   useEffect(() => {
     if (isRolling) {
-      setSpinCount(prev => prev + 2);
+      setSpinCount((prev) => prev + 2);
     }
   }, [isRolling]);
 
-  // Compute final resting 3D rotation angles for target face 1..6
-  const getTransformForValue = (val: number | null) => {
-    const extraSpins = spinCount * 360;
-    switch (val) {
-      case 1: // Front
-        return `rotateX(${extraSpins}deg) rotateY(${extraSpins}deg)`;
-      case 2: // Top
-        return `rotateX(${-90 + extraSpins}deg) rotateY(${extraSpins}deg)`;
-      case 3: // Right
-        return `rotateX(${extraSpins}deg) rotateY(${-90 + extraSpins}deg)`;
-      case 4: // Left
-        return `rotateX(${extraSpins}deg) rotateY(${90 + extraSpins}deg)`;
-      case 5: // Bottom
-        return `rotateX(${90 + extraSpins}deg) rotateY(${extraSpins}deg)`;
-      case 6: // Back
-        return `rotateX(${extraSpins}deg) rotateY(${180 + extraSpins}deg)`;
-      default:
-        return `rotateX(${extraSpins}deg) rotateY(${extraSpins}deg)`;
-    }
-  };
-
-  const currentTransform = getTransformForValue(value || 1);
-
-  // Render solid ink black pips for each 3D face
-  const renderFacePips = (faceNumber: number) => {
-    const dotClass = "w-2.5 h-2.5 rounded-full bg-[#1a1a1a]";
-
-    switch (faceNumber) {
-      case 1:
-        return (
-          <div className="w-full h-full flex items-center justify-center">
-            <div className="w-3.5 h-3.5 rounded-full bg-[#9b2c2c]" />
-          </div>
-        );
-      case 2:
-        return (
-          <div className="w-full h-full flex justify-between p-2">
-            <div className={dotClass} />
-            <div className={`${dotClass} self-end`} />
-          </div>
-        );
-      case 3:
-        return (
-          <div className="w-full h-full flex justify-between p-2">
-            <div className={dotClass} />
-            <div className={`${dotClass} self-center`} />
-            <div className={`${dotClass} self-end`} />
-          </div>
-        );
-      case 4:
-        return (
-          <div className="w-full h-full grid grid-cols-2 gap-2 p-2 place-items-center">
-            <div className={dotClass} />
-            <div className={dotClass} />
-            <div className={dotClass} />
-            <div className={dotClass} />
-          </div>
-        );
-      case 5:
-        return (
-          <div className="w-full h-full grid grid-cols-3 p-1.5 place-items-center">
-            <div className={dotClass} />
-            <div />
-            <div className={dotClass} />
-            <div />
-            <div className={dotClass} />
-            <div />
-            <div className={dotClass} />
-            <div />
-            <div className={dotClass} />
-          </div>
-        );
-      case 6:
-        return (
-          <div className="w-full h-full grid grid-cols-2 grid-rows-3 gap-1 p-1.5 place-items-center">
-            <div className={dotClass} />
-            <div className={dotClass} />
-            <div className={dotClass} />
-            <div className={dotClass} />
-            <div className={dotClass} />
-            <div className={dotClass} />
-          </div>
-        );
-      default:
-        return null;
-    }
-  };
-
-  const faceStyleBase =
-    "absolute inset-0 bg-[#ffffff] border-2 border-black rounded-none flex items-center justify-center backface-hidden shadow-inner select-none";
+  const currentTransform = getRotationForValue(value, spinCount);
 
   return (
     <div className="flex flex-col items-center select-none">
@@ -127,6 +40,7 @@ export const Dice3D: React.FC<Dice3DProps> = ({
         onClick={() => {
           if (canRoll && !isRolling) onRoll();
         }}
+        data-testid="dice-3d-stage"
       >
         {/* Physical 3D Cube */}
         <div
@@ -137,53 +51,12 @@ export const Dice3D: React.FC<Dice3DProps> = ({
             transform: isRolling ? undefined : currentTransform,
           }}
         >
-          {/* Face 1 (Front) -> translateZ(28px) */}
-          <div
-            className={faceStyleBase}
-            style={{ transform: 'translateZ(28px)' }}
-          >
-            {renderFacePips(1)}
-          </div>
-
-          {/* Face 6 (Back) -> rotateY(180deg) translateZ(28px) */}
-          <div
-            className={faceStyleBase}
-            style={{ transform: 'rotateY(180deg) translateZ(28px)' }}
-          >
-            {renderFacePips(6)}
-          </div>
-
-          {/* Face 3 (Right) -> rotateY(90deg) translateZ(28px) */}
-          <div
-            className={faceStyleBase}
-            style={{ transform: 'rotateY(90deg) translateZ(28px)' }}
-          >
-            {renderFacePips(3)}
-          </div>
-
-          {/* Face 4 (Left) -> rotateY(-90deg) translateZ(28px) */}
-          <div
-            className={faceStyleBase}
-            style={{ transform: 'rotateY(-90deg) translateZ(28px)' }}
-          >
-            {renderFacePips(4)}
-          </div>
-
-          {/* Face 2 (Top) -> rotateX(90deg) translateZ(28px) */}
-          <div
-            className={faceStyleBase}
-            style={{ transform: 'rotateX(90deg) translateZ(28px)' }}
-          >
-            {renderFacePips(2)}
-          </div>
-
-          {/* Face 5 (Bottom) -> rotateX(-90deg) translateZ(28px) */}
-          <div
-            className={faceStyleBase}
-            style={{ transform: 'rotateX(-90deg) translateZ(28px)' }}
-          >
-            {renderFacePips(5)}
-          </div>
+          <DiceFace faceNumber={1} />
+          <DiceFace faceNumber={6} />
+          <DiceFace faceNumber={3} />
+          <DiceFace faceNumber={4} />
+          <DiceFace faceNumber={2} />
+          <DiceFace faceNumber={5} />
         </div>
 
         {/* Dynamic Physical Ground Shadow */}
@@ -195,12 +68,12 @@ export const Dice3D: React.FC<Dice3DProps> = ({
       </div>
 
       {/* Chunky Roll Action CTA & Turn Badge */}
-      <div className="mt-2.5 flex flex-col items-center gap-1">
+      <div className="mt-2 flex flex-col items-center gap-1">
         {canRoll && !isRolling ? (
           <button
             type="button"
             onClick={onRoll}
-            className="px-4 py-1.5 bg-[#9b2c2c] hover:bg-[#802222] text-white border-2 border-black rounded-none font-sketch text-xs sm:text-sm font-bold sketch-shadow-xs active:scale-[0.98] transition-all"
+            className="px-4 py-1.5 bg-[#9b2c2c] hover:bg-[#802222] text-white border-2 border-black rounded-none font-sketch text-xs sm:text-sm font-bold sketch-shadow-xs active:scale-[0.98] transition-all cursor-pointer"
           >
             🎲 TAP TO ROLL
           </button>
