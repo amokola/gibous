@@ -1,0 +1,11 @@
+export const DICE_TIMING = {
+  TUMBLE_MS: 600,
+  LANDING_MS: 500,
+  READ_PAUSE_MS: 400,
+  PAWN_STEP_MS: 120,
+  SLIDE_CLIMB_MS: 700,
+  TOTAL_FALLBACK_TIMEOUT_MS: 4000,
+} as const;
+
+export const DICE_CUBE_SIZE_PX = 56;
+export const DICE_FACE_OFFSET_PX = DICE_CUBE_SIZE_PX / 2; // 28px
