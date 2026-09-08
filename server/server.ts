@@ -3,6 +3,8 @@ import express from 'express';
 import cors from 'cors';
 import { createServer } from 'http';
 import { randomUUID } from 'node:crypto';
+import path from 'node:path';
+import fs from 'node:fs';
 import { WebSocketServer, WebSocket } from 'ws';
 import { ClientMessageSchema, GameType } from '../shared';
 import { RoomManager } from './roomManager';
@@ -529,9 +531,25 @@ Back your skills with GRAM and take the pot.
       });
     }
   } catch (webhookErr) {
-    console.error('Error handling Telegram webhook update:', webhookErr);
+      console.error('Error handling Telegram webhook update:', webhookErr);
   }
 });
+
+// Serve static client build in production
+const distPath = path.resolve(process.cwd(), 'dist');
+if (fs.existsSync(distPath)) {
+  app.use(express.static(distPath));
+  app.get('*', (req, res, next) => {
+    if (
+      req.path.startsWith('/api') ||
+      req.path.startsWith('/ws') ||
+      req.path.startsWith('/tonconnect-manifest.json')
+    ) {
+      return next();
+    }
+    res.sendFile(path.join(distPath, 'index.html'));
+  });
+}
 
 // Create HTTP & WebSocket server with explicit HTTP upgrade handling
 export const server = createServer(app);
