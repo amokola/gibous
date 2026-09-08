@@ -1,99 +1,318 @@
-import React, { useState, useEffect } from 'react';
-import { useGameEngine } from './hooks/useGameEngine';
+import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useTelegram } from './hooks/useTelegram';
-import { useMultiplayer } from './hooks/useMultiplayer';
 import { useToast } from './hooks/useToast';
 import { ConnectionBanner } from './components/ui/ConnectionBanner';
-import { OpponentStatusOverlay } from './components/game/OpponentStatusOverlay';
 import { Toast } from './components/ui/Toast';
-import { GameTitle, PlayerId, ScreenState } from './types/game';
-import { ERROR_MESSAGES, ErrorCode } from '../shared';
-import { HomeScreen } from './components/home/HomeScreen';
-import { LobbyScreen } from './components/lobby/LobbyScreen';
-import { GameScreen } from './components/game/GameScreen';
-import { Connect4Screen } from './components/connect4/Connect4Screen';
-import { RPSScreen } from './components/rps/RPSScreen';
-import { GameOverScreen } from './components/gameover/GameOverScreen';
+import { Player } from './types/game';
+import { subscribeTelegramSafeArea } from './utils/telegramSafeArea';
+
+// Zustand stores
+import { useAuthStore, selectBalance } from './state/useAuthStore';
+import { useRoomStore } from './state/useRoomStore';
+import { useGameStore } from './state/useGameStore';
+import { useConnectionStore } from './state/useConnectionStore';
+import { useUIStore } from './state/useUIStore';
+import type { GameTitle } from './state/useUIStore';
+
+// Actions from event router (replace old useMultiplayer callbacks)
+import {
+  authenticate,
+  createDuel,
+  joinDuel,
+  cancelDuel,
+  leaveDuel,
+  sendSnakeRoll,
+  sendConnect4Drop,
+  sendRPSChoice,
+  sendEmote,
+  sendRematch,
+  submitDeposit,
+  submitWithdrawal,
+  fetchRooms,
+} from './state/eventRouter';
+import { multiplayerService } from './services/multiplayerService';
+
+// Lazy-loaded screens
+const HomeScreen = lazy(() => import('./components/home/HomeScreen').then((m) => ({ default: m.HomeScreen })));
+const LobbyScreen = lazy(() => import('./components/lobby/LobbyScreen').then((m) => ({ default: m.LobbyScreen })));
+const WaitingRoomScreen = lazy(() => import('./components/lobby/WaitingRoomScreen').then((m) => ({ default: m.WaitingRoomScreen })));
+const VSIntroOverlay = lazy(() => import('./components/duel/VSIntroOverlay').then((m) => ({ default: m.VSIntroOverlay })));
+const DuelShell = lazy(() => import('./components/duel/DuelShell').then((m) => ({ default: m.DuelShell })));
+const SnakeLadderArena = lazy(() => import('./components/game/SnakeLadderArena').then((m) => ({ default: m.SnakeLadderArena })));
+const Connect4Arena = lazy(() => import('./components/connect4/Connect4Arena').then((m) => ({ default: m.Connect4Arena })));
+const RPSArena = lazy(() => import('./components/rps/RPSArena').then((m) => ({ default: m.RPSArena })));
+const GameOverScreen = lazy(() => import('./components/gameover/GameOverScreen').then((m) => ({ default: m.GameOverScreen })));
 
 export const App: React.FC = () => {
-  const [currentScreen, setCurrentScreen] = useState<ScreenState>('home');
-  const [selectedGame, setSelectedGame] = useState<GameTitle>('snake');
-  const [userBalance, setUserBalance] = useState<number>(2450);
-  const [customWinner, setCustomWinner] = useState<PlayerId | 'draw' | null>(null);
+  // --- Zustand store subscriptions (surgical re-renders) ---
+  const connectionState = useConnectionStore((s) => s.connectionState);
+  const opponentDisconnected = useConnectionStore((s) => s.opponentDisconnected);
+  const opponentReconnected = useConnectionStore((s) => s.opponentReconnected);
+  const disconnectTimeoutMs = useConnectionStore((s) => s.disconnectTimeoutMs);
+  const lastError = useConnectionStore((s) => s.lastError);
 
-  const { connectionState, service, opponentDisconnected, opponentReconnected, authenticate } = useMultiplayer();
-  const { shareRoomInvite, user: tgUser, initData } = useTelegram();
+  const currentRoom = useRoomStore((s) => s.currentRoom);
+  const myRole = useRoomStore((s) => s.myRole);
+
+  const gameState = useGameStore((s) => s.gameState);
+  const activePlayer = useGameStore((s) => s.activePlayer);
+  const turnPhase = useGameStore((s) => s.turnPhase);
+  const winner = useGameStore((s) => s.winner);
+  const lastDiceEvent = useGameStore((s) => s.lastDiceEvent);
+  const lastDropEvent = useGameStore((s) => s.lastDropEvent);
+  const lastRPSEvent = useGameStore((s) => s.lastRPSEvent);
+  const lastRPSCommit = useGameStore((s) => s.lastRPSCommit);
+  const lastGameOverEvent = useGameStore((s) => s.lastGameOverEvent);
+
+  const currentScreen = useUIStore((s) => s.currentScreen);
+  const selectedGame = useUIStore((s) => s.selectedGame);
+  const floatingEmotes = useUIStore((s) => s.floatingEmotes);
+  const setScreen = useUIStore((s) => s.setScreen);
+  const setSelectedGame = useUIStore((s) => s.setSelectedGame);
+
+  const authenticatedUser = useAuthStore((s) => s.user);
+  const userBalance = useAuthStore(selectBalance);
+
+  // --- Non-store hooks ---
+  const {
+    user: tgUser,
+    initData,
+    startParam,
+    tg,
+    showBackButton,
+    hideBackButton,
+    enableClosingConfirmation,
+    disableClosingConfirmation,
+  } = useTelegram();
   const { toasts, error, removeToast } = useToast();
 
-  const {
-    gameState,
-    p1Trail,
-    p2Trail,
-    highlightedTile,
-    statusMessage,
-    actionTicker,
-    sounds,
-    startGame,
-    rollDice,
-    updateSettings,
-    setMatchType,
-  } = useGameEngine();
+  // Telegram safe area
+  useEffect(() => {
+    if (typeof document === 'undefined') return undefined;
+    return subscribeTelegramSafeArea(tg, document.documentElement.style);
+  }, [tg]);
 
+  // Authenticate on connection
   useEffect(() => {
     if (connectionState === 'CONNECTED') {
       authenticate(tgUser.id, tgUser.first_name || 'Player 1', tgUser.photo_url, initData);
+      fetchRooms();
     }
-  }, [connectionState, tgUser, initData, authenticate]);
+  }, [connectionState, tgUser, initData]);
 
+  // Auto-join duel from deep link (startapp or start_param)
+  const hasHandledStartParam = useRef(false);
   useEffect(() => {
-    const unsubError = service.on<{ code?: ErrorCode; message?: string }>('ERROR', (payload) => {
-      const userMsg = (payload.code && ERROR_MESSAGES[payload.code]) || payload.message || 'Something went wrong';
-      error(userMsg);
-    });
-    return () => unsubError();
-  }, [service, error]);
+    if (!startParam || hasHandledStartParam.current) return;
+    if (connectionState === 'CONNECTED' && authenticatedUser) {
+      const roomCodeCandidate = startParam.trim().toUpperCase();
+      if (/^[A-Z0-9]{4,12}$/.test(roomCodeCandidate)) {
+        hasHandledStartParam.current = true;
+        joinDuel(roomCodeCandidate, tgUser.first_name || 'Player 2', tgUser.photo_url);
+      }
+    }
+  }, [connectionState, authenticatedUser, startParam, tgUser]);
 
-  const handleShare = () => {
-    shareRoomInvite(gameState.roomCode, gameState.settings.winningAmount);
-  };
+  // Show error toasts
+  useEffect(() => {
+    if (lastError) {
+      error(lastError);
+      useConnectionStore.getState().clearError();
+    }
+  }, [lastError, error]);
 
-  // Launch a game from the Landing page
+  // Auto screen transitions driven by server room status
+  useEffect(() => {
+    if (!currentRoom) return;
+
+    if (currentRoom.status === 'waiting' && currentScreen !== 'waiting') {
+      setScreen('waiting');
+    } else if (currentRoom.status === 'playing' && currentScreen !== 'game' && currentScreen !== 'vs-intro') {
+      setScreen('vs-intro');
+    } else if (currentRoom.status === 'gameover' && currentScreen !== 'gameover') {
+      // Delay transition to gameover screen when in active gameplay
+      // so players can clearly watch final move animations, clash reveals, and board outcome
+      if (currentScreen === 'game') {
+        const timer = setTimeout(() => {
+          setScreen('gameover');
+        }, 3200);
+        return () => clearTimeout(timer);
+      } else {
+        setScreen('gameover');
+      }
+    }
+  }, [currentRoom?.status, currentScreen, setScreen]);
+
+  // Transaction mapping for HomeScreen (temporary — will move to component in Task 4)
+  const accountTransactions = useMemo(() => {
+    const raw = Array.isArray(authenticatedUser?.transactions) ? authenticatedUser.transactions : [];
+    return raw.map((transaction: any) => ({
+      id: String(transaction.id),
+      type: transaction.type === 'match_win'
+        ? 'win'
+        : transaction.type === 'match_draw_refund'
+        ? 'draw_refund'
+        : transaction.type === 'match_cancelled_refund'
+        ? 'deposit'
+        : transaction.type === 'match_stake'
+        ? 'arena_fee'
+        : transaction.type,
+      amount: transaction.type === 'withdraw'
+        ? -Number(transaction.amountGram || 0)
+        : Number(transaction.amountGram || 0),
+      timestamp: transaction.createdAt ? new Date(transaction.createdAt).toLocaleString() : 'Pending',
+      description: transaction.status === 'pending'
+        ? `Deposit pending (+${transaction.amountGram} GRAM)`
+        : transaction.type === 'match_win'
+        ? 'Duel Victory'
+        : transaction.type === 'match_draw_refund'
+        ? 'Duel Draw Refund'
+        : transaction.type === 'match_cancelled_refund'
+        ? 'Duel Cancelled Refund'
+        : transaction.type === 'match_stake'
+        ? 'Duel Entry Stake'
+        : transaction.type === 'deposit'
+        ? 'TON Deposit'
+        : transaction.type === 'withdraw'
+        ? 'TON Withdrawal'
+        : `${String(transaction.type).replace(/_/g, ' ')}`,
+      subtext: transaction.status === 'pending' ? 'Confirming on TON...' : 'Completed',
+      txHash: transaction.txHash || transaction.boc,
+    }));
+  }, [authenticatedUser]);
+
+  // --- Handlers ---
   const handleSelectAndPlayGame = (game: GameTitle) => {
-    sounds.playClick();
     setSelectedGame(game);
-    setCurrentScreen('lobby');
+    setScreen('lobby');
+    fetchRooms();
   };
 
-  const handleStartGameFromLobby = () => {
-    setCustomWinner(null);
-    startGame();
-    setCurrentScreen('game');
+  const handleCreateRoom = (stake: number, game?: GameTitle) => {
+    const targetGame = game || selectedGame;
+    if (game) setSelectedGame(game);
+    createDuel(targetGame, stake, tgUser.first_name || 'Player 1', tgUser.photo_url);
   };
 
-  const handleCustomGameOver = (winner: PlayerId | 'draw', _pot: number) => {
-    setCustomWinner(winner);
-    setCurrentScreen('gameover');
+  const handleJoinRoom = (roomCode: string) => {
+    joinDuel(roomCode, tgUser.first_name || 'Player 2', tgUser.photo_url);
   };
 
-  const activeWinner = selectedGame === 'snake' ? gameState.winner : customWinner;
+  const handleCancelWaitingRoom = useCallback(() => {
+    if (currentRoom?.code) cancelDuel(currentRoom.code);
+    setScreen('lobby');
+  }, [currentRoom, cancelDuel, setScreen]);
+
+  const handleLeaveDuel = useCallback(() => {
+    if (currentRoom?.code) leaveDuel(currentRoom.code);
+    setScreen('home');
+  }, [currentRoom, leaveDuel, setScreen]);
+
+  const handleRematch = useCallback(() => {
+    if (currentRoom?.code) sendRematch(currentRoom.code);
+  }, [currentRoom, sendRematch]);
+
+  // Synchronize Telegram Native BackButton and ClosingConfirmation with game screens
+  useEffect(() => {
+    if (currentScreen === 'home') {
+      hideBackButton();
+      disableClosingConfirmation();
+      return;
+    }
+
+    if (currentScreen === 'game') {
+      enableClosingConfirmation();
+    } else {
+      disableClosingConfirmation();
+    }
+
+    const onTelegramBack = () => {
+      if (currentScreen === 'lobby') {
+        setScreen('home');
+      } else if (currentScreen === 'waiting') {
+        handleCancelWaitingRoom();
+      } else if (currentScreen === 'game') {
+        handleLeaveDuel();
+      } else if (currentScreen === 'gameover') {
+        if (currentRoom?.code) leaveDuel(currentRoom.code);
+        setScreen('home');
+      } else {
+        setScreen('home');
+      }
+    };
+
+    showBackButton(onTelegramBack);
+    return () => {
+      hideBackButton(onTelegramBack);
+    };
+  }, [
+    currentScreen,
+    currentRoom,
+    showBackButton,
+    hideBackButton,
+    enableClosingConfirmation,
+    disableClosingConfirmation,
+    setScreen,
+    handleCancelWaitingRoom,
+    handleLeaveDuel,
+    leaveDuel,
+  ]);
+
+  // Build NormalizedDuelState for backward compat with existing screen components
+  const duelState = useMemo(() => ({
+    room: currentRoom ? {
+      code: currentRoom.code,
+      gameType: currentRoom.gameType,
+      status: currentRoom.status,
+      version: currentRoom.version,
+    } : null,
+    players: {
+      p1: currentRoom?.p1 || null,
+      p2: currentRoom?.p2 || null,
+    },
+    myRole,
+    activePlayer,
+    turnPhase,
+    potAmount: currentRoom?.potAmount || 0,
+    stakeAmount: currentRoom?.stakeAmount || 0,
+    winner,
+    gameState,
+    lastDiceEvent,
+    lastDropEvent,
+    lastRPSEvent,
+    lastRPSCommit,
+    lastGameOverEvent,
+  }), [currentRoom, myRole, activePlayer, turnPhase, winner, gameState, lastDiceEvent, lastDropEvent, lastRPSEvent, lastRPSCommit, lastGameOverEvent]);
+
+  // Player objects for GameOverScreen & LobbyScreen
+  const p1Player: Player = {
+    id: 'p1',
+    name: duelState.players.p1?.name || (myRole === 'p1' ? tgUser.first_name : undefined) || 'Player 1',
+    telegramId: duelState.players.p1?.telegramId || (myRole === 'p1' ? tgUser.id : undefined),
+    color: 'green',
+    avatarUrl: duelState.players.p1?.avatarUrl || (myRole === 'p1' ? tgUser.photo_url : undefined),
+    score: 0,
+    isReady: true,
+  };
+
+  const p2Player: Player = {
+    id: 'p2',
+    name: duelState.players.p2?.name || (myRole === 'p2' ? tgUser.first_name : undefined) || 'Player 2',
+    telegramId: duelState.players.p2?.telegramId || (myRole === 'p2' ? tgUser.id : undefined),
+    color: 'blue',
+    avatarUrl: duelState.players.p2?.avatarUrl || (myRole === 'p2' ? tgUser.photo_url : undefined),
+    score: 0,
+    isReady: true,
+  };
 
   return (
-    <div className="min-h-screen w-full bg-[#e8e0d0] flex items-center justify-center p-0 sm:p-3 text-[#1a1a1a] overflow-hidden select-none">
-      {/* Mobile Device Mockup Frame */}
-      <div className="w-full max-w-[420px] h-screen sm:h-[860px] sm:max-h-[96vh] bg-[#fbfaf7] sm:rounded-[36px] sm:border-[4px] sm:border-[#1a1a1a] shadow-[0_8px_30px_rgba(0,0,0,0.12)] overflow-y-auto overflow-x-hidden relative flex flex-col justify-between scrollbar-none">
+    <div className="telegram-app-shell w-full bg-[#e8e0d0] flex items-center justify-center p-0 sm:p-3 text-[#1a1a1a] overflow-hidden">
+      <div className="app-viewport w-full max-w-[420px] bg-[#fbfaf7] sm:h-[860px] sm:max-h-[96dvh] sm:rounded-[36px] sm:border-[4px] sm:border-[#1a1a1a] shadow-[0_8px_30px_rgba(0,0,0,0.12)] overflow-hidden relative flex flex-col scrollbar-none">
         <ConnectionBanner
           connectionState={connectionState}
-          onReconnect={() => service.connect()}
+          onReconnect={() => multiplayerService.connect()}
         />
 
-        {currentScreen === 'game' && (
-          <OpponentStatusOverlay
-            opponentDisconnected={opponentDisconnected}
-            opponentReconnected={opponentReconnected}
-          />
-        )}
-
-        {/* Global Toast Notification Stack */}
         {toasts.length > 0 && (
           <div className="absolute top-3 left-3 right-3 z-50 flex flex-col gap-2 pointer-events-auto">
             {toasts.map((toast) => (
@@ -108,105 +327,126 @@ export const App: React.FC = () => {
           </div>
         )}
 
-        {/* 1. Main Landing Page Hub */}
-        {currentScreen === 'home' && (
-          <HomeScreen
-            userName={tgUser.first_name || 'Player 1'}
-            avatarUrl={tgUser.photo_url}
-            balance={userBalance}
-            isMuted={sounds.isMuted}
-            onToggleMute={sounds.toggleMute}
-            onSelectAndPlayGame={handleSelectAndPlayGame}
-            onUpdateBalance={setUserBalance}
-          />
-        )}
-
-        {/* 2. Matchmaking Lobby */}
-        {currentScreen === 'lobby' && (
-          <div className="flex-1 flex flex-col justify-between">
-            <LobbyScreen
-              selectedGame={selectedGame}
-              onSelectGame={setSelectedGame}
-              roomCode={gameState.roomCode}
-              p1={gameState.players.p1}
-              p2={gameState.players.p2}
-              isReady={gameState.players.p1.isReady && gameState.players.p2.isReady}
-              matchType={gameState.matchType}
-              settings={gameState.settings}
-              isMuted={sounds.isMuted}
-              onToggleMute={sounds.toggleMute}
-              onSetMatchType={setMatchType}
-              onChangeSettings={updateSettings}
-              onStartGame={handleStartGameFromLobby}
-              onShare={handleShare}
-              onBack={() => setCurrentScreen('home')}
+        <Suspense
+          fallback={
+            <div className="flex-1 min-h-0 flex items-center justify-center p-6 font-sketch text-sm text-[#1a1a1a]/70">
+              Loading arena…
+            </div>
+          }
+        >
+          {currentScreen === 'home' && (
+            <HomeScreen
+              userName={tgUser.first_name || 'Player 1'}
+              avatarUrl={tgUser.photo_url}
+              balance={userBalance}
+              onSelectAndPlayGame={handleSelectAndPlayGame}
+              onSubmitDeposit={submitDeposit}
+              onSubmitWithdrawal={submitWithdrawal}
+              initialTransactions={accountTransactions}
+              account={authenticatedUser}
             />
-          </div>
-        )}
+          )}
 
-        {/* 3. In-Game: Snake & Ladder */}
-        {currentScreen === 'game' && selectedGame === 'snake' && (
-          <div className="flex-1 flex flex-col justify-between">
-            <GameScreen
-              gameState={gameState}
-              p1Trail={p1Trail}
-              p2Trail={p2Trail}
-              highlightedTile={highlightedTile}
-              statusText={statusMessage}
-              actionTicker={actionTicker}
-              onRollDice={rollDice}
-              onBack={() => setCurrentScreen('lobby')}
-            />
-          </div>
-        )}
+          {currentScreen === 'lobby' && (
+            <div className="flex-1 min-h-0 flex flex-col">
+              <LobbyScreen
+                selectedGame={selectedGame}
+                onSelectGame={setSelectedGame}
+                initialStake={duelState.stakeAmount || 100}
+                onCreateDuel={(game, stake) => handleCreateRoom(stake, game)}
+                onJoinDuel={(code) => handleJoinRoom(code)}
+                onBack={() => setScreen('home')}
+              />
+            </div>
+          )}
 
-        {/* 4. In-Game: Four in a Row */}
-        {currentScreen === 'game' && selectedGame === 'connect4' && (
-          <div className="flex-1 flex flex-col justify-between">
-            <Connect4Screen
-              p1={gameState.players.p1}
-              p2={gameState.players.p2}
-              matchType={gameState.matchType}
-              potAmount={gameState.potAmount}
-              onGameOver={handleCustomGameOver}
-              onBack={() => setCurrentScreen('lobby')}
+          {currentScreen === 'waiting' && currentRoom && (
+            <WaitingRoomScreen
+              roomCode={currentRoom.code}
+              gameType={currentRoom.gameType}
+              stake={currentRoom.stakeAmount || 100}
+              hostName={tgUser.first_name || 'Player 1'}
+              hostAvatar={tgUser.photo_url}
+              onCancel={handleCancelWaitingRoom}
             />
-          </div>
-        )}
+          )}
 
-        {/* 5. In-Game: Rock Paper Scissors */}
-        {currentScreen === 'game' && selectedGame === 'rps' && (
-          <div className="flex-1 flex flex-col justify-between">
-            <RPSScreen
-              p1={gameState.players.p1}
-              p2={gameState.players.p2}
-              matchType={gameState.matchType}
-              potAmount={gameState.potAmount}
-              onGameOver={handleCustomGameOver}
-              onBack={() => setCurrentScreen('lobby')}
+          {currentScreen === 'vs-intro' && currentRoom && (
+            <VSIntroOverlay
+              gameType={currentRoom.gameType}
+              stake={currentRoom.stakeAmount || 100}
+              pot={currentRoom.potAmount || 200}
+              p1Name={duelState.players.p1?.name || 'Player 1'}
+              p1Avatar={duelState.players.p1?.avatarUrl}
+              p2Name={duelState.players.p2?.name || 'Player 2'}
+              p2Avatar={duelState.players.p2?.avatarUrl}
+              onComplete={() => setScreen('game')}
             />
-          </div>
-        )}
+          )}
 
-        {/* 6. Game Over / Victory Screen */}
-        {currentScreen === 'gameover' && activeWinner !== null && (
-          <div className="flex-1 flex flex-col justify-between">
-            <GameOverScreen
-              winnerId={activeWinner}
-              p1={gameState.players.p1}
-              p2={gameState.players.p2}
-              potAmount={gameState.potAmount}
-              onPlayAgain={() => {
-                setCustomWinner(null);
-                handleStartGameFromLobby();
-              }}
-              onBackToLobby={() => {
-                setCustomWinner(null);
-                setCurrentScreen('home');
-              }}
-            />
-          </div>
-        )}
+          {currentScreen === 'game' && currentRoom && (
+            <DuelShell
+              duelState={duelState}
+              onLeave={handleLeaveDuel}
+              onSendEmote={(emoji) => sendEmote(currentRoom.code, emoji)}
+              opponentDisconnected={opponentDisconnected}
+              opponentReconnected={opponentReconnected}
+              disconnectTimeoutMs={disconnectTimeoutMs}
+              floatingEmotes={floatingEmotes}
+            >
+              {currentRoom.gameType === 'snake' && (
+                <SnakeLadderArena
+                  duelState={duelState}
+                  onRoll={() => sendSnakeRoll(currentRoom.code)}
+                />
+              )}
+
+              {currentRoom.gameType === 'connect4' && (
+                <Connect4Arena
+                  duelState={duelState}
+                  onDropDisc={(col) => sendConnect4Drop(currentRoom.code, col)}
+                />
+              )}
+
+              {currentRoom.gameType === 'rps' && (
+                <RPSArena
+                  duelState={duelState}
+                  onChooseRPS={(choice) => sendRPSChoice(currentRoom.code, choice)}
+                />
+              )}
+            </DuelShell>
+          )}
+
+          {currentScreen === 'gameover' && (
+            <div className="flex-1 min-h-0 flex flex-col">
+              <GameOverScreen
+                winnerId={duelState.winner as any}
+                result={
+                  duelState.lastGameOverEvent?.isForfeit
+                    ? {
+                        type: 'FORFEIT',
+                        winner: duelState.winner === 'p2' ? 'p2' : 'p1',
+                        reason: 'resign',
+                      }
+                    : duelState.winner === 'draw'
+                    ? { type: 'DRAW' }
+                    : duelState.winner === 'p1' || duelState.winner === 'p2'
+                    ? { type: 'WIN', winner: duelState.winner }
+                    : null
+                }
+                myRole={myRole}
+                p1={p1Player}
+                p2={p2Player}
+                potAmount={duelState.potAmount || 200}
+                onPlayAgain={handleRematch}
+                onBackToLobby={() => {
+                  if (currentRoom?.code) leaveDuel(currentRoom.code);
+                  setScreen('home');
+                }}
+              />
+            </div>
+          )}
+        </Suspense>
       </div>
     </div>
   );

@@ -6,6 +6,8 @@
 export const ARENA_FEE_PERCENT = 10;
 export const DRAW_REFUND_PERCENT = 95;
 export const DEFAULT_STAKE_PRESETS = [50, 100, 250, 500, 1000] as const;
+export const MIN_STAKE = 10;
+export const MAX_STAKE = 10_000;
 
 export interface PotBreakdown {
   stakePerPlayer: number;

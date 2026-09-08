@@ -8,6 +8,7 @@ export interface StakeConfirmModalProps {
   gameType: GameTitle;
   stakeAmount: number;
   mode: 'create' | 'join';
+  isSubmitting?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -17,6 +18,7 @@ export const StakeConfirmModal: React.FC<StakeConfirmModalProps> = ({
   gameType,
   stakeAmount,
   mode,
+  isSubmitting = false,
   onConfirm,
   onCancel,
 }) => {
@@ -24,7 +26,7 @@ export const StakeConfirmModal: React.FC<StakeConfirmModalProps> = ({
 
   const config = GAME_CONFIGS[gameType];
   const pot = stakeAmount * 2;
-  const breakdown = calculatePotBreakdown(pot);
+  const breakdown = calculatePotBreakdown(stakeAmount);
   const drawRefund = Math.floor(stakeAmount * 0.95);
 
   return (
@@ -32,14 +34,14 @@ export const StakeConfirmModal: React.FC<StakeConfirmModalProps> = ({
       role="dialog"
       aria-modal="true"
       aria-labelledby="stake-confirm-title"
-      className="fixed inset-0 z-50 bg-black/60 backdrop-blur-[1px] flex items-center justify-center p-4 animate-fade-in"
+      className="telegram-safe-overlay fixed inset-0 z-50 bg-black/60 backdrop-blur-[1px] flex items-center justify-center p-4 animate-fade-in"
     >
       <div className="w-full max-w-[360px] bg-[#fbfaf7] border-4 border-black p-4 sketch-shadow font-sketch text-[#1a1a1a] flex flex-col gap-3">
         {/* Header */}
         <div className="flex items-center justify-between border-b-2 border-black pb-2">
           <div>
             <h2 id="stake-confirm-title" className="text-lg font-bold text-[#1a1a1a] uppercase tracking-wide">
-              {mode === 'create' ? 'Confirm Duel Entry' : 'Join Match Duel'}
+              {mode === 'create' ? 'Confirm Duel Entry' : 'Join Duel'}
             </h2>
             <span className="text-xs text-[#1a365d] font-bold">
               {config?.displayName || gameType.toUpperCase()}
@@ -48,8 +50,9 @@ export const StakeConfirmModal: React.FC<StakeConfirmModalProps> = ({
           <button
             type="button"
             onClick={onCancel}
+            disabled={isSubmitting}
             aria-label="Close"
-            className="w-7 h-7 bg-white hover:bg-[#fee2e2] border-2 border-black flex items-center justify-center font-bold text-sm text-[#9b2c2c] cursor-pointer"
+            className="w-7 h-7 bg-white hover:bg-[#fee2e2] disabled:opacity-50 border-2 border-black flex items-center justify-center font-bold text-sm text-[#9b2c2c] cursor-pointer"
           >
             ✕
           </button>
@@ -64,13 +67,13 @@ export const StakeConfirmModal: React.FC<StakeConfirmModalProps> = ({
             </span>
           </div>
           <div className="flex justify-between items-center text-xs">
-            <span className="text-[#1a1a1a]/70">Opponent Match Stake:</span>
+            <span className="text-[#1a1a1a]/70">Opponent Stake:</span>
             <span className="font-bold flex items-center gap-1 text-[#1a365d]">
               {stakeAmount} GRAM <GramIcon size="sm" />
             </span>
           </div>
           <div className="flex justify-between items-center text-sm font-bold border-t border-black/20 pt-1.5">
-            <span>Potential Match Pot:</span>
+            <span>Total Pot:</span>
             <span className="text-[#1a365d] flex items-center gap-1 font-black">
               {pot} GRAM <GramIcon size="sm" />
             </span>
@@ -80,7 +83,7 @@ export const StakeConfirmModal: React.FC<StakeConfirmModalProps> = ({
         {/* Economic Distribution Rules */}
         <div className="grid grid-cols-3 gap-1.5 text-[10px]">
           <div className="bg-white p-2 border border-black/40 text-center">
-            <span className="text-[#166534] font-bold block">Winner Net (90%)</span>
+            <span className="text-[#166534] font-bold block">Winner (90%)</span>
             <span className="font-bold text-xs text-[#1a1a1a]">+{breakdown.winnerPayout}G</span>
           </div>
           <div className="bg-white p-2 border border-black/40 text-center">
@@ -98,16 +101,18 @@ export const StakeConfirmModal: React.FC<StakeConfirmModalProps> = ({
           <button
             type="button"
             onClick={onCancel}
-            className="flex-1 py-2.5 bg-white hover:bg-[#f2efe9] text-[#1a1a1a] border-2 border-black font-sketch text-xs font-bold transition-colors cursor-pointer"
+            disabled={isSubmitting}
+            className="flex-1 py-2.5 bg-white hover:bg-[#f2efe9] disabled:opacity-50 text-[#1a1a1a] border-2 border-black font-sketch text-xs font-bold transition-colors cursor-pointer"
           >
             Cancel
           </button>
           <button
             type="button"
             onClick={onConfirm}
-            className="flex-1 py-2.5 bg-[#9b2c2c] hover:bg-[#802222] text-white border-2 border-black font-sketch text-xs font-bold sketch-shadow-xs active:translate-x-[1px] active:translate-y-[1px] transition-transform cursor-pointer"
+            disabled={isSubmitting}
+            className="flex-1 py-2.5 bg-[#9b2c2c] hover:bg-[#802222] disabled:opacity-50 disabled:cursor-not-allowed text-white border-2 border-black font-sketch text-xs font-bold sketch-shadow-xs active:translate-x-[1px] active:translate-y-[1px] transition-transform cursor-pointer"
           >
-            {mode === 'create' ? 'Confirm & Create' : 'Confirm & Duel'}
+            {isSubmitting ? 'Submitting...' : mode === 'create' ? 'Confirm & Create' : 'Confirm & Duel'}
           </button>
         </div>
       </div>

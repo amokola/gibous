@@ -1,4 +1,4 @@
-import { PlayerId, RPSChoice } from '../types/game';
+import { RPSChoice } from '../types/game';
 
 export interface RPSChoiceConfig {
   id: RPSChoice;
@@ -43,27 +43,3 @@ export const RPS_CHOICES: Record<RPSChoice, RPSChoiceConfig> = {
     description: 'Cuts Paper',
   },
 };
-
-export const TARGET_WINS = 3; // First to 3 wins
-
-export function evaluateRPSRound(p1Choice: RPSChoice, p2Choice: RPSChoice): PlayerId | 'draw' {
-  if (p1Choice === p2Choice) return 'draw';
-  if (RPS_CHOICES[p1Choice].beats === p2Choice) return 'p1';
-  return 'p2';
-}
-
-export function getRPSBotChoice(userHistory: RPSChoice[] = []): RPSChoice {
-  const choices: RPSChoice[] = ['rock', 'paper', 'scissors'];
-
-  // If user has a favorite move, 40% chance bot counters it
-  if (userHistory.length >= 2) {
-    const lastChoice = userHistory[userHistory.length - 1];
-    if (Math.random() < 0.45) {
-      return RPS_CHOICES[lastChoice].losesTo;
-    }
-  }
-
-  // Otherwise pick completely random
-  const randomIndex = Math.floor(Math.random() * choices.length);
-  return choices[randomIndex];
-}

@@ -13,6 +13,8 @@ export interface GameActionResult {
 export interface IServerGameEngine {
   readonly gameType: GameType;
   getState(): Record<string, unknown>;
+  getPersistenceState(): Record<string, unknown>;
+  restorePersistenceState(state: Record<string, unknown>): void;
   getActivePlayer(): PlayerRole;
   isGameOver(): boolean;
   getWinner(): MatchWinner;

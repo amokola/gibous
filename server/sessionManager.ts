@@ -1,19 +1,19 @@
 import { WebSocket } from 'ws';
-import { PlayerRole } from '../shared/types/game';
+import { randomUUID } from 'crypto';
 
 export interface AuthenticatedSession {
+  connectionId: string;
   telegramId: number;
   name: string;
   avatarUrl?: string;
-  roomCode?: string;
-  playerRole?: PlayerRole;
-  lastPingAt: number;
-  isAuthenticated: boolean;
+  authenticatedAt: number;
+  lastClientPingAt: number;
 }
 
 export class SessionManager {
   private static instance: SessionManager;
   private sessions: Map<WebSocket, AuthenticatedSession> = new Map();
+  private connectionIdToSocket: Map<string, WebSocket> = new Map();
 
   private constructor() {}
 
@@ -24,15 +24,34 @@ export class SessionManager {
     return SessionManager.instance;
   }
 
-  register(ws: WebSocket, telegramId: number, name: string, avatarUrl?: string): AuthenticatedSession {
+  register(
+    ws: WebSocket,
+    telegramId: number,
+    name: string,
+    avatarUrl?: string,
+    connectionId?: string
+  ): AuthenticatedSession {
+    const existing = this.sessions.get(ws);
+    if (existing) {
+      if (existing.telegramId === telegramId && (!connectionId || existing.connectionId === connectionId)) {
+        return existing;
+      }
+      this.connectionIdToSocket.delete(existing.connectionId);
+    }
+
+    const assignedConnectionId = connectionId || randomUUID();
+    const now = Date.now();
     const session: AuthenticatedSession = {
+      connectionId: assignedConnectionId,
       telegramId,
       name,
       avatarUrl,
-      lastPingAt: Date.now(),
-      isAuthenticated: true,
+      authenticatedAt: now,
+      lastClientPingAt: now,
     };
+
     this.sessions.set(ws, session);
+    this.connectionIdToSocket.set(assignedConnectionId, ws);
     return session;
   }
 
@@ -40,33 +59,86 @@ export class SessionManager {
     return this.sessions.get(ws);
   }
 
-  attachRoom(ws: WebSocket, roomCode: string, playerRole: PlayerRole) {
-    const session = this.sessions.get(ws);
-    if (session) {
-      session.roomCode = roomCode;
-      session.playerRole = playerRole;
-    }
+  getSessionByConnectionId(connectionId: string): AuthenticatedSession | undefined {
+    const ws = this.connectionIdToSocket.get(connectionId);
+    return ws ? this.sessions.get(ws) : undefined;
   }
 
-  detachRoom(ws: WebSocket) {
+  updateClientPing(ws: WebSocket): boolean {
     const session = this.sessions.get(ws);
     if (session) {
-      session.roomCode = undefined;
-      session.playerRole = undefined;
+      session.lastClientPingAt = Date.now();
+      return true;
     }
+    return false;
   }
 
-  updatePing(ws: WebSocket) {
+  updatePing(ws: WebSocket): boolean {
+    return this.updateClientPing(ws);
+  }
+
+  attachRoom(_ws: WebSocket, _roomCode: string, _playerRole?: any): void {
+    // Room membership is authoritatively owned by RoomManager
+  }
+
+  detachRoom(_ws: WebSocket): void {
+    // Room membership is authoritatively owned by RoomManager
+  }
+
+  remove(ws: WebSocket, connectionId?: string): AuthenticatedSession | undefined {
     const session = this.sessions.get(ws);
-    if (session) {
-      session.lastPingAt = Date.now();
+    if (!session) return undefined;
+
+    if (connectionId && session.connectionId !== connectionId) {
+      // Stale close event from a previous connection generation
+      return undefined;
     }
+
+    this.sessions.delete(ws);
+    this.connectionIdToSocket.delete(session.connectionId);
+    return session;
   }
 
-  remove(ws: WebSocket): AuthenticatedSession | undefined {
+  revokeByConnectionId(connectionId: string, reason = 'Session revoked'): boolean {
+    const ws = this.connectionIdToSocket.get(connectionId);
+    if (!ws) return false;
+
     const session = this.sessions.get(ws);
     this.sessions.delete(ws);
-    return session;
+    this.connectionIdToSocket.delete(connectionId);
+
+    try {
+      ws.close(4001, reason);
+    } catch {
+      try {
+        ws.terminate();
+      } catch {
+        // ignore
+      }
+    }
+
+    return Boolean(session);
+  }
+
+  revokeByTelegramId(telegramId: number, reason = 'Session revoked'): number {
+    let count = 0;
+    for (const [ws, session] of Array.from(this.sessions.entries())) {
+      if (session.telegramId === telegramId) {
+        this.sessions.delete(ws);
+        this.connectionIdToSocket.delete(session.connectionId);
+        try {
+          ws.close(4001, reason);
+        } catch {
+          try {
+            ws.terminate();
+          } catch {
+            // ignore
+          }
+        }
+        count++;
+      }
+    }
+    return count;
   }
 }
 

@@ -45,6 +45,50 @@ export class ServerRPSEngine implements IServerGameEngine {
     return { ...this.state };
   }
 
+  getPersistenceState(): Record<string, unknown> {
+    return {
+      state: { ...this.state },
+      secretChoices: { ...this.secretChoices },
+    };
+  }
+
+  restorePersistenceState(state: Record<string, unknown>): void {
+    const persistedState = (state.state || state) as Partial<RPSState>;
+    const secretChoices = (state.secretChoices || {}) as Partial<typeof this.secretChoices>;
+    const p1Score = Number(persistedState.p1Score);
+    const p2Score = Number(persistedState.p2Score);
+    const roundNumber = Number(persistedState.roundNumber);
+    const maxPoints = Number(persistedState.maxPoints);
+    if (
+      !Number.isInteger(p1Score) || p1Score < 0 ||
+      !Number.isInteger(p2Score) || p2Score < 0 ||
+      !Number.isInteger(roundNumber) || roundNumber < 1 ||
+      !Number.isInteger(maxPoints) || maxPoints < 1 ||
+      (secretChoices.p1 !== null && secretChoices.p1 !== undefined && !['rock', 'paper', 'scissors'].includes(secretChoices.p1)) ||
+      (secretChoices.p2 !== null && secretChoices.p2 !== undefined && !['rock', 'paper', 'scissors'].includes(secretChoices.p2))
+    ) {
+      throw new Error('Invalid persisted RPS state');
+    }
+    this.maxPoints = maxPoints;
+    this.state = {
+      ...this.createInitialState(),
+      p1Score,
+      p2Score,
+      roundNumber,
+      maxPoints,
+      p1HasChosen: Boolean(persistedState.p1HasChosen),
+      p2HasChosen: Boolean(persistedState.p2HasChosen),
+      lastP1Choice: persistedState.lastP1Choice ?? null,
+      lastP2Choice: persistedState.lastP2Choice ?? null,
+      lastRoundWinner: persistedState.lastRoundWinner ?? null,
+      matchWinner: persistedState.matchWinner ?? null,
+    };
+    this.secretChoices = {
+      p1: secretChoices.p1 ?? null,
+      p2: secretChoices.p2 ?? null,
+    };
+  }
+
   getActivePlayer(): PlayerRole {
     return 'p1'; // In RPS both players choose simultaneously
   }
@@ -97,6 +141,17 @@ export class ServerRPSEngine implements IServerGameEngine {
       };
     }
 
+    if (this.secretChoices[player]) {
+      return {
+        success: false,
+        error: 'Choice already committed for this round',
+        actionType,
+        payload: {},
+        isGameOver: false,
+        winner: null,
+      };
+    }
+
     this.secretChoices[player] = choice;
     if (player === 'p1') this.state.p1HasChosen = true;
     if (player === 'p2') this.state.p2HasChosen = true;
@@ -105,12 +160,13 @@ export class ServerRPSEngine implements IServerGameEngine {
     if (this.secretChoices.p1 && this.secretChoices.p2) {
       const p1Choice = this.secretChoices.p1;
       const p2Choice = this.secretChoices.p2;
-
       this.state.lastP1Choice = p1Choice;
       this.state.lastP2Choice = p2Choice;
 
       const roundWinner = this.determineRoundWinner(p1Choice, p2Choice);
       this.state.lastRoundWinner = roundWinner;
+
+      const currentRound = this.state.roundNumber;
 
       if (roundWinner === 'p1') {
         this.state.p1Score += 1;
@@ -130,7 +186,8 @@ export class ServerRPSEngine implements IServerGameEngine {
       const matchWin = this.state.matchWinner;
 
       const resultPayload = {
-        round: this.state.roundNumber,
+        round: currentRound,
+        nextRound: this.state.roundNumber,
         p1Choice,
         p2Choice,
         roundWinner,
@@ -158,7 +215,7 @@ export class ServerRPSEngine implements IServerGameEngine {
     return {
       success: true,
       actionType: 'RPS_CHOICE_COMMITTED',
-      payload: { player },
+      payload: { player, round: this.state.roundNumber },
       isGameOver: false,
       winner: null,
       revealed: false,

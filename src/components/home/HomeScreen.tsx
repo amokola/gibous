@@ -1,7 +1,6 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { GameTitle, NavTab, UserProfile } from '../../types/game';
 import { UserHeaderBar } from './UserHeaderBar';
-import { LiveTicker } from './LiveTicker';
 import { HeroBanner } from './HeroBanner';
 import { GameCard } from './GameCard';
 import { BottomNav } from '../layout/BottomNav';
@@ -9,42 +8,64 @@ import { LeaderboardScreen } from '../leaderboard/LeaderboardScreen';
 import { BankScreen } from '../bank/BankScreen';
 import { ProfileScreen } from '../profile/ProfileScreen';
 import { SnakeIcon, Connect4Icon, ScissorsIcon } from '../icons/GameIcons';
+import { BankTransactionItem } from '../bank/BankScreen';
 
 interface HomeScreenProps {
   userName: string;
   avatarUrl?: string;
   balance: number;
-  isMuted: boolean;
-  onToggleMute: () => void;
   onSelectAndPlayGame: (game: GameTitle) => void;
-  onUpdateBalance: (newBalance: number) => void;
+  onSubmitDeposit?: (payload: {
+    intentId?: string;
+    walletAddress: string;
+    depositAddress: string;
+    amountNano: string;
+    boc: string;
+    network: 'mainnet' | 'testnet';
+  }) => void;
+  onSubmitWithdrawal?: (payload: {
+    walletAddress: string;
+    amountNano: string;
+  }) => void;
+  initialTransactions?: BankTransactionItem[];
+  account?: Record<string, unknown> | null;
 }
 
 export const HomeScreen: React.FC<HomeScreenProps> = ({
   userName,
   avatarUrl,
   balance,
-  isMuted,
-  onToggleMute,
   onSelectAndPlayGame,
-  onUpdateBalance,
+  onSubmitDeposit,
+  onSubmitWithdrawal,
+  initialTransactions,
+  account,
 }) => {
   const [activeTab, setActiveTab] = useState<NavTab>('home');
 
-  const [userProfile, setUserProfile] = useState<UserProfile>({
-    name: userName || 'Player',
-    avatarUrl,
-    avatarId: 'viper',
-    level: 14,
-    xp: 3450,
-    rank: 'Grandmaster',
-    balance,
-    winRate: 72,
-    totalMatches: 68,
-    winStreak: 7,
-    totalWon: 1420,
-    favoriteGame: 'Snake & Ladder',
-  });
+  const userProfile = useMemo<UserProfile>(() => {
+    const totalMatches = Number(account?.total_matches || 0);
+    const wins = Number(account?.wins || 0);
+    return {
+      name: userName || 'Player',
+      avatarUrl,
+      avatarId: 'default',
+      level: Number(account?.level || 1),
+      xp: Number(account?.xp || 0),
+      rank: 'Unranked',
+      balance,
+      winRate: totalMatches > 0 ? Math.round((wins / totalMatches) * 100) : 0,
+      totalMatches,
+      winStreak: Number(account?.current_streak || 0),
+      totalWon: Number(account?.total_winnings || 0),
+      favoriteGame: String(account?.favorite_game || 'Not enough data'),
+      totalVolume: Number(account?.total_volume || 0),
+      wins,
+      losses: Number(account?.losses || 0),
+      draws: Number(account?.draws || 0),
+      bestStreak: Number(account?.best_streak || 0),
+    };
+  }, [account, avatarUrl, balance, userName]);
 
   const handleTabSelect = (tab: NavTab) => {
     setActiveTab(tab);
@@ -53,32 +74,21 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     }
   };
 
-  const handleDeposit = (amount: number) => {
-    const nextBal = balance + amount;
-    onUpdateBalance(nextBal);
-    setUserProfile(prev => ({ ...prev, balance: nextBal }));
-  };
-
   return (
-    <div className="w-full max-w-[420px] mx-auto min-h-screen flex flex-col justify-between select-none animate-fade-in bg-[#fbfaf7]">
+    <div className="w-full max-w-[420px] mx-auto h-full min-h-0 flex flex-col select-none animate-fade-in bg-[#fbfaf7]">
       {/* Tab 1: Games Home View */}
       {activeTab === 'home' && (
-        <main className="flex-1 overflow-y-auto px-4 py-3 pb-6 scrollbar-none">
-          {/* User Profile & Wallet Bar with Sound Toggle */}
+        <main className="flex-1 min-h-0 overflow-y-auto px-4 py-3 pb-4 scrollbar-none">
+          {/* User Profile & Wallet Bar */}
           <UserHeaderBar
             name={userProfile.name}
             avatarUrl={userProfile.avatarUrl}
             balance={balance}
             level={userProfile.level}
             rank={userProfile.rank}
-            isMuted={isMuted}
-            onToggleMute={onToggleMute}
             onOpenProfile={() => setActiveTab('profile')}
             onOpenWallet={() => setActiveTab('wallet')}
           />
-
-          {/* Live Winner Ticker */}
-          <LiveTicker />
 
           {/* Hero Feature Banner (PVP Arena Focus) */}
           <HeroBanner
@@ -91,7 +101,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
               <span>Duel Arenas</span>
             </h2>
             <span className="font-sketch text-xs font-bold text-[#9b2c2c] bg-[#fee2e2] border border-black px-2 py-0.5 rounded-none sketch-shadow-xs">
-              3 Live Arenas
+              3 Arenas
             </span>
           </div>
 
@@ -104,7 +114,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
               subtitle="Classic race to tile 100"
               badge="Classic"
               badgeColor="bg-[#dcfce7] text-[#166534]"
-              playersCount={1840}
               minStake={50}
               bgClass="bg-white"
               icon={<SnakeIcon size={38} />}
@@ -118,7 +127,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
               subtitle="Drop discs. Connect four. Win the pot."
               badge="Tactical"
               badgeColor="bg-[#e0f2fe] text-[#1a365d]"
-              playersCount={1420}
               minStake={50}
               bgClass="bg-white"
               icon={<Connect4Icon size={38} />}
@@ -132,7 +140,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
               subtitle="Fast best-of-three mind game"
               badge="Fast Duel"
               badgeColor="bg-[#fff9c4] text-[#854d0e]"
-              playersCount={2150}
               minStake={50}
               bgClass="bg-white"
               icon={<ScissorsIcon size={38} />}
@@ -144,14 +151,14 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 
       {/* Tab 2: Full-Page Ranks / Leaderboard View (No Modal) */}
       {activeTab === 'leaderboard' && (
-        <main className="flex-1 overflow-y-auto scrollbar-none">
+        <main className="flex-1 min-h-0 overflow-y-auto scrollbar-none">
           <LeaderboardScreen />
         </main>
       )}
 
       {/* Tab 3: Full-Page Boastable Profile View (No Modal) */}
       {activeTab === 'profile' && (
-        <main className="flex-1 overflow-y-auto scrollbar-none">
+        <main className="flex-1 min-h-0 overflow-y-auto scrollbar-none">
           <ProfileScreen
             userProfile={userProfile}
             onOpenBank={() => setActiveTab('wallet')}
@@ -161,10 +168,12 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 
       {/* Tab 4: Full-Page Bank Gaming Vault View (No Modal) */}
       {activeTab === 'wallet' && (
-        <main className="flex-1 overflow-y-auto scrollbar-none">
+        <main className="flex-1 min-h-0 overflow-y-auto scrollbar-none">
           <BankScreen
             balance={balance}
-            onDeposit={handleDeposit}
+            onSubmitDeposit={onSubmitDeposit}
+            onSubmitWithdrawal={onSubmitWithdrawal}
+            initialTransactions={initialTransactions}
           />
         </main>
       )}

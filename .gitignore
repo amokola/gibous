@@ -3,3 +3,8 @@ dist/
 .env
 *.log
 .DS_Store
+.playwright-cli/
+playwright-report/
+test-results/
+scratch_validating.html
+.superpowers/

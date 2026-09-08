@@ -1,11 +1,8 @@
 import React, { useState } from 'react';
-import { Send, Check, Sparkles, Flame, Trophy, Coins } from 'lucide-react';
+import { Send, Check, Sparkles, Flame, Trophy, Coins, Loader2 } from 'lucide-react';
 import { useTelegram } from '../../hooks/useTelegram';
-import { useSoundEffects } from '../../hooks/useSoundEffects';
 
 interface BoastCardProps {
-  name: string;
-  username?: string;
   pnl: number;
   winRate: number;
   winStreak: number;
@@ -14,33 +11,33 @@ interface BoastCardProps {
 }
 
 export const BoastCard: React.FC<BoastCardProps> = ({
-  name,
-  username,
   pnl,
   winRate,
   winStreak,
   totalVolume,
   totalWins,
 }) => {
-  const [copied, setCopied] = useState(false);
-  const { tg } = useTelegram();
-  const sounds = useSoundEffects();
+  const [shareState, setShareState] = useState<'idle' | 'preparing' | 'sent' | 'cancelled' | 'unsupported' | 'error'>('idle');
+  const { sharePreparedBragCard } = useTelegram();
+  const hasActivity = totalVolume > 0 || totalWins > 0;
 
-  const handleShareToTelegram = () => {
-    sounds.playClick();
-    const isProfit = pnl >= 0;
-    const pnlSign = isProfit ? `+${pnl}` : `${pnl}`;
-    const bragText = `🌙 GIBOUS DUEL ARENA STATS\n\n👤 Player: ${name} (@${username || 'ton_master'})\n💰 PnL: ${pnlSign} Play GRAM\n🔥 Win Streak: ${winStreak}X\n🏆 Win Rate: ${winRate}%\n💎 Total Volume: ${totalVolume} Play GRAM (${totalWins} Wins)\n\nCan you beat my record? Duel me on Gibous! 👇`;
-    const shareUrl = `https://t.me/share/url?url=${encodeURIComponent('https://t.me/gibous_bot/app')}&text=${encodeURIComponent(bragText)}`;
-
-    if (tg?.openTelegramLink) {
-      tg.openTelegramLink(shareUrl);
-    } else {
-      window.open(shareUrl, '_blank');
+  const handleShareToTelegram = async () => {
+    if (!hasActivity || shareState === 'preparing') return;
+    setShareState('preparing');
+    try {
+      const result = await sharePreparedBragCard();
+      setShareState(
+        result.status === 'sent'
+          ? 'sent'
+          : result.status === 'cancelled'
+            ? 'cancelled'
+            : result.status === 'unsupported'
+              ? 'unsupported'
+              : 'error',
+      );
+    } catch {
+      setShareState('error');
     }
-
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2500);
   };
 
   const isProfit = pnl >= 0;
@@ -49,7 +46,7 @@ export const BoastCard: React.FC<BoastCardProps> = ({
     <div className="w-full bg-[#fff9c4] border-2 border-black p-4 select-none sketch-shadow rounded-none relative">
       {/* Top Tape Badge */}
       <div className="absolute -top-3 right-4 border border-black px-2.5 py-0.5 bg-[#fef08a] font-sketch text-[10px] font-bold rotate-1 uppercase tracking-wider">
-        Telegram Brag Card
+        Brag Card
       </div>
 
       {/* Header */}
@@ -59,10 +56,10 @@ export const BoastCard: React.FC<BoastCardProps> = ({
         </div>
         <div>
           <h4 className="font-sketch text-lg font-bold text-[#1a1a1a] leading-tight">
-            Boast Receipt
+            Brag Card
           </h4>
           <span className="font-sketch text-[11px] text-[#1a1a1a]/60">
-            Server-Verified Duel Arena Stats
+            Share your stats and challenge friends
           </span>
         </div>
       </div>
@@ -75,7 +72,7 @@ export const BoastCard: React.FC<BoastCardProps> = ({
             <span className="text-[10px] font-bold font-sketch text-[#1a1a1a]/60 uppercase">Net PnL</span>
           </div>
           <span className={`font-sketch text-lg font-bold ${isProfit ? 'text-[#166534]' : 'text-[#991b1b]'}`}>
-            {isProfit ? `+${pnl}` : pnl} Play GRAM
+            {isProfit ? `+${pnl}` : pnl} GRAM
           </span>
         </div>
 
@@ -105,26 +102,52 @@ export const BoastCard: React.FC<BoastCardProps> = ({
             <span className="text-[10px] font-bold font-sketch text-[#1a1a1a]/60 uppercase">Volume</span>
           </div>
           <span className="font-sketch text-lg font-bold text-[#1a365d]">
-            {totalVolume} Play GRAM
+            {totalVolume} GRAM
           </span>
         </div>
       </div>
 
-      {/* Share to Telegram Button (Matching User Reference) */}
+      {/* Share a prepared Telegram image with an inline keyboard */}
       <button
         type="button"
         onClick={handleShareToTelegram}
-        className="w-full mt-1 py-2.5 px-4 bg-white hover:bg-[#fbfaf7] border-2 border-black font-sketch text-sm sm:text-base font-bold text-[#1a1a1a] flex items-center justify-center gap-2 sketch-btn-press sketch-shadow-xs active:scale-95 transition-all rounded-none"
+        disabled={!hasActivity || shareState === 'preparing'}
+        className="w-full mt-1 py-2.5 px-4 bg-white hover:bg-[#fbfaf7] border-2 border-black font-sketch text-sm sm:text-base font-bold text-[#1a1a1a] flex items-center justify-center gap-2 sketch-btn-press sketch-shadow-xs active:scale-95 transition-all rounded-none disabled:cursor-not-allowed disabled:opacity-60 disabled:active:scale-100 cursor-pointer"
       >
-        {copied ? (
+        {shareState === 'preparing' ? (
+          <>
+            <Loader2 className="w-4 h-4 text-[#1a365d] animate-spin" />
+            <span>Generating card...</span>
+          </>
+        ) : shareState === 'sent' ? (
           <>
             <Check className="w-4 h-4 text-[#166534] stroke-[3]" />
-            <span>Dispatched to Telegram!</span>
+            <span>Shared!</span>
+          </>
+        ) : shareState === 'cancelled' ? (
+          <>
+            <Send className="w-4 h-4 text-[#1a365d]" />
+            <span>Share cancelled</span>
+          </>
+        ) : shareState === 'unsupported' ? (
+          <>
+            <Send className="w-4 h-4 text-[#854d0e]" />
+            <span>Open in Telegram to share</span>
+          </>
+        ) : shareState === 'error' ? (
+          <>
+            <Send className="w-4 h-4 text-[#991b1b]" />
+            <span>Could not share. Try again.</span>
+          </>
+        ) : !hasActivity ? (
+          <>
+            <Sparkles className="w-4 h-4 text-[#854d0e]" />
+            <span>Play a match to unlock</span>
           </>
         ) : (
           <>
             <Send className="w-4 h-4 text-[#1a365d]" />
-            <span>Boast on Telegram Community / Stories</span>
+            <span>Share Brag Card</span>
           </>
         )}
       </button>

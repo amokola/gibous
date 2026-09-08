@@ -14,7 +14,7 @@ export const GameMasteryRow: React.FC<GameMasteryRowProps> = ({
 }) => {
   const games = [
     {
-      title: 'Snake & Ladder',
+      title: 'Snakes & Ladders',
       icon: <SnakeIcon size={24} />,
       iconBg: 'bg-[#dcfce7]',
       stats: snakesRecord,
@@ -34,10 +34,10 @@ export const GameMasteryRow: React.FC<GameMasteryRowProps> = ({
   ];
 
   return (
-    <div className="w-full flex flex-col gap-2 select-none">
+    <div className="w-full flex flex-col gap-1.5 select-none">
       <div className="flex items-center justify-between">
         <span className="font-sketch text-xs font-bold uppercase tracking-wider text-[#1a1a1a]/60">
-          Game Mastery Breakdown
+          Discipline Mastery
         </span>
       </div>
 
@@ -61,7 +61,7 @@ export const GameMasteryRow: React.FC<GameMasteryRowProps> = ({
                     {g.title}
                   </h5>
                   <span className="font-sketch text-[10px] text-[#1a1a1a]/60">
-                    {winRate}% Win Rate ({g.stats.wins}W / {g.stats.losses}L)
+                    {total === 0 ? 'No matches played' : `${winRate}% Win Rate (${g.stats.wins}W / ${g.stats.losses}L)`}
                   </span>
                 </div>
               </div>

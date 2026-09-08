@@ -20,6 +20,7 @@ import {
   ServerMessageSchema,
   ClientMessageType,
   ServerMessageType,
+  AuthPayload,
 } from '../../shared';
 
 export type TypedMessageListener<T = unknown> = (payload: T, fullMessage: ServerMessage) => void;
@@ -33,6 +34,11 @@ export class MultiplayerService {
   private state: ConnectionState = 'DISCONNECTED';
   private isIntentionalClose: boolean = false;
   private currentRoomCode: string | null = null;
+  private authPayload: AuthPayload | null = null;
+  private pendingAuthRequestId: string | null = null;
+  private authenticatingGeneration: number | null = null;
+  private authenticatedGeneration: number | null = null;
+  private shouldSyncRoomOnAuth = false;
 
   private reconnectAttempts: number = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -56,7 +62,17 @@ export class MultiplayerService {
 
   private constructor() {
     this.url = this.resolveWsUrl();
+    this.currentRoomCode = this.loadPersistedRoomCode();
     this.initNetworkListeners();
+  }
+
+  private loadPersistedRoomCode(): string | null {
+    if (typeof window === 'undefined' || !window.sessionStorage) return null;
+    try {
+      return window.sessionStorage.getItem('gibous_active_room_code');
+    } catch {
+      return null;
+    }
   }
 
   static getInstance(): MultiplayerService {
@@ -67,19 +83,30 @@ export class MultiplayerService {
   }
 
   private resolveWsUrl(): string {
-    const envUrl = typeof import.meta !== 'undefined' && import.meta.env ? import.meta.env.VITE_WS_URL : undefined;
-    if (envUrl) {
-      return envUrl;
-    }
-
     if (typeof window !== 'undefined' && window.location) {
       const isHttps = window.location.protocol === 'https:';
       const protocol = isHttps ? 'wss:' : 'ws:';
-      const host = window.location.hostname === 'localhost' ? '127.0.0.1' : window.location.hostname;
-      return `${protocol}//${host}:3001`;
+      const host = window.location.hostname;
+
+      // When running on Cloudflare Tunnel / custom domain (gibous.fourreal.xyz) or any remote host
+      if (host !== 'localhost' && host !== '127.0.0.1') {
+        const envUrl = typeof import.meta !== 'undefined' && import.meta.env ? import.meta.env.VITE_WS_URL : undefined;
+        if (envUrl && envUrl.startsWith('wss://')) {
+          return envUrl;
+        }
+        return `${protocol}//${window.location.host}/ws`;
+      }
+
+      // Local development direct socket / Vite proxy
+      const envUrl = typeof import.meta !== 'undefined' && import.meta.env ? import.meta.env.VITE_WS_URL : undefined;
+      if (envUrl && (envUrl.startsWith('ws://') || envUrl.startsWith('wss://'))) {
+        return envUrl;
+      }
+      return 'ws://127.0.0.1:3001/ws';
     }
 
-    return 'ws://127.0.0.1:3001';
+    const envUrl = typeof import.meta !== 'undefined' && import.meta.env ? import.meta.env.VITE_WS_URL : undefined;
+    return envUrl || 'ws://127.0.0.1:3001/ws';
   }
 
   private initNetworkListeners() {
@@ -98,14 +125,47 @@ export class MultiplayerService {
       this.clearReconnectTimer();
       this.setConnectionState('DISCONNECTED');
     });
+
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible' && this.isOnline && !this.isIntentionalClose) {
+          const isStale = !this.ws || this.ws.readyState !== WebSocket.OPEN || (Date.now() - this.lastPongReceivedAt > 20000);
+          if (isStale) {
+            console.log('📱 App returned to foreground from sleep/background. Resuming active connection...');
+            this.reconnectAttempts = 0;
+            this.connect();
+          }
+        }
+      });
+    }
   }
 
   public getConnectionState(): ConnectionState {
     return this.state;
   }
 
+  /** True only after AUTH_OK for the currently open socket. */
+  public isAuthenticated(): boolean {
+    return Boolean(
+      this.ws &&
+      this.ws.readyState === WebSocket.OPEN &&
+      this.authenticatedGeneration === this.socketGeneration,
+    );
+  }
+
   public setCurrentRoomCode(roomCode: string | null): void {
     this.currentRoomCode = roomCode;
+    if (typeof window !== 'undefined' && window.sessionStorage) {
+      try {
+        if (roomCode) {
+          window.sessionStorage.setItem('gibous_active_room_code', roomCode);
+        } else {
+          window.sessionStorage.removeItem('gibous_active_room_code');
+        }
+      } catch {
+        // Ignore storage exceptions
+      }
+    }
   }
 
   public getCurrentRoomCode(): string | null {
@@ -127,6 +187,21 @@ export class MultiplayerService {
   }
 
   /**
+   * Store the current Telegram credentials and authenticate the active
+   * socket. Credentials are retained in memory so a replacement socket can
+   * authenticate before any queued room synchronization is sent.
+   */
+  public authenticate(payload: AuthPayload): string {
+    const requestId = this.generateRequestId();
+    this.authPayload = payload;
+    this.pendingAuthRequestId = requestId;
+    this.isIntentionalClose = false;
+    this.connect();
+    this.sendAuthIfNeeded();
+    return requestId;
+  }
+
+  /**
    * Connect to the WebSocket Server
    */
   public connect(): void {
@@ -140,26 +215,28 @@ export class MultiplayerService {
 
     this.isIntentionalClose = false;
     this.clearReconnectTimer();
+    const isReconnecting = this.reconnectAttempts > 0 || this.state === 'RECONNECTING';
+    this.shouldSyncRoomOnAuth = isReconnecting && Boolean(this.currentRoomCode);
     this.setConnectionState(this.reconnectAttempts > 0 ? 'RECONNECTING' : 'CONNECTING');
 
+    this.url = this.resolveWsUrl();
+    console.log('🔌 [WebSocket] Connecting to:', this.url);
     const currentGeneration = ++this.socketGeneration;
     const socket = new WebSocket(this.url);
     this.ws = socket;
 
     socket.onopen = () => {
       if (socket !== this.ws || currentGeneration !== this.socketGeneration) return;
+      console.log('✅ [WebSocket] Connected successfully to:', this.url);
 
-      const isReconnecting = this.reconnectAttempts > 0 || this.state === 'RECONNECTING';
       this.reconnectAttempts = 0;
-      this.setConnectionState('CONNECTED');
       this.startHeartbeat();
-      this.flushQueue();
 
-      // Auto-sync if we were previously in a room
-      if (isReconnecting && this.currentRoomCode) {
-        console.log(`🔄 Connection restored. Auto-syncing room state for ${this.currentRoomCode}...`);
-        this.send('SYNC_ROOM', { roomCode: this.currentRoomCode });
-      }
+      // Authenticate before flushing queued commands or syncing a room. The
+      // server deliberately rejects every non-heartbeat command on an
+      // unauthenticated socket.
+      this.sendAuthIfNeeded();
+      this.setConnectionState('CONNECTED');
     };
 
     socket.onmessage = (event: MessageEvent) => {
@@ -181,6 +258,29 @@ export class MultiplayerService {
           return;
         }
 
+        if (message.type === 'AUTH_OK') {
+          this.authenticatingGeneration = null;
+          this.authenticatedGeneration = currentGeneration;
+          const shouldSyncRoom = this.shouldSyncRoomOnAuth;
+          const hasQueuedRoomSync = this.sendQueue.some(
+            (queuedMessage) =>
+              queuedMessage.type === 'SYNC_ROOM' &&
+              queuedMessage.payload.roomCode === this.currentRoomCode,
+          );
+
+          this.dispatchMessage(message);
+          this.flushQueue();
+
+          // A reconnect always converges from an authoritative snapshot, but
+          // only after AUTH_OK and only once when a sync was not already queued.
+          if (shouldSyncRoom && this.currentRoomCode && !hasQueuedRoomSync) {
+            console.log(`🔄 Connection restored. Auto-syncing room state for ${this.currentRoomCode}...`);
+            this.send('SYNC_ROOM', { roomCode: this.currentRoomCode });
+          }
+          this.shouldSyncRoomOnAuth = false;
+          return;
+        }
+
         this.dispatchMessage(message);
       } catch (err) {
         console.error('❌ Failed to parse WebSocket frame:', err);
@@ -189,9 +289,12 @@ export class MultiplayerService {
 
     socket.onclose = (_event: CloseEvent) => {
       if (socket !== this.ws || currentGeneration !== this.socketGeneration) return;
+      console.log('🔌 [WebSocket] Closed (code:', _event.code, 'reason:', _event.reason, ')');
 
       this.stopHeartbeat();
       this.ws = null;
+      this.authenticatingGeneration = null;
+      this.authenticatedGeneration = null;
 
       if (this.isIntentionalClose) {
         this.setConnectionState('DISCONNECTED');
@@ -204,7 +307,7 @@ export class MultiplayerService {
 
     socket.onerror = (err) => {
       if (socket !== this.ws || currentGeneration !== this.socketGeneration) return;
-      console.warn('⚠️ WebSocket transport error (falling back to reconnect loop):', err);
+      console.warn('⚠️ [WebSocket] Transport error (falling back to reconnect loop):', err);
     };
   }
 
@@ -236,6 +339,16 @@ export class MultiplayerService {
    */
   public send(type: ClientMessageType, payload: any = {}): string {
     const requestId = this.generateRequestId();
+
+    if (type === 'AUTH') {
+      this.authPayload = payload as AuthPayload;
+      this.pendingAuthRequestId = requestId;
+      this.isIntentionalClose = false;
+      this.connect();
+      this.sendAuthIfNeeded();
+      return requestId;
+    }
+
     const message = {
       type,
       requestId,
@@ -243,6 +356,13 @@ export class MultiplayerService {
     } as ClientMessage;
 
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      if (!this.isAuthenticated()) {
+        // Safe reads/synchronization can wait for AUTH_OK. Gameplay and
+        // financial commands are intentionally not replayed automatically.
+        this.queueMessage(message);
+        return requestId;
+      }
+
       try {
         this.ws.send(JSON.stringify(message));
       } catch (err) {
@@ -257,9 +377,75 @@ export class MultiplayerService {
     return requestId;
   }
 
+  /**
+   * Request a server-generated pre-flight deposit intent with cryptographically unique memo.
+   */
+  public requestDepositIntent(
+    amountNano: string,
+    walletAddress?: string,
+    timeoutMs = 15000
+  ): Promise<{
+    intentId: string;
+    memo: string;
+    depositAddress: string;
+    amountNano: string;
+    expiresAt: string;
+  }> {
+    return new Promise((resolve, reject) => {
+      if (!this.isAuthenticated()) {
+        return reject(new Error('Please wait for arena authentication to complete'));
+      }
+
+      const requestId = this.generateRequestId();
+      let timer: any = null;
+
+      const cleanup = () => {
+        if (timer) clearTimeout(timer);
+        unsubCreated();
+        unsubError();
+      };
+
+      const unsubCreated = this.on('DEPOSIT_INTENT_CREATED', (payload: any, msg: any) => {
+        if (msg?.requestId === requestId) {
+          cleanup();
+          resolve(payload);
+        }
+      });
+
+      const unsubError = this.on('ERROR', (payload: any, msg: any) => {
+        if (msg?.requestId === requestId) {
+          cleanup();
+          reject(new Error(payload?.message || payload?.code || 'Deposit intent failed'));
+        }
+      });
+
+      timer = setTimeout(() => {
+        cleanup();
+        reject(new Error('Server timed out waiting for deposit intent'));
+      }, timeoutMs);
+
+      try {
+        this.ws?.send(
+          JSON.stringify({
+            type: 'CREATE_DEPOSIT_INTENT',
+            requestId,
+            payload: { amountNano, walletAddress },
+          })
+        );
+      } catch (err) {
+        cleanup();
+        reject(err);
+      }
+    });
+  }
+
   private queueMessage(message: ClientMessage) {
     // Selective Queueing: Only queue critical idempotent actions
-    const allowedTypesToQueue: ClientMessageType[] = ['AUTH', 'JOIN_ROOM', 'SYNC_ROOM'];
+    // Room creation/joining and deposits are intentionally not replayed after
+    // a disconnect: replaying a stale financial action can create a duplicate
+    // room or charge a user after the UI has moved on. The hook requires a
+    // connected, authenticated session before sending those actions.
+    const allowedTypesToQueue: ClientMessageType[] = ['SYNC_ROOM', 'CANCEL_ROOM', 'GET_ROOMS'];
 
     if (!allowedTypesToQueue.includes(message.type)) {
       return;
@@ -285,6 +471,31 @@ export class MultiplayerService {
           break;
         }
       }
+    }
+  }
+
+  private sendAuthIfNeeded(): void {
+    if (!this.authPayload || !this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+    if (
+      this.authenticatedGeneration === this.socketGeneration ||
+      this.authenticatingGeneration === this.socketGeneration
+    ) {
+      return;
+    }
+
+    const message: ClientMessage = {
+      type: 'AUTH',
+      requestId: this.pendingAuthRequestId || this.generateRequestId(),
+      payload: this.authPayload,
+    };
+    this.pendingAuthRequestId = null;
+    this.authenticatingGeneration = this.socketGeneration;
+
+    try {
+      this.ws.send(JSON.stringify(message));
+    } catch (err) {
+      this.authenticatingGeneration = null;
+      console.error('Failed to transmit authentication over WebSocket:', err);
     }
   }
 
@@ -322,10 +533,11 @@ export class MultiplayerService {
 
   private dispatchMessage(message: ServerMessage) {
     if (message.type === 'GAME_START' || message.type === 'ROOM_STATE') {
-      this.currentRoomCode = message.payload.code;
+      this.setCurrentRoomCode(message.payload.code);
     } else if (message.type === 'ROOM_CANCELLED') {
-      if (this.currentRoomCode === message.roomCode) {
-        this.currentRoomCode = null;
+      const cancelledRoomCode = message.payload?.roomCode || message.roomCode;
+      if (this.currentRoomCode === cancelledRoomCode) {
+        this.setCurrentRoomCode(null);
       }
     }
 

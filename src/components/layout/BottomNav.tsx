@@ -22,7 +22,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
   return (
     <nav
       aria-label="Main Navigation"
-      className="w-full bg-[#f2efe9] border-t-2 border-black px-1.5 py-1.5 flex items-center justify-around select-none z-30 shadow-[0_-2px_8px_rgba(0,0,0,0.06)]"
+      className="telegram-bottom-safe-area w-full shrink-0 bg-[#f2efe9] border-t-2 border-black px-1.5 pt-1.5 flex items-center justify-around select-none z-30 shadow-[0_-2px_8px_rgba(0,0,0,0.06)]"
     >
       {tabs.map((tab) => {
         const isActive = activeTab === tab.id;
@@ -53,7 +53,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
             {/* Label in Cabin Sketch */}
             <span
               className={`font-sketch text-[11px] sm:text-xs tracking-wider mt-0.5 ${
-                isActive ? 'text-[#9b2c2c] font-bold' : 'text-[#1a1a1a]/60 font-semibold'
+                isActive ? 'text-[#9b2c2c] font-bold' : 'text-[#1a1a1a]/80 font-semibold'
               }`}
             >
               {tab.label}

@@ -5,22 +5,18 @@ import {
   Settings,
   PlusCircle,
   Search,
-  Users,
   Copy,
   Check,
   Zap,
   Swords,
   Trash2,
-  Volume2,
-  VolumeX,
   Radio,
 } from 'lucide-react';
-import { GameSettings, GameTitle, MatchType, Player } from '../../types/game';
+import { GameTitle, Player } from '../../types/game';
 import { GameTypeSelector } from './GameTypeSelector';
 import { StakeConfirmModal } from './StakeConfirmModal';
 import { GramIcon } from '../ui/GramIcon';
 import { Avatar } from '../ui/Avatar';
-import { useSoundEffects } from '../../hooks/useSoundEffects';
 import { MultiplayerService } from '../../services/multiplayerService';
 import { ERROR_MESSAGES, ErrorCode } from '../../../shared';
 
@@ -31,44 +27,39 @@ export interface OpenRoomSummary {
   potAmount: number;
   hostName: string;
   hostAvatar?: string;
-  hostTgId?: number;
   createdAt: number;
 }
 
 interface LobbyScreenProps {
   selectedGame: GameTitle;
   onSelectGame: (game: GameTitle) => void;
-  roomCode: string;
-  p1: Player;
-  p2: Player;
-  isReady: boolean;
-  matchType: MatchType;
-  settings: GameSettings;
-  isMuted: boolean;
-  onToggleMute: () => void;
-  onSetMatchType: (type: MatchType) => void;
-  onChangeSettings: (settings: Partial<GameSettings>) => void;
-  onStartGame: () => void;
-  onShare: () => void;
+  p1?: Player;
+  initialStake?: number;
+  onCreateDuel?: (game: GameTitle, stake: number) => void;
+  onJoinDuel?: (roomCode: string) => void;
+  onShare?: () => void;
   onBack: () => void;
+  // Optional props for testing backward compatibility
+  roomCode?: string;
+  p2?: Player;
+  isReady?: boolean;
+  settings?: { winningAmount?: number; boardSize?: number };
+  onChangeSettings?: (settings: any) => void;
+  onStartGame?: () => void;
 }
 
 export const LobbyScreen: React.FC<LobbyScreenProps> = ({
   selectedGame,
   onSelectGame,
-  roomCode: _roomCode,
   p1,
-  p2: _p2,
-  isReady: _isReady,
-  matchType: _matchType,
-  settings,
-  isMuted,
-  onToggleMute,
-  onSetMatchType,
-  onChangeSettings,
-  onStartGame,
+  initialStake = 100,
+  onCreateDuel,
+  onJoinDuel,
   onShare,
   onBack,
+  settings,
+  onChangeSettings,
+  onStartGame,
 }) => {
   const [lobbyView, setLobbyView] = useState<'create' | 'browse'>('create');
   const [createdRoom, setCreatedRoom] = useState<OpenRoomSummary | null>(null);
@@ -77,7 +68,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
   const [gameFilter, setGameFilter] = useState<'all' | GameTitle>('all');
   const [quickJoinCode, setQuickJoinCode] = useState('');
   const [showRulesDrawer, setShowRulesDrawer] = useState(false);
-  const [customStake, setCustomStake] = useState<number>(settings.winningAmount || 100);
+  const [customStake, setCustomStake] = useState<number>(initialStake || settings?.winningAmount || 100);
   const [copiedCode, setCopiedCode] = useState(false);
   const [joinError, setJoinError] = useState<string | null>(null);
   const [confirmModal, setConfirmModal] = useState<{
@@ -86,49 +77,17 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
     room?: OpenRoomSummary;
     stake: number;
     game: GameTitle;
+    isSubmitting?: boolean;
   } | null>(null);
 
-  const sounds = useSoundEffects();
-
-  // Real-time backend room synchronization & auto-start listener
+  // Real-time backend room synchronization
   useEffect(() => {
     const multiplayer = MultiplayerService.getInstance();
     multiplayer.connect();
 
-    const fetchRooms = async () => {
-      try {
-        const host = typeof window !== 'undefined' && window.location.hostname && window.location.hostname !== 'localhost' ? window.location.hostname : '127.0.0.1';
-        let res = await fetch(`http://${host}:3001/api/rooms`).catch(() => null);
-        if (!res || !res.ok) {
-          res = await fetch('/api/rooms').catch(() => null);
-        }
-        if (res && res.ok) {
-          const json = await res.json();
-          if (json.rooms && Array.isArray(json.rooms)) {
-            setOpenRooms(json.rooms);
-          }
-        }
-      } catch {
-        // Silently fallback
-      }
-    };
-
     const handleRoomsList = (data: { rooms?: OpenRoomSummary[] }) => {
       if (data.rooms && Array.isArray(data.rooms)) {
         setOpenRooms(data.rooms);
-      }
-    };
-
-    const handleGameStart = (data: any) => {
-      sounds.playMatchFound();
-      const room = data.room || data;
-      if (room) {
-        onSelectGame(room.gameType || selectedGame);
-        if (room.potAmount) {
-          onChangeSettings({ winningAmount: room.potAmount / 2 });
-        }
-        onSetMatchType('online');
-        onStartGame();
       }
     };
 
@@ -139,78 +98,32 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
     };
 
     const unsubRooms = multiplayer.on('ROOMS_LIST' as any, handleRoomsList);
-    const unsubStart = multiplayer.on('GAME_START' as any, handleGameStart);
     const unsubError = multiplayer.on('ERROR' as any, handleError);
     multiplayer.send('GET_ROOMS' as any);
-    fetchRooms();
-
-    const interval = setInterval(fetchRooms, 2500);
 
     return () => {
       unsubRooms();
-      unsubStart();
       unsubError();
-      clearInterval(interval);
     };
-  }, [onSelectGame, onChangeSettings, onSetMatchType, onStartGame, selectedGame, sounds]);
+  }, [selectedGame]);
 
   // Keep customStake in sync with settings
   useEffect(() => {
-    if (settings.winningAmount && settings.winningAmount !== customStake) {
+    if (settings?.winningAmount && settings.winningAmount !== customStake) {
       setCustomStake(settings.winningAmount);
     }
-  }, [settings.winningAmount]);
+  }, [settings?.winningAmount]);
 
   const executeCreateRoom = () => {
-    sounds.playClick();
-    const newCode = Math.random().toString(36).substring(2, 8).toUpperCase();
-    const multiplayer = MultiplayerService.getInstance();
-
-    const roomPayload = {
-      roomCode: newCode,
-      gameType: selectedGame,
-      stake: customStake,
-      telegramId: p1.telegramId || 123456789,
-      playerName: p1.name,
-      avatarUrl: p1.avatarUrl,
-    };
-
-    // Broadcast over WebSocket
-    multiplayer.send('CREATE_ROOM' as any, roomPayload);
-
-    // Also persist via REST API
-    const host = typeof window !== 'undefined' && window.location.hostname && window.location.hostname !== 'localhost' ? window.location.hostname : '127.0.0.1';
-    fetch(`http://${host}:3001/api/rooms`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(roomPayload),
-    }).catch(() => {
-      fetch('/api/rooms', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(roomPayload),
-      }).catch(() => {});
-    });
-
-    const newRoom: OpenRoomSummary = {
-      code: newCode,
-      gameType: selectedGame,
-      stakeAmount: customStake,
-      potAmount: customStake * 2,
-      hostName: p1.name,
-      hostAvatar: p1.avatarUrl,
-      hostTgId: p1.telegramId,
-      createdAt: Date.now(),
-    };
-
-    setCreatedRoom(newRoom);
-    setOpenRooms(prev => [newRoom, ...prev.filter(r => r.code !== newCode)]);
-    onChangeSettings({ winningAmount: customStake });
     setConfirmModal(null);
+    if (onCreateDuel) {
+      onCreateDuel(selectedGame, customStake);
+    } else if (onStartGame) {
+      onStartGame();
+    }
   };
 
   const handleCreateRoomAction = () => {
-    sounds.playClick();
     setConfirmModal({
       isOpen: true,
       mode: 'create',
@@ -220,39 +133,34 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
   };
 
   const handleCancelCreatedRoom = () => {
-    sounds.playClick();
     if (createdRoom) {
       const multiplayer = MultiplayerService.getInstance();
       multiplayer.send('CANCEL_ROOM' as any, {
         roomCode: createdRoom.code,
-        telegramId: p1.telegramId || 123456789,
       });
-      fetch(`/api/rooms/${createdRoom.code}`, { method: 'DELETE' }).catch(() => {});
       setOpenRooms(prev => prev.filter(r => r.code !== createdRoom.code));
       setCreatedRoom(null);
     }
   };
 
   const executeJoinRoom = (room: OpenRoomSummary) => {
-    sounds.playMatchFound();
     onSelectGame(room.gameType);
-    onChangeSettings({ winningAmount: room.stakeAmount });
-    onSetMatchType('online');
-
-    const multiplayer = MultiplayerService.getInstance();
-    multiplayer.send('JOIN_ROOM', {
-      roomCode: room.code,
-      telegramId: p1.telegramId || 987654321,
-      playerName: p1.name,
-      avatarUrl: p1.avatarUrl,
-    });
-
+    onChangeSettings?.({ winningAmount: room.stakeAmount });
     setConfirmModal(null);
-    onStartGame();
+
+    if (onJoinDuel) {
+      onJoinDuel(room.code);
+    } else {
+      const multiplayer = MultiplayerService.getInstance();
+      multiplayer.send('JOIN_ROOM', {
+        roomCode: room.code,
+        playerName: p1?.name || 'Player 2',
+        avatarUrl: p1?.avatarUrl,
+      });
+    }
   };
 
   const handleJoinSpecificRoom = (room: OpenRoomSummary) => {
-    sounds.playClick();
     setConfirmModal({
       isOpen: true,
       mode: 'join',
@@ -277,7 +185,6 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
   };
 
   const handleCopy = (code: string) => {
-    sounds.playClick();
     navigator.clipboard?.writeText(code);
     setCopiedCode(true);
     setTimeout(() => setCopiedCode(false), 2000);
@@ -301,7 +208,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
   const drawRefund = Math.floor(customStake * 0.95);
 
   return (
-    <div className="w-full max-w-[420px] mx-auto min-h-screen flex flex-col justify-between p-3 sm:p-4 select-none animate-fade-in pb-16 bg-[#fbfaf7] text-[#1a1a1a]">
+    <div className="w-full max-w-[420px] mx-auto h-full min-h-0 flex flex-col p-3 sm:p-4 select-none animate-fade-in pb-4 bg-[#fbfaf7] text-[#1a1a1a]">
       {/* Top Header Bar */}
       <header className="w-full">
         <div className="flex items-center justify-between mb-3 px-1">
@@ -319,7 +226,6 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
             <button
               type="button"
               onClick={() => {
-                sounds.playClick();
                 setLobbyView('create');
               }}
               className={`px-3 py-1 font-sketch text-xs font-bold rounded-none transition-all flex items-center gap-1 ${
@@ -334,29 +240,20 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
             <button
               type="button"
               onClick={() => {
-                sounds.playClick();
                 setLobbyView('browse');
               }}
-              className={`px-3 py-1 font-sketch text-xs font-bold rounded-none transition-all flex items-center gap-1 ${
+              className={`px-3 py-1 font-sketch text-xs font-bold rounded-none transition-all flex items-center gap-1 cursor-pointer ${
                 lobbyView === 'browse'
                   ? 'bg-[#9b2c2c] text-white border border-black sketch-shadow-xs'
                   : 'text-[#1a1a1a]/70 hover:text-[#1a1a1a]'
               }`}
             >
               <Radio className="w-3.5 h-3.5" />
-              Live Duels ({openRooms.length})
+              Open Rooms ({openRooms.length})
             </button>
           </div>
 
           <div className="flex items-center gap-1.5">
-            <button
-              type="button"
-              onClick={onToggleMute}
-              aria-label="Audio toggle"
-              className="p-2 bg-white hover:bg-[#f2efe9] border-2 border-black rounded-none text-[#1a1a1a] transition-colors sketch-shadow-xs"
-            >
-              {isMuted ? <VolumeX className="w-4 h-4 text-[#9b2c2c]" /> : <Volume2 className="w-4 h-4 text-[#9b2c2c]" />}
-            </button>
             <button
               type="button"
               onClick={() => setShowRulesDrawer(prev => !prev)}
@@ -378,10 +275,10 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
               <span className="text-[#9b2c2c] cursor-pointer font-bold" onClick={() => setShowRulesDrawer(false)}>✕</span>
             </div>
             <div className="text-[#1a1a1a]/80 text-[11px] leading-relaxed font-sketch">
-              • <strong>Win Payout (90%)</strong>: Winner receives 90% of the play-credit pot.<br />
-              • <strong>Arena Fee (10%)</strong>: Gibous keeps a 10% arena fee on completed matches.<br />
-              • <strong>Draw Refund (95%)</strong>: In case of a draw, both players receive 95% of their initial stake.<br />
-              • <strong>Pure Strategy</strong>: Fair server-run matches with zero pay-to-win boosts.
+              • <strong>Win Payout (90%)</strong>: Winner receives 90% of the pot.<br />
+              • <strong>Arena Fee (10%)</strong>: 10% arena fee applies to matches.<br />
+              • <strong>Draw Refund (95%)</strong>: In a draw, both players receive 95% of their stake.<br />
+              • <strong>Pure Strategy</strong>: Fair matches with zero pay-to-win boosts.
             </div>
           </div>
         )}
@@ -395,7 +292,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
               <div className="flex items-center gap-1.5">
                 <span className="w-2.5 h-2.5 rounded-full bg-green-600 animate-ping" />
                 <span className="font-sketch text-xs font-bold text-[#854d0e] uppercase tracking-wider">
-                  Your Open Room • Waiting for Challenger
+                  Waiting for opponent...
                 </span>
               </div>
               <span className="font-sketch text-xs font-bold text-[#1a365d] bg-white px-2 py-0.5 border border-black">
@@ -455,7 +352,6 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
               <GameTypeSelector
                 selectedGame={selectedGame}
                 onSelectGame={(game) => {
-                  sounds.playClick();
                   onSelectGame(game);
                 }}
               />
@@ -463,17 +359,28 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
 
             {/* Step 2: Choose Stake Amount (Custom Editable + Quick Presets) */}
             <div className="bg-white border-2 border-black p-3 rounded-none sketch-shadow-xs">
-              <div className="flex justify-between items-center mb-1">
+              <div className="flex items-center mb-1">
                 <span className="font-sketch text-xs font-bold text-[#1a1a1a]/70 uppercase tracking-wider">
-                  2. Stake Amount (Play GRAM):
-                </span>
-                <span className="font-sketch text-xs font-bold text-[#854d0e] bg-[#fff9c4] px-1.5 py-0.2 border border-black">
-                  Play-Credit Duel
+                  2. Stake Amount
                 </span>
               </div>
 
               {/* Custom Editable Number Input */}
-              <div className="relative mb-2.5">
+              <div className="flex items-stretch gap-1.5 mb-2.5">
+                <button
+                  type="button"
+                  aria-label="Decrease stake"
+                  disabled={customStake <= 10}
+                  onClick={() => {
+                    const nextStake = Math.max(10, customStake - 10);
+                    setCustomStake(nextStake);
+                    onChangeSettings?.({ winningAmount: nextStake });
+                  }}
+                  className="w-10 shrink-0 bg-[#f2efe9] hover:bg-[#e8e0d0] disabled:opacity-40 disabled:cursor-not-allowed border-2 border-black font-sketch text-xl font-bold leading-none"
+                >
+                  −
+                </button>
+                <div className="relative flex-1">
                 <input
                   type="number"
                   min="10"
@@ -481,16 +388,30 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                   value={customStake || ''}
                   onChange={(e) => {
                     const val = parseInt(e.target.value, 10);
-                    const safeVal = isNaN(val) ? 0 : Math.max(0, val);
+                    const safeVal = isNaN(val) ? 0 : Math.min(10000, Math.max(0, val));
                     setCustomStake(safeVal);
-                    onChangeSettings({ winningAmount: safeVal });
+                    onChangeSettings?.({ winningAmount: safeVal });
                   }}
                   className="w-full p-2 bg-[#f2efe9] border-2 border-black font-sketch text-lg font-bold text-[#1a1a1a] focus:outline-none focus:bg-white focus:ring-2 focus:ring-[#9b2c2c]"
                   placeholder="Enter stake amount (e.g. 250)"
                 />
                 <span className="absolute right-3 top-1/2 -translate-y-1/2 font-sketch text-xs font-bold text-[#1a1a1a]/60">
-                  Play GRAM
+                  GRAM
                 </span>
+                </div>
+                <button
+                  type="button"
+                  aria-label="Increase stake"
+                  disabled={customStake >= 10000}
+                  onClick={() => {
+                    const nextStake = Math.min(10000, customStake + 10);
+                    setCustomStake(nextStake);
+                    onChangeSettings?.({ winningAmount: nextStake });
+                  }}
+                  className="w-10 shrink-0 bg-[#f2efe9] hover:bg-[#e8e0d0] disabled:opacity-40 disabled:cursor-not-allowed border-2 border-black font-sketch text-xl font-bold leading-none"
+                >
+                  +
+                </button>
               </div>
 
               {/* Quick Preset Chips */}
@@ -500,9 +421,8 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                     key={amt}
                     type="button"
                     onClick={() => {
-                      sounds.playClick();
                       setCustomStake(amt);
-                      onChangeSettings({ winningAmount: amt });
+                      onChangeSettings?.({ winningAmount: amt });
                     }}
                     className={`py-1 rounded-none border-2 border-black font-sketch text-xs font-bold transition-all sketch-btn-press ${
                       customStake === amt
@@ -516,26 +436,26 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
               </div>
             </div>
 
-            {/* Step 3: Economic Math Breakdown Card */}
-            <div className="bg-[#f2efe9] border-2 border-black p-3 rounded-none sketch-shadow-xs font-sketch text-xs">
-              <div className="flex justify-between items-center font-bold text-[#1a1a1a] border-b border-black/20 pb-1.5 mb-1.5">
+            {/* Economics Breakdown */}
+            <div className="bg-[#f2efe9] border-2 border-black p-3">
+              <div className="flex items-center justify-between text-xs font-sketch font-bold text-[#1a1a1a]/80 mb-2">
                 <span>Total Match Pot:</span>
                 <span className="text-base text-[#1a365d] flex items-center gap-1 font-black">
-                  {pot} Play GRAM <GramIcon size="sm" />
+                  {pot} GRAM <GramIcon size="sm" />
                 </span>
               </div>
               <div className="grid grid-cols-3 gap-1 text-[11px] text-[#1a1a1a]/80">
                 <div className="bg-white p-1.5 border border-black/30">
                   <span className="text-[#166534] font-bold block">Winner (90%)</span>
-                  <span className="font-bold text-[#1a1a1a]">+{winnerNet} Play GRAM</span>
+                  <span className="font-bold text-[#1a1a1a]">+{winnerNet} GRAM</span>
                 </div>
                 <div className="bg-white p-1.5 border border-black/30">
                   <span className="text-[#9b2c2c] font-bold block">Arena Fee (10%)</span>
-                  <span className="font-bold text-[#1a1a1a]">-{arenaFee} Play GRAM</span>
+                  <span className="font-bold text-[#1a1a1a]">-{arenaFee} GRAM</span>
                 </div>
                 <div className="bg-white p-1.5 border border-black/30">
                   <span className="text-[#854d0e] font-bold block">Draw (95% ea)</span>
-                  <span className="font-bold text-[#1a1a1a]">+{drawRefund} Play GRAM</span>
+                  <span className="font-bold text-[#1a1a1a]">+{drawRefund} GRAM</span>
                 </div>
               </div>
             </div>
@@ -547,24 +467,9 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
               className="w-full py-3 bg-[#9b2c2c] hover:bg-[#802222] text-white border-2 border-black font-sketch text-base font-bold sketch-shadow-xs active:scale-[0.98] transition-all flex items-center justify-center gap-2"
             >
               <PlusCircle className="w-5 h-5 stroke-[2.5]" />
-              Create {selectedGame.toUpperCase()} Duel ({customStake} Play GRAM)
+              Create {selectedGame.toUpperCase()} Duel ({customStake} GRAM)
             </button>
 
-            {/* Secondary: Pass & Play Local 2P Duel Option */}
-            <div className="pt-1 flex items-center justify-center">
-              <button
-                type="button"
-                onClick={() => {
-                  sounds.playClick();
-                  onSetMatchType('local');
-                  onStartGame();
-                }}
-                className="font-sketch text-xs font-bold text-[#1a1a1a]/70 hover:text-[#1a1a1a] flex items-center gap-1.5 underline"
-              >
-                <Users className="w-3.5 h-3.5" />
-                Or Play Pass & Play Duel (2 Players on this Device)
-              </button>
-            </div>
           </div>
         )}
 
@@ -579,7 +484,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search by room code or host player..."
+                  placeholder="Search by code or player..."
                   className="w-full pl-8 pr-3 py-1.5 bg-[#f2efe9] border-2 border-black font-sketch text-xs text-[#1a1a1a] focus:outline-none focus:bg-white"
                 />
               </div>
@@ -596,7 +501,6 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                     key={tab.key}
                     type="button"
                     onClick={() => {
-                      sounds.playClick();
                       setGameFilter(tab.key as any);
                     }}
                     className={`px-2.5 py-1 rounded-none border border-black font-sketch text-[11px] font-bold whitespace-nowrap transition-all ${
@@ -617,14 +521,14 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                 type="text"
                 value={quickJoinCode}
                 onChange={(e) => setQuickJoinCode(e.target.value)}
-                placeholder="Enter 6-char Room Code (e.g. GRAM99)"
+                placeholder="Enter room code"
                 className="flex-1 p-2 bg-white border-2 border-black font-mono text-xs font-bold text-[#1a1a1a] focus:outline-none uppercase"
               />
               <button
                 type="submit"
-                className="px-4 bg-[#1a365d] hover:bg-[#122844] text-white border-2 border-black font-sketch text-xs font-bold whitespace-nowrap"
+                className="px-4 bg-[#1a365d] hover:bg-[#122844] text-white border-2 border-black font-sketch text-xs font-bold whitespace-nowrap cursor-pointer"
               >
-                Join Code
+                Join Room
               </button>
             </form>
 
@@ -641,7 +545,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                   Open Matches ({filteredRooms.length})
                 </span>
                 <span className="text-[10px] text-[#166534] font-sketch font-bold">
-                  🟢 Live PVP Lobby
+                  🟢 Live
                 </span>
               </div>
 
@@ -649,17 +553,17 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                 <div className="p-6 bg-white border-2 border-black rounded-none text-center sketch-shadow-xs">
                   <Swords className="w-8 h-8 mx-auto text-[#1a1a1a]/40 mb-1" />
                   <span className="font-sketch text-sm font-bold text-[#1a1a1a] block">
-                    No matching rooms found
+                    No rooms found
                   </span>
                   <p className="font-sketch text-xs text-[#1a1a1a]/60 mt-0.5">
-                    Be the first to create a room or adjust your search filter!
+                    Create a room to start playing.
                   </p>
                   <button
                     type="button"
                     onClick={() => setLobbyView('create')}
-                    className="mt-3 px-4 py-1.5 bg-[#9b2c2c] text-white border-2 border-black font-sketch text-xs font-bold"
+                    className="mt-3 px-4 py-1.5 bg-[#9b2c2c] text-white border-2 border-black font-sketch text-xs font-bold cursor-pointer"
                   >
-                    + Create Room Now
+                    + Create Room
                   </button>
                 </div>
               ) : (
@@ -717,7 +621,10 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
             mode={confirmModal.mode}
             gameType={confirmModal.game}
             stakeAmount={confirmModal.stake}
+            isSubmitting={confirmModal.isSubmitting}
             onConfirm={() => {
+              if (confirmModal.isSubmitting) return;
+              setConfirmModal((prev) => prev ? { ...prev, isSubmitting: true } : null);
               if (confirmModal.mode === 'create') {
                 executeCreateRoom();
               } else if (confirmModal.room) {

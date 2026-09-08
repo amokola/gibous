@@ -1,4 +1,4 @@
-import { GameType, PlayerRole, MatchWinner } from '../../shared';
+import { GameType, PlayerRole, MatchWinner, SNAKES_MAP, LADDERS_MAP } from '../../shared';
 import { IServerGameEngine, GameActionResult } from './IServerGameEngine';
 
 export interface SnakeLadderState {
@@ -11,32 +11,18 @@ export interface SnakeLadderState {
   turnTimeout: number;
 }
 
-const SNAKES: Record<number, number> = {
-  98: 78,
-  95: 56,
-  87: 24,
-  64: 60,
-  62: 19,
-  54: 34,
-  17: 7,
-};
-
-const LADDERS: Record<number, number> = {
-  4: 14,
-  9: 31,
-  20: 38,
-  28: 84,
-  40: 59,
-  51: 67,
-  63: 81,
-  71: 91,
-};
+const SNAKES: Record<number, number> = SNAKES_MAP;
+const LADDERS: Record<number, number> = LADDERS_MAP;
 
 export class ServerSnakeLadderEngine implements IServerGameEngine {
   readonly gameType: GameType = 'snake';
   private state: SnakeLadderState;
+  private readonly randomSource: () => number;
+  private readonly clock: () => number;
 
-  constructor() {
+  constructor(randomSource: () => number = () => Math.random(), clock: () => number = () => Date.now()) {
+    this.randomSource = randomSource;
+    this.clock = clock;
     this.state = this.createInitialState();
   }
 
@@ -48,12 +34,42 @@ export class ServerSnakeLadderEngine implements IServerGameEngine {
       lastRoll: null,
       lastAction: null,
       winner: null,
-      turnTimeout: Date.now() + 15000,
+      turnTimeout: this.clock() + 15000,
     };
   }
 
   getState(): Record<string, unknown> {
     return { ...this.state };
+  }
+
+  getPersistenceState(): Record<string, unknown> {
+    return this.getState();
+  }
+
+  restorePersistenceState(state: Record<string, unknown>): void {
+    const candidate = state as Partial<SnakeLadderState>;
+    const p1Position = Number(candidate.p1Position);
+    const p2Position = Number(candidate.p2Position);
+    const lastRoll = candidate.lastRoll;
+    if (
+      !Number.isInteger(p1Position) || p1Position < 1 || p1Position > 100 ||
+      !Number.isInteger(p2Position) || p2Position < 1 || p2Position > 100 ||
+      (candidate.activePlayer !== 'p1' && candidate.activePlayer !== 'p2') ||
+      !['p1', 'p2', 'draw', null].includes(candidate.winner as any) ||
+      (lastRoll !== null && lastRoll !== undefined && (!Number.isInteger(lastRoll) || lastRoll < 1 || lastRoll > 6))
+    ) {
+      throw new Error('Invalid persisted Snake & Ladders state');
+    }
+    this.state = {
+      ...this.createInitialState(),
+      p1Position,
+      p2Position,
+      activePlayer: candidate.activePlayer as PlayerRole,
+      lastRoll: lastRoll ?? null,
+      lastAction: candidate.lastAction ?? null,
+      winner: candidate.winner ?? null,
+      turnTimeout: Number.isFinite(candidate.turnTimeout) ? Number(candidate.turnTimeout) : this.clock() + 15000,
+    };
   }
 
   getActivePlayer(): PlayerRole {
@@ -107,7 +123,7 @@ export class ServerSnakeLadderEngine implements IServerGameEngine {
     }
 
     // Standard fair 1-6 dice roll
-    const rollVal = Math.floor(Math.random() * 6) + 1;
+    const rollVal = Math.floor(this.randomSource() * 6) + 1;
     this.state.lastRoll = rollVal;
 
     const fromPos = player === 'p1' ? this.state.p1Position : this.state.p2Position;
@@ -164,7 +180,7 @@ export class ServerSnakeLadderEngine implements IServerGameEngine {
     // Switch turn
     const nextPlayer: PlayerRole = player === 'p1' ? 'p2' : 'p1';
     this.state.activePlayer = nextPlayer;
-    this.state.turnTimeout = Date.now() + 15000;
+    this.state.turnTimeout = this.clock() + 15000;
 
     return {
       success: true,

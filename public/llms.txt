@@ -1,0 +1,11 @@
+# Gibous Duel Arena
+
+Gibous is a Telegram Mini App for server-authoritative competitive duels.
+
+- The server owns rooms, turns, balances, escrow, and settlement state.
+- TON Connect submissions remain pending until an indexer verifies the matching transfer.
+- Production requires PostgreSQL, Telegram init-data verification, and a configured native-asset deposit verifier.
+
+The repository is the source of truth for implementation details.
+
+- [TON Connect transaction guidance](https://docs.ton.org/v3/guidelines/ton-connect/guidelines/sending-transactions)

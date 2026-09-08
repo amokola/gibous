@@ -24,7 +24,7 @@ export const ConnectionBanner: React.FC<ConnectionBannerProps> = ({
         className={`w-full shrink-0 z-30 bg-[#fff9c4] text-[#854d0e] border-2 border-black font-sketch text-xs font-bold px-3 py-1.5 flex items-center justify-center gap-2 sketch-shadow-xs animate-fade-in ${className}`.trim()}
       >
         <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
-        <span>Connecting to duel server...</span>
+        <span>Connecting...</span>
       </div>
     );
   }
@@ -37,7 +37,7 @@ export const ConnectionBanner: React.FC<ConnectionBannerProps> = ({
         className={`w-full shrink-0 z-30 bg-[#fef3c7] text-[#854d0e] border-2 border-black font-sketch text-xs font-bold px-3 py-1.5 flex items-center justify-between sketch-shadow-xs animate-fade-in ${className}`.trim()}
       >
         <div className="flex items-center gap-2">
-          <span>⚠️ Reconnecting to server... your match is safe</span>
+          <span>⚠️ Reconnecting... your match is safe</span>
         </div>
       </div>
     );

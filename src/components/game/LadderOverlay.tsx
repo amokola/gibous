@@ -1,7 +1,11 @@
 import React from 'react';
 import { LADDERS, getTileCenterPercent } from '../../config/boardConfig';
 
-export const LadderOverlay: React.FC = () => {
+interface LadderOverlayProps {
+  activeLadderId?: string | null;
+}
+
+export const LadderOverlay: React.FC<LadderOverlayProps> = ({ activeLadderId = null }) => {
   return (
     <svg 
       className="absolute inset-0 w-full h-full pointer-events-none z-10" 
@@ -20,9 +24,15 @@ export const LadderOverlay: React.FC = () => {
         <filter id="ladderShadow" x="-30%" y="-30%" width="160%" height="160%">
           <feDropShadow dx="0.8" dy="1.4" stdDeviation="0.9" floodColor="#000000" floodOpacity="0.75" />
         </filter>
+
+        {/* Active Ladder Golden Glow Filter */}
+        <filter id="activeLadderGlow" x="-40%" y="-40%" width="180%" height="180%">
+          <feDropShadow dx="0" dy="0" stdDeviation="2.2" floodColor="#f59e0b" floodOpacity="0.9" />
+        </filter>
       </defs>
 
       {LADDERS.map((ladder) => {
+        const isActive = activeLadderId === ladder.id;
         const bottomPos = getTileCenterPercent(ladder.bottom);
         const topPos = getTileCenterPercent(ladder.top);
 
@@ -61,7 +71,7 @@ export const LadderOverlay: React.FC = () => {
         }
 
         return (
-          <g key={ladder.id} filter="url(#ladderShadow)">
+          <g key={ladder.id} filter={isActive ? 'url(#activeLadderGlow)' : 'url(#ladderShadow)'} className={isActive ? 'animate-pulse' : ''}>
             {/* Left Rail */}
             <line
               x1={l1x}

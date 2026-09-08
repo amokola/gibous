@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { Share2, Clock, Swords, Zap, Check } from 'lucide-react';
 import { MatchStats } from '../../types/game';
 import { useTelegram } from '../../hooks/useTelegram';
-import { useSoundEffects } from '../../hooks/useSoundEffects';
 
 interface MatchStatsCardProps {
   stats: MatchStats;
@@ -17,10 +16,8 @@ export const MatchStatsCard: React.FC<MatchStatsCardProps> = ({
 }) => {
   const [copied, setCopied] = useState(false);
   const { shareRoomInvite } = useTelegram();
-  const sounds = useSoundEffects();
 
   const handleShare = () => {
-    sounds.playClick();
     shareRoomInvite('PVP_MATCH', stats.potEarned / 2);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
@@ -30,7 +27,7 @@ export const MatchStatsCard: React.FC<MatchStatsCardProps> = ({
     <div className="w-full bg-white border-2 border-black rounded-none p-3.5 flex flex-col gap-2.5 select-none sketch-shadow-xs my-2 text-[#1a1a1a]">
       <div className="flex items-center justify-between">
         <span className="font-sketch text-xs font-bold text-[#1a1a1a]/60 uppercase tracking-wider">
-          Match Performance Breakdown
+          Match Stats
         </span>
         <span className="font-sketch text-xs font-bold text-[#1a365d]">
           {gameTitle}
@@ -77,7 +74,7 @@ export const MatchStatsCard: React.FC<MatchStatsCardProps> = ({
         ) : (
           <>
             <Share2 className="w-3.5 h-3.5" />
-            <span>{isWinner ? 'Brag to Telegram Community' : 'Invite For Rematch'}</span>
+            <span>{isWinner ? 'Share Victory' : 'Invite For Rematch'}</span>
           </>
         )}
       </button>

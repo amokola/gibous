@@ -6,27 +6,26 @@
 export const BRAND = {
   name: 'Gibous',
   category: 'Telegram Duel Arena',
-  tagline: 'Fast duels. Real ranks. Play-credit rewards.',
+  tagline: 'Fast duels. Real ranks. On-chain rewards.',
   currency: {
-    label: 'Play GRAM',
+    label: 'GRAM',
     shortLabel: 'GRAM',
     symbol: '💎',
   },
   surfaces: {
     vault: 'Gibous Vault',
-    balance: 'Play-Credit Balance',
+    balance: 'GRAM Balance',
     ranks: 'Gibous Ranks',
     standings: 'Season 1 Global Standings',
     lobby: 'Arena Lobby',
     rooms: 'Duel Rooms',
     createRoom: 'Create Duel',
-    passAndPlay: 'Pass & Play Duel',
   },
   economics: {
     arenaFeePercent: 10,
     drawRefundPercent: 95,
     winnerPotPercent: 90,
-    rulesSummary: 'Winner receives 90% of the play-credit pot. Gibous keeps a 10% arena fee. Draws refund 95% of each player’s stake.',
+    rulesSummary: 'Winner receives 90% of the pot. 10% arena fee applies. Draws refund 95% of your stake.',
   },
   gameCards: {
     snake: {
@@ -58,10 +57,10 @@ export const BRAND = {
     backToHub: 'Back to Hub',
   },
   links: {
-    botUsername: 'gibous_bot',
-    botAppUrl: 'https://t.me/gibous_bot/app',
-    communityUrl: 'https://t.me/gibous_community',
-    supportUrl: 'https://t.me/gibous_support',
+    botUsername: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_TELEGRAM_BOT_USERNAME) || 'gbousbot',
+    botAppUrl: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_TELEGRAM_BOT_APP_URL) || 'https://t.me/gbousbot/app',
+    communityUrl: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_COMMUNITY_URL) || 'https://t.me/gibous_community',
+    supportUrl: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPPORT_URL) || 'https://t.me/gibous_support',
   },
   palette: {
     inkBlack: '#141414',
@@ -73,12 +72,12 @@ export const BRAND = {
     winGreen: '#1E7A3A',
   },
   launchBlurb:
-    'Gibous is a Telegram duel arena for quick competitive games. Create a room, challenge a friend, stake play GRAM, and climb the ranks through fair server-run matches.',
+    'Gibous is a Telegram duel arena for quick competitive games. Create a room, challenge a friend, stake GRAM, and climb the ranks through fair server-run matches.',
 } as const;
 
 export function formatShareInvite(roomCode: string, stake: number): { text: string; url: string } {
   const pot = stake * 2;
-  const text = `⚔️ Challenge me in Gibous Duel Arena!\n🎲 Room Code: ${roomCode}\n💎 Pot: ${pot} Play GRAM (10% Arena Fee • 95% Draw Refund)\n\nTap below to play now!`;
+  const text = `⚔️ Duel me on Gibous!\n🎲 Room: ${roomCode}\n💎 Pot: ${pot} GRAM\n\nTap to play!`;
   const url = `https://t.me/share/url?url=${encodeURIComponent(`${BRAND.links.botAppUrl}?startapp=${roomCode}`)}&text=${encodeURIComponent(text)}`;
   return { text, url };
 }
@@ -93,7 +92,7 @@ export function formatBoastReceipt(params: {
   totalWins: number;
 }): { text: string; url: string } {
   const pnlSign = params.pnl >= 0 ? `+${params.pnl}` : `${params.pnl}`;
-  const bragText = `🌙 GIBOUS DUEL ARENA STATS\n\n👤 Player: ${params.name} (@${params.username || 'ton_master'})\n💰 PnL: ${pnlSign} Play GRAM\n🔥 Win Streak: ${params.winStreak}X\n🏆 Win Rate: ${params.winRate}%\n💎 Volume: ${params.totalVolume} Play GRAM (${params.totalWins} Wins)\n\nCan you beat my record? Challenge me now in Gibous! 👇`;
+  const bragText = `🌙 GIBOUS DUEL ARENA STATS\n\n👤 Player: ${params.name} (@${params.username || 'player'})\n💰 PnL: ${pnlSign} GRAM\n🔥 Win Streak: ${params.winStreak}X\n🏆 Win Rate: ${params.winRate}%\n💎 Volume: ${params.totalVolume} GRAM (${params.totalWins} Wins)\n\nCan you beat my record? Challenge me now in Gibous! 👇`;
   const url = `https://t.me/share/url?url=${encodeURIComponent(BRAND.links.botAppUrl)}&text=${encodeURIComponent(bragText)}`;
   return { text: bragText, url };
 }

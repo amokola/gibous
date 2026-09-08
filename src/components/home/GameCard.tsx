@@ -9,7 +9,7 @@ interface GameCardProps {
   subtitle: string;
   badge: string;
   badgeColor: string;
-  playersCount: number;
+  playersCount?: number;
   minStake: number;
   icon: React.ReactNode;
   bgClass: string;
@@ -47,10 +47,12 @@ export const GameCard: React.FC<GameCardProps> = ({
               <span className={`font-sketch text-xs font-bold px-2 py-0.5 rounded-none border border-black sketch-shadow-xs ${badgeColor}`}>
                 {badge}
               </span>
-              <div className="flex items-center gap-1.5 text-[10px] text-[#1a1a1a]/60 font-semibold font-sketch">
-                <span className="w-2 h-2 rounded-none bg-[#15803d] inline-block animate-pulse" />
-                <span>{playersCount.toLocaleString()} in Arena</span>
-              </div>
+              {typeof playersCount === 'number' && (
+                <div className="flex items-center gap-1.5 text-[10px] text-[#1a1a1a]/60 font-semibold font-sketch">
+                  <span className="w-2 h-2 rounded-none bg-[#15803d] inline-block animate-pulse" />
+                  <span>{playersCount.toLocaleString()} in Arena</span>
+                </div>
+              )}
             </div>
 
             {/* Title & Subtitle */}

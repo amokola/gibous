@@ -7,7 +7,16 @@ export * from '../../shared/types/game';
 export * from '../../shared/types/protocol';
 export * from '../../shared/constants/economics';
 
-import type { PlayerRole } from '../../shared/types/game';
+import type {
+  PlayerRole,
+  GameType,
+  RoomStatePayload,
+  DiceRolledPayload,
+  DiscDroppedPayload,
+  RPSRoundResolvedPayload,
+  RPSChoiceCommittedPayload,
+  GameOverPayload,
+} from '../../shared';
 
 export type PlayerId = PlayerRole;
 export type GameTitle = 'snake' | 'connect4' | 'rps';
@@ -27,6 +36,11 @@ export interface UserProfile {
   winStreak: number;
   totalWon: number;
   favoriteGame: string;
+  totalVolume?: number;
+  wins?: number;
+  losses?: number;
+  draws?: number;
+  bestStreak?: number;
 }
 
 export interface Player {
@@ -55,78 +69,6 @@ export interface Ladder {
   top: number;
 }
 
-export type GameMode = 'classic' | 'blitz';
-export type MatchType = 'local' | 'online' | 'bot';
-
-export interface GameSettings {
-  mode: GameMode;
-  boardSize: number;
-  winningAmount: number; // e.g. 50, 100, 250, 500, 1000 Play GRAM
-}
-
-export type TurnPhase = 
-  | 'WAITING_ROLL' 
-  | 'ROLLING' 
-  | 'MOVING' 
-  | 'CLIMBING_LADDER' 
-  | 'SLIDING_SNAKE' 
-  | 'TURN_END'
-  | 'GAME_OVER';
-
-export interface TurnHistoryStep {
-  player: PlayerId;
-  from: number;
-  diceRoll: number;
-  to: number;
-  snakeOrLadder?: {
-    type: 'snake' | 'ladder';
-    from: number;
-    to: number;
-  };
-}
-
-export interface GameState {
-  roomCode: string;
-  matchType: MatchType;
-  settings: GameSettings;
-  players: {
-    p1: Player;
-    p2: Player;
-  };
-  activePlayer: PlayerId;
-  turnPhase: TurnPhase;
-  lastDiceRoll: number | null;
-  history: TurnHistoryStep[];
-  winner: PlayerId | null;
-  potAmount: number;
-  isHost: boolean;
-  statusMessage?: string;
-}
-
-// Power-Up System
-export type PowerUpType = 'precision' | 'shield' | 'doublestep';
-
-export interface PowerUp {
-  id: PowerUpType;
-  name: string;
-  description: string;
-  icon: string;
-  used: boolean;
-}
-
-// In-Game Emote Reactions
-export type EmoteReaction = '🔥' | '😱' | '😈' | '👏' | '🎲' | '👑';
-
-// Bank / Vault Transactions
-export interface Transaction {
-  id: string;
-  type: 'deposit' | 'withdraw' | 'match_win' | 'tournament';
-  amount: number;
-  time: string;
-  txHash: string;
-}
-
-// Post Match Analytics
 export interface MatchStats {
   turns: number;
   duration: string;
@@ -134,7 +76,6 @@ export interface MatchStats {
   potEarned: number;
 }
 
-// Connect 4 Types
 export type Connect4Cell = PlayerId | null;
 export type Connect4Board = Connect4Cell[][];
 
@@ -143,18 +84,36 @@ export interface WinningCoord {
   col: number;
 }
 
-export interface Connect4WinResult {
-  winner: PlayerId;
-  winningCells: WinningCoord[];
+export type EmoteReaction = '🔥' | '😱' | '😈' | '👏' | '🎲' | '👑';
+
+export interface FloatingEmote {
+  id: string;
+  player: PlayerRole;
+  emoji: string;
+  timestamp: number;
 }
 
-// Rock Paper Scissors Types
-export type RPSChoice = 'rock' | 'paper' | 'scissors';
-export type RPSResult = 'win' | 'lose' | 'draw';
-
-export interface RPSRound {
-  round: number;
-  p1Choice: RPSChoice;
-  p2Choice: RPSChoice;
-  winner: PlayerId | 'draw';
+export interface NormalizedDuelState {
+  room: {
+    code: string;
+    gameType: GameType;
+    status: 'waiting' | 'playing' | 'gameover';
+    version: number;
+  } | null;
+  players: {
+    p1: RoomStatePayload['p1'];
+    p2: RoomStatePayload['p2'];
+  };
+  myRole: PlayerRole | null;
+  activePlayer: PlayerRole;
+  turnPhase: string;
+  potAmount: number;
+  stakeAmount: number;
+  winner: string | null;
+  gameState: Record<string, any>;
+  lastDiceEvent: DiceRolledPayload | null;
+  lastDropEvent: DiscDroppedPayload | null;
+  lastRPSEvent: RPSRoundResolvedPayload | null;
+  lastRPSCommit: RPSChoiceCommittedPayload | null;
+  lastGameOverEvent: GameOverPayload | null;
 }

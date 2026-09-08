@@ -18,7 +18,8 @@ export const GramIcon: React.FC<GramIconProps> = ({
   return (
     <img
       src="/assets/gram_logo.png"
-      alt="GRAM"
+      alt=""
+      aria-hidden="true"
       className={`inline-block object-contain select-none flex-shrink-0 ${sizeMap[size]} ${className}`}
       draggable={false}
     />

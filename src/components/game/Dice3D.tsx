@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Dices } from 'lucide-react';
 import { PlayerId } from '../../types/game';
 import { DiceFace } from './dice/DiceFace';
 import { getRotationForValue } from './dice/diceGeometry';
@@ -67,19 +68,20 @@ export const Dice3D: React.FC<Dice3DProps> = ({
         />
       </div>
 
-      {/* Chunky Roll Action CTA & Turn Badge */}
-      <div className="mt-2 flex flex-col items-center gap-1">
+      {/* Turn Badge / Action CTA */}
+      <div className="mt-1.5 flex flex-col items-center gap-1">
         {canRoll && !isRolling ? (
           <button
             type="button"
             onClick={onRoll}
-            className="px-4 py-1.5 bg-[#9b2c2c] hover:bg-[#802222] text-white border-2 border-black rounded-none font-sketch text-xs sm:text-sm font-bold sketch-shadow-xs active:scale-[0.98] transition-all cursor-pointer"
+            className="flex items-center gap-1.5 px-3.5 py-1 bg-[#9b2c2c] hover:bg-[#802222] text-white border-2 border-black rounded-none font-sketch text-xs sm:text-sm font-bold sketch-shadow-xs active:scale-[0.98] transition-all cursor-pointer"
           >
-            🎲 TAP TO ROLL
+            <Dices className="w-3.5 h-3.5 stroke-[2.5]" />
+            <span>TAP TO ROLL</span>
           </button>
         ) : (
           <span
-            className={`font-sketch text-xs sm:text-sm font-bold tracking-wide px-3 py-1 rounded-none border-2 border-black sketch-shadow-xs ${
+            className={`font-sketch text-xs sm:text-sm font-bold tracking-wide px-3 py-0.5 rounded-none border-2 border-black sketch-shadow-xs transition-all ${
               isRolling
                 ? 'bg-[#fff9c4] text-[#854d0e] animate-pulse'
                 : isP1
@@ -87,7 +89,7 @@ export const Dice3D: React.FC<Dice3DProps> = ({
                 : 'bg-[#e0f2fe] text-[#1a365d]'
             }`}
           >
-            {isRolling ? '🎲 Rolling 3D Die...' : statusText || (isP1 ? 'Your Turn' : "Opponent's Turn")}
+            {isRolling ? 'Rolling 3D Die...' : statusText || (isP1 ? 'Player 1 Turn' : "Opponent's Turn")}
           </span>
         )}
       </div>

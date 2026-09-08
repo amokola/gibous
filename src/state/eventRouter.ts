@@ -18,6 +18,7 @@ import {
   RPSChoiceCommittedPayload,
   GameOverPayload,
   PendingTransaction,
+  RematchFailedPayload,
 } from '../../shared';
 
 let myTelegramId: number | null = null;
@@ -39,18 +40,23 @@ export function initEventRouter() {
     useConnectionStore.getState().setConnectionState(state as ConnectionState);
   });
 
-  multiplayerService.connect();
-
   // Auth events
   multiplayerService.on<{ user: any; telegramId?: number }>('AUTH_OK', (payload) => {
     useAuthStore.getState().setUser(payload.user);
     if (payload.telegramId) {
       setMyTelegramId(payload.telegramId);
     }
+    const persistedRoomCode = multiplayerService.getCurrentRoomCode();
+    if (persistedRoomCode) {
+      multiplayerService.send('SYNC_ROOM', { roomCode: persistedRoomCode });
+    }
   });
 
-  multiplayerService.on<{ user: any }>('ACCOUNT_UPDATED', (payload) => {
-    useAuthStore.getState().setUser(payload.user);
+  multiplayerService.on<any>('ACCOUNT_UPDATED', (payload) => {
+    const user = payload?.user || payload;
+    if (user) {
+      useAuthStore.getState().setUser(user);
+    }
   });
 
   multiplayerService.on<PendingTransaction>('TRANSACTION_PENDING', (payload) => {
@@ -107,7 +113,7 @@ export function initEventRouter() {
     useRoomStore.getState().updateRoomFromEvent({
       version: payload.version,
       activePlayer: payload.nextPlayer,
-      gameState: (payload as any).patch || payload, // Assumes patch is part of payload or payload is the patch
+      gameState: (payload as any).patch || useGameStore.getState().gameState,
     });
   });
 
@@ -116,7 +122,7 @@ export function initEventRouter() {
     useRoomStore.getState().updateRoomFromEvent({
       version: payload.version,
       activePlayer: payload.nextPlayer,
-      gameState: (payload as any).patch || payload,
+      gameState: (payload as any).patch || useGameStore.getState().gameState,
     });
   });
 
@@ -124,6 +130,7 @@ export function initEventRouter() {
     useGameStore.getState().applyRPSCommit(payload);
     useRoomStore.getState().updateRoomFromEvent({
       version: payload.version,
+      gameState: useGameStore.getState().gameState,
     });
   });
 
@@ -131,7 +138,7 @@ export function initEventRouter() {
     useGameStore.getState().applyRPSRound(payload);
     useRoomStore.getState().updateRoomFromEvent({
       version: payload.version,
-      gameState: (payload as any).patch || payload,
+      gameState: (payload as any).patch || useGameStore.getState().gameState,
     });
   });
 
@@ -143,6 +150,23 @@ export function initEventRouter() {
       version: payload.version,
     });
     useConnectionStore.getState().clearOpponentStatus();
+    useConnectionStore.getState().clearError();
+  });
+
+  multiplayerService.on<{ roomCode: string; winner: PlayerRole | 'draw' | null; settlementStatus?: 'failed'; version: number }>('SETTLEMENT_PENDING', (payload) => {
+    useRoomStore.getState().updateRoomFromEvent({
+      status: 'gameover',
+      winner: payload.winner,
+      settlementStatus: payload.settlementStatus,
+      version: payload.version,
+    });
+    if (payload.settlementStatus === 'failed') {
+      useConnectionStore.getState().setError('Payout confirmation encountered a delay. Retrying...');
+    }
+  });
+
+  multiplayerService.on<RematchFailedPayload>('REMATCH_FAILED', (payload) => {
+    useConnectionStore.getState().setError(payload.reason || 'Rematch failed. Please try again.');
   });
 
   // Connection events
@@ -170,8 +194,12 @@ export function initEventRouter() {
 
   // Error events
   multiplayerService.on<{ message?: string }>('ERROR', (payload) => {
-    useConnectionStore.getState().setError(payload.message || 'Multiplayer action failed');
+    useConnectionStore.getState().setError(payload.message || 'Something went wrong. Please try again.');
   });
+
+  // Register every handler before opening the socket so an immediately
+  // completing handshake cannot race the event router.
+  multiplayerService.connect();
 }
 
 // Actions
@@ -179,8 +207,9 @@ export function initEventRouter() {
 function checkAuthAndConnection(): boolean {
   const isAuth = !!useAuthStore.getState().user;
   const isConnected = useConnectionStore.getState().connectionState === 'CONNECTED';
-  if (!isAuth || !isConnected) {
-    useConnectionStore.getState().setError('Reconnect and wait for account authentication.');
+  const isTransportAuthenticated = multiplayerService.isAuthenticated?.() ?? isConnected;
+  if (!isAuth || !isConnected || !isTransportAuthenticated) {
+    useConnectionStore.getState().setError('Please wait, connecting...');
     return false;
   }
   return true;
@@ -188,7 +217,7 @@ function checkAuthAndConnection(): boolean {
 
 export function authenticate(telegramId: number, playerName: string, avatarUrl?: string, initData?: string) {
   setMyTelegramId(telegramId);
-  multiplayerService.send('AUTH', {
+  multiplayerService.authenticate({
     telegramId,
     playerName,
     avatarUrl,
@@ -253,6 +282,11 @@ export function sendRematch(roomCode: string) {
 export function submitDeposit(payload: any) {
   if (!checkAuthAndConnection()) return;
   multiplayerService.send('SUBMIT_DEPOSIT', payload);
+}
+
+export function submitWithdrawal(payload: { walletAddress: string; amountNano: string }) {
+  if (!checkAuthAndConnection()) return;
+  multiplayerService.send('SUBMIT_WITHDRAWAL', payload);
 }
 
 export function fetchRooms() {

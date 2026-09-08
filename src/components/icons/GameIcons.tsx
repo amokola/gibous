@@ -5,7 +5,7 @@ interface IconProps {
   className?: string;
 }
 
-// 1. Premium Handcrafted Snake Icon (Detailed Coiled Viper with Scales, Fangs, Tongue)
+// 1. Bold, readable snake mark for compact game cards.
 export const SnakeIcon: React.FC<IconProps> = ({ size = 36, className = '' }) => (
   <svg
     width={size}
@@ -13,211 +13,22 @@ export const SnakeIcon: React.FC<IconProps> = ({ size = 36, className = '' }) =>
     viewBox="0 0 64 64"
     fill="none"
     xmlns="http://www.w3.org/2000/svg"
-    className={`inline-block select-none filter drop-shadow-[0_2px_4px_rgba(0,0,0,0.4)] ${className}`}
+    aria-hidden="true"
+    className={`inline-block select-none ${className}`}
   >
-    <defs>
-      <linearGradient id="snakeBodyGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-        <stop offset="0%" stopColor="#4ade80" />
-        <stop offset="40%" stopColor="#22c55e" />
-        <stop offset="100%" stopColor="#15803d" />
-      </linearGradient>
-      <linearGradient id="snakeBellyGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-        <stop offset="0%" stopColor="#fef08a" />
-        <stop offset="100%" stopColor="#ca8a04" />
-      </linearGradient>
-      <linearGradient id="snakeHeadGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-        <stop offset="0%" stopColor="#86efac" />
-        <stop offset="60%" stopColor="#22c55e" />
-        <stop offset="100%" stopColor="#166534" />
-      </linearGradient>
-    </defs>
-
-    {/* Drop Shadow Under Belly */}
-    <path
-      d="M14 50 C10 40, 22 34, 32 34 C44 34, 52 26, 48 16 C44 8, 34 6, 26 12"
-      stroke="#000000"
-      strokeWidth="12"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-
-    {/* Main Scaled Body */}
-    <path
-      d="M14 50 C10 40, 22 34, 32 34 C44 34, 52 26, 48 16 C44 8, 34 6, 26 12"
-      stroke="url(#snakeBodyGrad)"
-      strokeWidth="8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-
-    {/* Diamond Scale Ridge Details */}
-    <path
-      d="M15 48 C12 40, 22 35, 31 35 C42 35, 49 27, 46 18 C43 11, 35 9, 29 13"
-      stroke="#bbf7d0"
-      strokeWidth="2.5"
-      strokeLinecap="round"
-      strokeDasharray="2 4"
-    />
-
-    {/* Rattle Tail End Rings */}
-    <circle cx="13" cy="50" r="3" fill="#ca8a04" stroke="#000000" strokeWidth="1.5" />
-    <circle cx="11" cy="53" r="2.2" fill="#eab308" stroke="#000000" strokeWidth="1.2" />
-
-    {/* Viper Head */}
-    <path
-      d="M26 12 C24 8, 16 7, 14 12 C12 17, 18 20, 24 19 C28 18, 28 15, 26 12 Z"
-      fill="url(#snakeHeadGrad)"
-      stroke="#000000"
-      strokeWidth="2"
-      strokeLinejoin="round"
-    />
-
-    {/* Glowing Eye */}
-    <circle cx="21" cy="11" r="2.5" fill="#facc15" stroke="#000000" strokeWidth="1" />
-    <ellipse cx="21" cy="11" rx="0.8" ry="1.8" fill="#000000" />
-    <circle cx="20.4" cy="10.4" r="0.6" fill="#ffffff" />
-
-    {/* Nostril */}
-    <circle cx="15.5" cy="13.5" r="0.8" fill="#0f291e" />
-
-    {/* Forked Crimson Tongue */}
-    <path
-      d="M14 15 L7 17 M7 17 L4 14 M7 17 L4 20"
-      stroke="#ef4444"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
+    <path d="M12 48C8 38 18 31 29 34C41 37 52 29 49 18C47 10 39 7 31 11" stroke="#000" strokeWidth="14" strokeLinecap="round" />
+    <path d="M12 48C8 38 18 31 29 34C41 37 52 29 49 18C47 10 39 7 31 11" stroke="#22c55e" strokeWidth="9" strokeLinecap="round" />
+    <path d="M15 45C14 40 20 36 28 37C40 39 49 31 47 20" stroke="#86efac" strokeWidth="2.5" strokeLinecap="round" opacity="0.9" />
+    <path d="M31 11C29 6 21 5 18 10C15 15 19 20 25 20C30 20 33 16 31 11Z" fill="#4ade80" stroke="#000" strokeWidth="2.5" />
+    <circle cx="24" cy="11" r="2.4" fill="#facc15" stroke="#000" strokeWidth="1.2" />
+    <circle cx="24" cy="11" r="0.8" fill="#000" />
+    <path d="M19 15L11 18M11 18L7 15M11 18L7 21" stroke="#ef4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
   </svg>
 );
 
-// 2. Premium 3D Woodcraft Ladder Icon (Realistic Wood Grain, Rungs, Cast Metal Bolts)
-export const LadderIcon: React.FC<IconProps> = ({ size = 36, className = '' }) => (
-  <svg
-    width={size}
-    height={size}
-    viewBox="0 0 64 64"
-    fill="none"
-    xmlns="http://www.w3.org/2000/svg"
-    className={`inline-block select-none filter drop-shadow-[0_2px_4px_rgba(0,0,0,0.4)] ${className}`}
-  >
-    <defs>
-      <linearGradient id="ladderPoleGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-        <stop offset="0%" stopColor="#f59e0b" />
-        <stop offset="50%" stopColor="#d97706" />
-        <stop offset="100%" stopColor="#92400e" />
-      </linearGradient>
-      <linearGradient id="ladderRungGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-        <stop offset="0%" stopColor="#fde68a" />
-        <stop offset="40%" stopColor="#fbbf24" />
-        <stop offset="100%" stopColor="#b45309" />
-      </linearGradient>
-    </defs>
 
-    {/* Left Heavy Wooden Beam */}
-    <line x1="16" y1="58" x2="24" y2="6" stroke="#000000" strokeWidth="8" strokeLinecap="round" />
-    <line x1="16" y1="58" x2="24" y2="6" stroke="url(#ladderPoleGrad)" strokeWidth="5" strokeLinecap="round" />
-    <line x1="15.2" y1="58" x2="23.2" y2="6" stroke="#fef3c7" strokeWidth="1" strokeLinecap="round" opacity="0.6" />
 
-    {/* Right Heavy Wooden Beam */}
-    <line x1="40" y1="58" x2="48" y2="6" stroke="#000000" strokeWidth="8" strokeLinecap="round" />
-    <line x1="40" y1="58" x2="48" y2="6" stroke="url(#ladderPoleGrad)" strokeWidth="5" strokeLinecap="round" />
-    <line x1="39.2" y1="58" x2="47.2" y2="6" stroke="#fef3c7" strokeWidth="1" strokeLinecap="round" opacity="0.6" />
-
-    {/* Wooden Rungs with Cast Metal Bolts */}
-    {[16, 26, 36, 46].map((y, idx) => {
-      const x1 = 18 + idx * 1.8;
-      const x2 = 42 + idx * 1.8;
-      return (
-        <g key={y}>
-          {/* Rung Shadow */}
-          <line x1={x1} y1={y + 1} x2={x2} y2={y + 1} stroke="#000000" strokeWidth="6" strokeLinecap="round" />
-          {/* Rung Wood Body */}
-          <line x1={x1} y1={y} x2={x2} y2={y} stroke="url(#ladderRungGrad)" strokeWidth="4.5" strokeLinecap="round" />
-          {/* Top Light Glint */}
-          <line x1={x1 + 1} y1={y - 1} x2={x2 - 1} y2={y - 1} stroke="#ffffff" strokeWidth="1" strokeLinecap="round" opacity="0.7" />
-          {/* Metal Bolt Rivets */}
-          <circle cx={x1 + 1} cy={y} r="1.3" fill="#1e293b" stroke="#000000" strokeWidth="0.8" />
-          <circle cx={x2 - 1} cy={y} r="1.3" fill="#1e293b" stroke="#000000" strokeWidth="0.8" />
-        </g>
-      );
-    })}
-  </svg>
-);
-
-// 3. Premium Isometric 3D Dice Icon (Beveled Rounded Edges, Recessed Pips, Solid Shadow)
-export const DiceIcon: React.FC<IconProps> = ({ size = 36, className = '' }) => (
-  <svg
-    width={size}
-    height={size}
-    viewBox="0 0 64 64"
-    fill="none"
-    xmlns="http://www.w3.org/2000/svg"
-    className={`inline-block select-none filter drop-shadow-[0_2px_4px_rgba(0,0,0,0.4)] ${className}`}
-  >
-    <defs>
-      <linearGradient id="diceTopFace" x1="0%" y1="0%" x2="100%" y2="100%">
-        <stop offset="0%" stopColor="#ffffff" />
-        <stop offset="100%" stopColor="#f1f5f9" />
-      </linearGradient>
-      <linearGradient id="diceLeftFace" x1="0%" y1="0%" x2="100%" y2="100%">
-        <stop offset="0%" stopColor="#e2e8f0" />
-        <stop offset="100%" stopColor="#cbd5e1" />
-      </linearGradient>
-      <linearGradient id="diceRightFace" x1="0%" y1="0%" x2="100%" y2="100%">
-        <stop offset="0%" stopColor="#94a3b8" />
-        <stop offset="100%" stopColor="#64748b" />
-      </linearGradient>
-    </defs>
-
-    {/* Ground Solid Hard Shadow */}
-    <polygon points="10,48 32,60 54,48 32,38" fill="#000000" opacity="0.3" />
-
-    {/* Top Face (Showing 3 Pips) */}
-    <path
-      d="M32 8 L54 20 L32 32 L10 20 Z"
-      fill="url(#diceTopFace)"
-      stroke="#000000"
-      strokeWidth="3"
-      strokeLinejoin="round"
-    />
-
-    {/* Left Face (Showing 2 Pips) */}
-    <path
-      d="M10 20 L32 32 L32 54 L10 42 Z"
-      fill="url(#diceLeftFace)"
-      stroke="#000000"
-      strokeWidth="3"
-      strokeLinejoin="round"
-    />
-
-    {/* Right Face (Showing 4 Pips) */}
-    <path
-      d="M32 32 L54 20 L54 42 L32 54 Z"
-      fill="url(#diceRightFace)"
-      stroke="#000000"
-      strokeWidth="3"
-      strokeLinejoin="round"
-    />
-
-    {/* Top Face Inset Pips */}
-    <circle cx="32" cy="20" r="2.8" fill="#0f172a" />
-    <circle cx="22" cy="15" r="2.4" fill="#0f172a" />
-    <circle cx="42" cy="25" r="2.4" fill="#0f172a" />
-
-    {/* Left Face Inset Pips */}
-    <circle cx="18" cy="29" r="2.4" fill="#0f172a" />
-    <circle cx="24" cy="45" r="2.4" fill="#0f172a" />
-
-    {/* Right Face Inset Pips */}
-    <circle cx="40" cy="35" r="2.4" fill="#0f172a" />
-    <circle cx="47" cy="30" r="2.4" fill="#0f172a" />
-    <circle cx="40" cy="47" r="2.4" fill="#0f172a" />
-    <circle cx="47" cy="42" r="2.4" fill="#0f172a" />
-  </svg>
-);
-
-// 4. Premium Connect 4 Chassis Icon (Tactile Acrylic Discs & Dropping Alignment)
+// 4. Clear Connect 4 board mark with an unmistakable winning line.
 export const Connect4Icon: React.FC<IconProps> = ({ size = 36, className = '' }) => (
   <svg
     width={size}
@@ -225,62 +36,20 @@ export const Connect4Icon: React.FC<IconProps> = ({ size = 36, className = '' })
     viewBox="0 0 64 64"
     fill="none"
     xmlns="http://www.w3.org/2000/svg"
-    className={`inline-block select-none filter drop-shadow-[0_2px_4px_rgba(0,0,0,0.4)] ${className}`}
+    aria-hidden="true"
+    className={`inline-block select-none ${className}`}
   >
-    <defs>
-      <linearGradient id="c4GridGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-        <stop offset="0%" stopColor="#1e3a8a" />
-        <stop offset="100%" stopColor="#0c1e30" />
-      </linearGradient>
-      <linearGradient id="discGreenGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-        <stop offset="0%" stopColor="#4ade80" />
-        <stop offset="100%" stopColor="#15803d" />
-      </linearGradient>
-      <linearGradient id="discBlueGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-        <stop offset="0%" stopColor="#60a5fa" />
-        <stop offset="100%" stopColor="#1d4ed8" />
-      </linearGradient>
-    </defs>
-
-    {/* Chassis Shadow */}
-    <rect x="6" y="14" width="52" height="40" rx="8" fill="#000000" />
-
-    {/* Blue Chassis Body */}
-    <rect
-      x="6"
-      y="12"
-      width="52"
-      height="40"
-      rx="8"
-      fill="url(#c4GridGrad)"
-      stroke="#000000"
-      strokeWidth="3"
-    />
-
-    {/* 4 Connected Green Discs */}
-    <g>
-      <circle cx="16" cy="22" r="5" fill="url(#discGreenGrad)" stroke="#000000" strokeWidth="2" />
-      <circle cx="27" cy="29" r="5" fill="url(#discGreenGrad)" stroke="#000000" strokeWidth="2" />
-      <circle cx="37" cy="36" r="5" fill="url(#discGreenGrad)" stroke="#000000" strokeWidth="2" />
-      <circle cx="48" cy="43" r="5" fill="url(#discGreenGrad)" stroke="#000000" strokeWidth="2" />
-
-      {/* Gloss Highlight on Green Discs */}
-      <path d="M14 19 Q16 17 18 19" stroke="#ffffff" strokeWidth="1.2" strokeLinecap="round" />
-      <path d="M25 26 Q27 24 29 26" stroke="#ffffff" strokeWidth="1.2" strokeLinecap="round" />
-      <path d="M35 33 Q37 31 39 33" stroke="#ffffff" strokeWidth="1.2" strokeLinecap="round" />
-      <path d="M46 40 Q48 38 50 40" stroke="#ffffff" strokeWidth="1.2" strokeLinecap="round" />
-
-      {/* Golden Connect Laser Trace */}
-      <line x1="16" y1="22" x2="48" y2="43" stroke="#fde047" strokeWidth="2.5" strokeDasharray="3 2" strokeLinecap="round" />
+    <rect x="7" y="9" width="50" height="46" rx="5" fill="#1e3a8a" stroke="#000" strokeWidth="3" />
+    <path d="M13 55L9 60M51 55L55 60" stroke="#000" strokeWidth="4" strokeLinecap="round" />
+    <g fill="#0f172a" stroke="#000" strokeWidth="1.5">
+      <circle cx="17" cy="19" r="4.5" /><circle cx="29" cy="19" r="4.5" /><circle cx="41" cy="19" r="4.5" /><circle cx="49" cy="19" r="4.5" />
+      <circle cx="17" cy="31" r="4.5" /><circle cx="29" cy="31" r="4.5" /><circle cx="41" cy="31" r="4.5" /><circle cx="49" cy="31" r="4.5" />
+      <circle cx="17" cy="43" r="4.5" /><circle cx="29" cy="43" r="4.5" /><circle cx="41" cy="43" r="4.5" /><circle cx="49" cy="43" r="4.5" />
     </g>
-
-    {/* Opponent Blue Discs in other slots */}
-    <circle cx="37" cy="22" r="5" fill="url(#discBlueGrad)" stroke="#000000" strokeWidth="2" />
-    <circle cx="16" cy="43" r="5" fill="url(#discBlueGrad)" stroke="#000000" strokeWidth="2" />
-    <circle cx="27" cy="43" r="5" fill="url(#discBlueGrad)" stroke="#000000" strokeWidth="2" />
-
-    {/* Stand Feet */}
-    <path d="M10 52 L6 58 M54 52 L58 58" stroke="#000000" strokeWidth="4" strokeLinecap="round" />
+    <path d="M17 43L29 31L41 19" stroke="#facc15" strokeWidth="3" strokeLinecap="round" />
+    <circle cx="17" cy="43" r="4.5" fill="#4ade80" stroke="#000" strokeWidth="1.5" />
+    <circle cx="29" cy="31" r="4.5" fill="#4ade80" stroke="#000" strokeWidth="1.5" />
+    <circle cx="41" cy="19" r="4.5" fill="#4ade80" stroke="#000" strokeWidth="1.5" />
   </svg>
 );
 
@@ -385,7 +154,7 @@ export const PaperIcon: React.FC<IconProps> = ({ size = 36, className = '' }) =>
   </svg>
 );
 
-// 7. Premium Chrome Scissors / Laser Shears Icon (Sharp Beveled Steel & Ergonomic Grip)
+// 7. Bold scissors mark with clean blades and high-contrast handles.
 export const ScissorsIcon: React.FC<IconProps> = ({ size = 36, className = '' }) => (
   <svg
     width={size}
@@ -393,51 +162,17 @@ export const ScissorsIcon: React.FC<IconProps> = ({ size = 36, className = '' })
     viewBox="0 0 64 64"
     fill="none"
     xmlns="http://www.w3.org/2000/svg"
-    className={`inline-block select-none filter drop-shadow-[0_2px_4px_rgba(0,0,0,0.4)] ${className}`}
+    aria-hidden="true"
+    className={`inline-block select-none ${className}`}
   >
-    <defs>
-      <linearGradient id="bladeGrad1" x1="0%" y1="0%" x2="100%" y2="100%">
-        <stop offset="0%" stopColor="#ffffff" />
-        <stop offset="60%" stopColor="#e2e8f0" />
-        <stop offset="100%" stopColor="#94a3b8" />
-      </linearGradient>
-      <linearGradient id="handleGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-        <stop offset="0%" stopColor="#4ade80" />
-        <stop offset="100%" stopColor="#15803d" />
-      </linearGradient>
-    </defs>
-
-    {/* Left Grip Handle */}
-    <circle cx="18" cy="48" r="8" fill="url(#handleGrad)" stroke="#000000" strokeWidth="3" />
-    <circle cx="18" cy="48" r="3.8" fill="#0e141b" stroke="#000000" strokeWidth="2" />
-
-    {/* Right Grip Handle */}
-    <circle cx="46" cy="48" r="8" fill="url(#handleGrad)" stroke="#000000" strokeWidth="3" />
-    <circle cx="46" cy="48" r="3.8" fill="#0e141b" stroke="#000000" strokeWidth="2" />
-
-    {/* Left Blade (Reaches to Top Right) */}
-    <path
-      d="M24 42 L32 32 L52 10 C52 10, 52 18, 38 34 Z"
-      fill="url(#bladeGrad1)"
-      stroke="#000000"
-      strokeWidth="2.5"
-      strokeLinejoin="round"
-    />
-    <line x1="32" y1="32" x2="51" y2="11" stroke="#ffffff" strokeWidth="1.5" strokeLinecap="round" />
-
-    {/* Right Blade (Reaches to Top Left) */}
-    <path
-      d="M40 42 L32 32 L12 10 C12 10, 12 18, 26 34 Z"
-      fill="url(#bladeGrad1)"
-      stroke="#000000"
-      strokeWidth="2.5"
-      strokeLinejoin="round"
-    />
-    <line x1="32" y1="32" x2="13" y2="11" stroke="#ffffff" strokeWidth="1.5" strokeLinecap="round" />
-
-    {/* Brass Center Pivot Bolt */}
-    <circle cx="32" cy="32" r="3.5" fill="#facc15" stroke="#000000" strokeWidth="2" />
-    <circle cx="32" cy="32" r="1.2" fill="#000000" />
+    <path d="M26 38L10 10L34 32L26 38Z" fill="#e2e8f0" stroke="#000" strokeWidth="2.5" strokeLinejoin="round" />
+    <path d="M38 38L54 10L30 32L38 38Z" fill="#cbd5e1" stroke="#000" strokeWidth="2.5" strokeLinejoin="round" />
+    <path d="M13 13L29 32M51 13L35 32" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" opacity="0.9" />
+    <circle cx="18" cy="48" r="8" fill="#4ade80" stroke="#000" strokeWidth="3" />
+    <circle cx="46" cy="48" r="8" fill="#4ade80" stroke="#000" strokeWidth="3" />
+    <circle cx="18" cy="48" r="3.5" fill="#fbfaf7" stroke="#000" strokeWidth="2" />
+    <circle cx="46" cy="48" r="3.5" fill="#fbfaf7" stroke="#000" strokeWidth="2" />
+    <circle cx="32" cy="32" r="3.5" fill="#facc15" stroke="#000" strokeWidth="2" />
   </svg>
 );
 
@@ -674,46 +409,4 @@ export const CrownRankIcon: React.FC<IconProps> = ({ size = 36, className = '' }
     <circle cx="44" cy="47" r="2" fill="#22c55e" stroke="#000000" strokeWidth="1" />
   </svg>
 );
-
-// 13. Premium Scalable Official GRAM Logo Vector
-export const GramVectorLogo: React.FC<IconProps> = ({ size = 36, className = '' }) => (
-  <svg
-    width={size}
-    height={size}
-    viewBox="0 0 64 64"
-    fill="none"
-    xmlns="http://www.w3.org/2000/svg"
-    className={`inline-block select-none filter drop-shadow-[0_2px_4px_rgba(0,0,0,0.4)] ${className}`}
-  >
-    {/* Blue Squircle Base with Solid Outline */}
-    <rect
-      x="4"
-      y="4"
-      width="56"
-      height="56"
-      rx="16"
-      fill="#2494f8"
-      stroke="#000000"
-      strokeWidth="3.5"
-    />
-
-    {/* Center Cut Diamond with Star Cutout */}
-    <path
-      d="M32 12 L48 32 L32 52 L16 32 Z"
-      fill="#ffffff"
-      stroke="#000000"
-      strokeWidth="2"
-      strokeLinejoin="round"
-    />
-
-    {/* Sparkle 4-point Star Center */}
-    <path
-      d="M32 20 C32 26, 32 26, 38 32 C32 32, 32 38, 32 44 C32 38, 32 32, 26 32 C32 32, 32 26, 32 20 Z"
-      fill="#2494f8"
-    />
-  </svg>
-);
-
-// 14. Gibous Lunar Brand Suite Marks
-export { GibousMoonLogo, GibousToken, GibousAppIcon } from './GibousLogo';
 

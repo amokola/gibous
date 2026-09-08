@@ -1,7 +1,11 @@
 import React from 'react';
 import { SNAKES, getTileCenterPercent } from '../../config/boardConfig';
 
-export const SnakeOverlay: React.FC = () => {
+interface SnakeOverlayProps {
+  activeSnakeId?: string | null;
+}
+
+export const SnakeOverlay: React.FC<SnakeOverlayProps> = ({ activeSnakeId = null }) => {
   return (
     <svg 
       className="absolute inset-0 w-full h-full pointer-events-none z-10" 
@@ -29,9 +33,15 @@ export const SnakeOverlay: React.FC = () => {
         <filter id="snakeShadow" x="-20%" y="-20%" width="140%" height="140%">
           <feDropShadow dx="0.5" dy="1.2" stdDeviation="0.8" floodColor="#000000" floodOpacity="0.7" />
         </filter>
+
+        {/* Active Snake Glow Filter */}
+        <filter id="activeSnakeGlow" x="-30%" y="-30%" width="160%" height="160%">
+          <feDropShadow dx="0" dy="0" stdDeviation="2.0" floodColor="#ef4444" floodOpacity="0.9" />
+        </filter>
       </defs>
 
       {SNAKES.map((snake) => {
+        const isActive = activeSnakeId === snake.id;
         const headPos = getTileCenterPercent(snake.head);
         const tailPos = getTileCenterPercent(snake.tail);
 
@@ -59,7 +69,7 @@ export const SnakeOverlay: React.FC = () => {
         const headAngle = Math.atan2(cp1y - headPos.y, cp1x - headPos.x) * (180 / Math.PI);
 
         return (
-          <g key={snake.id} filter="url(#snakeShadow)">
+          <g key={snake.id} filter={isActive ? 'url(#activeSnakeGlow)' : 'url(#snakeShadow)'} className={isActive ? 'animate-pulse' : ''}>
             {/* Outer body outline/stroke */}
             <path
               d={pathD}

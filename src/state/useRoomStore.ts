@@ -52,11 +52,12 @@ export const useRoomStore = create<RoomState>((set, get) => ({
   updateRoomFromEvent: (patch) => {
     const state = get();
     const patchVersion = patch.version ?? -1;
-    
-    // Only apply if version is newer or equal
-    if (patchVersion >= state.roomVersion) {
+
+    // Only a newer authoritative event may mutate an existing room. Equal
+    // versions are duplicates and must not be allowed to reorder state.
+    if (state.currentRoom && patchVersion > state.roomVersion) {
       set({
-        currentRoom: state.currentRoom ? { ...state.currentRoom, ...patch } : (patch as RoomStatePayload),
+        currentRoom: { ...state.currentRoom, ...patch },
         roomVersion: patchVersion
       });
     }

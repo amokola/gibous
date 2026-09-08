@@ -14,7 +14,6 @@ export interface PotCalculationResult {
   stakePerPlayer: number;
   totalPot: number;
   arenaFee: number;
-  devRake?: number; // legacy alias
   winnerPayout: number;
   loserPayout: number;
 }
@@ -23,7 +22,6 @@ export interface DrawCalculationResult {
   stakePerPlayer: number;
   totalPot: number;
   arenaFee: number;
-  devAdminFee?: number; // legacy alias
   p1Refund: number;
   p2Refund: number;
 }
@@ -40,7 +38,6 @@ export class EconomyEngine {
       stakePerPlayer: breakdown.stakePerPlayer,
       totalPot: breakdown.totalPot,
       arenaFee: breakdown.arenaFee,
-      devRake: breakdown.arenaFee,
       winnerPayout: breakdown.winnerPayout,
       loserPayout: breakdown.loserPayout,
     };
@@ -62,7 +59,6 @@ export class EconomyEngine {
       stakePerPlayer,
       totalPot,
       arenaFee,
-      devAdminFee: arenaFee,
       p1Refund,
       p2Refund,
     };

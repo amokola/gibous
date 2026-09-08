@@ -18,8 +18,10 @@ const COLS = 7;
 export class ServerConnect4Engine implements IServerGameEngine {
   readonly gameType: GameType = 'connect4';
   private state: Connect4State;
+  private readonly clock: () => number;
 
-  constructor() {
+  constructor(clock: () => number = () => Date.now()) {
+    this.clock = clock;
     this.state = this.createInitialState();
   }
 
@@ -30,7 +32,7 @@ export class ServerConnect4Engine implements IServerGameEngine {
       winner: null,
       winningCoords: null,
       lastMove: null,
-      turnTimeout: Date.now() + 15000,
+      turnTimeout: this.clock() + 15000,
     };
   }
 
@@ -42,6 +44,31 @@ export class ServerConnect4Engine implements IServerGameEngine {
       winningCoords: this.state.winningCoords ? [...this.state.winningCoords] : null,
       lastMove: this.state.lastMove ? { ...this.state.lastMove } : null,
       turnTimeout: this.state.turnTimeout,
+    };
+  }
+
+  getPersistenceState(): Record<string, unknown> {
+    return this.getState();
+  }
+
+  restorePersistenceState(state: Record<string, unknown>): void {
+    const candidate = state as Partial<Connect4State>;
+    const board = candidate.board;
+    if (
+      !Array.isArray(board) || board.length !== ROWS || board.some((row) => !Array.isArray(row) || row.length !== COLS || row.some((cell) => cell !== null && cell !== 'p1' && cell !== 'p2')) ||
+      (candidate.activePlayer !== 'p1' && candidate.activePlayer !== 'p2') ||
+      !['p1', 'p2', 'draw', null].includes(candidate.winner as any)
+    ) {
+      throw new Error('Invalid persisted Connect 4 state');
+    }
+    this.state = {
+      ...this.createInitialState(),
+      ...candidate,
+      board: board.map((row) => [...row]) as Connect4Cell[][],
+      winningCoords: candidate.winningCoords ? candidate.winningCoords.map(([r, c]) => [r, c] as [number, number]) : null,
+      lastMove: candidate.lastMove ? { ...candidate.lastMove } : null,
+      winner: candidate.winner ?? null,
+      turnTimeout: Number.isFinite(candidate.turnTimeout) ? Number(candidate.turnTimeout) : this.clock() + 15000,
     };
   }
 
@@ -143,7 +170,7 @@ export class ServerConnect4Engine implements IServerGameEngine {
           player,
           row: dropRow,
           col: column,
-          board: this.state.board,
+          board: this.state.board.map((row) => [...row]),
           nextPlayer: player,
           winner: player,
           winningCells: winningLine.map(([r, c]) => ({ row: r, col: c })),
@@ -171,7 +198,7 @@ export class ServerConnect4Engine implements IServerGameEngine {
           player,
           row: dropRow,
           col: column,
-          board: this.state.board,
+          board: this.state.board.map((row) => [...row]),
           nextPlayer: player,
           winner: 'draw',
         },
@@ -183,7 +210,7 @@ export class ServerConnect4Engine implements IServerGameEngine {
     // Switch active player
     const nextPlayer: PlayerRole = player === 'p1' ? 'p2' : 'p1';
     this.state.activePlayer = nextPlayer;
-    this.state.turnTimeout = Date.now() + 15000;
+    this.state.turnTimeout = this.clock() + 15000;
 
     return {
       success: true,
@@ -192,7 +219,7 @@ export class ServerConnect4Engine implements IServerGameEngine {
         player,
         row: dropRow,
         col: column,
-        board: this.state.board,
+        board: this.state.board.map((row) => [...row]),
         nextPlayer,
         winner: null,
       },

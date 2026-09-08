@@ -1,7 +1,5 @@
 import React, { useState } from 'react';
 import { EmoteReaction } from '../../types/game';
-import { useSoundEffects } from '../../hooks/useSoundEffects';
-import { useTelegram } from '../../hooks/useTelegram';
 import { Smile } from 'lucide-react';
 
 interface EmoteReactionOverlayProps {
@@ -13,13 +11,8 @@ const EMOTE_LIST: EmoteReaction[] = ['🔥', '😱', '😈', '👏', '🎲', '�
 export const EmoteReactionOverlay: React.FC<EmoteReactionOverlayProps> = ({ onSendEmote }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [floatingEmotes, setFloatingEmotes] = useState<{ id: number; emote: EmoteReaction; x: number }[]>([]);
-  const sounds = useSoundEffects();
-  const { haptic } = useTelegram();
 
   const handleTriggerEmote = (emote: EmoteReaction) => {
-    sounds.playEmote();
-    haptic.impact('light');
-
     const newFloating = {
       id: Date.now() + Math.random(),
       emote,
