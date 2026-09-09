@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useTonAddress, useTonWallet, useTonConnectUI } from '@tonconnect/ui-react';
 import { beginCell } from '@ton/core';
-import { ArrowUpRight, ArrowDownLeft, Check, History, Copy, ShieldCheck, Zap, Wallet, Unlink } from 'lucide-react';
+import { ArrowUpRight, ArrowDownLeft, Check, History, ShieldCheck, Zap, Wallet, Unlink, Loader2 } from 'lucide-react';
 import { GramIcon } from '../ui/GramIcon';
 import { BankVaultIcon } from '../icons/GameIcons';
 import { toNanoGram, formatGram } from '../../utils/tonUnits';
@@ -25,6 +25,16 @@ interface BankScreenProps {
     amountNano: string;
   }) => void;
   initialTransactions?: BankTransactionItem[];
+  activeDeposit?: {
+    id: string;
+    amountGram: number;
+    amountNano: string;
+    status: string;
+    createdAt: string;
+    boc?: string | null;
+    memo?: string;
+    depositAddress?: string;
+  } | null;
 }
 
 export interface BankTransactionItem {
@@ -44,6 +54,7 @@ export const BankScreen: React.FC<BankScreenProps> = ({
   onSubmitDeposit,
   onSubmitWithdrawal,
   initialTransactions = EMPTY_TRANSACTIONS,
+  activeDeposit,
 }) => {
   const [activePanel, setActivePanel] = useState<'none' | 'deposit' | 'withdraw'>('none');
   const [depositAmount, setDepositAmount] = useState<number>(0.5);
@@ -51,8 +62,14 @@ export const BankScreen: React.FC<BankScreenProps> = ({
   const [customWallet, setCustomWallet] = useState<string>('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [notification, setNotification] = useState<{ text: string; type: 'success' | 'info' | 'error' } | null>(null);
-  const [copied, setCopied] = useState(false);
   const [transactions, setTransactions] = useState<BankTransactionItem[]>(initialTransactions);
+  const [localInFlight, setLocalInFlight] = useState<{
+    intentId: string;
+    amount: number;
+    boc: string;
+    status: 'confirming' | 'credited';
+  } | null>(null);
+  const prevBalanceRef = useRef(balance);
 
   // TON Connect UI Hooks
   const userFriendlyAddress = useTonAddress();
@@ -78,6 +95,18 @@ export const BankScreen: React.FC<BankScreenProps> = ({
       setCustomWallet(userFriendlyAddress);
     }
   }, [userFriendlyAddress]);
+
+  // Track balance updates to mark in-flight deposits as credited
+  useEffect(() => {
+    if (balance > prevBalanceRef.current) {
+      if (localInFlight) {
+        setLocalInFlight((prev) => (prev ? { ...prev, status: 'credited' } : null));
+        const timer = setTimeout(() => setLocalInFlight(null), 5000);
+        return () => clearTimeout(timer);
+      }
+    }
+    prevBalanceRef.current = balance;
+  }, [balance, localInFlight]);
 
   const handleConnectWallet = () => {
     if (tonConnectUI?.openModal) {
@@ -112,12 +141,12 @@ export const BankScreen: React.FC<BankScreenProps> = ({
     }
 
     setIsProcessing(true);
+    let intent: { intentId: string; memo: string; depositAddress: string; amountNano: string; expiresAt: string } | null = null;
 
     try {
       const nanoGramAmount = toNanoGram(depositAmount);
 
       // 1. Request server-generated pre-flight deposit intent with unique memo
-      let intent: { intentId: string; memo: string; depositAddress: string; amountNano: string; expiresAt: string };
       try {
         intent = await multiplayerService.requestDepositIntent(nanoGramAmount, userFriendlyAddress);
       } catch (err: any) {
@@ -161,9 +190,21 @@ export const BankScreen: React.FC<BankScreenProps> = ({
       };
 
       // 3. Dispatch transaction through user's connected wallet
-      const result = await tonConnectUI.sendTransaction(transactionPayload);
+      let result: any;
+      try {
+        result = await tonConnectUI.sendTransaction(transactionPayload);
+      } catch (walletErr: any) {
+        // Cancel intent on server immediately to prevent phantom pending records
+        if (intent?.intentId) {
+          void multiplayerService.cancelDepositIntent(intent.intentId);
+        }
+        throw walletErr;
+      }
 
       if (!result?.boc) {
+        if (intent?.intentId) {
+          void multiplayerService.cancelDepositIntent(intent.intentId);
+        }
         throw new Error('Deposit was not signed. Please try again.');
       }
 
@@ -176,32 +217,35 @@ export const BankScreen: React.FC<BankScreenProps> = ({
         boc: result.boc,
         network: TON_NETWORK,
       });
+
       setIsProcessing(false);
-      setNotification({
-        text: `Deposit submitted! We're confirming ${depositAmount} GRAM on TON.`,
-        type: 'info',
+      setActivePanel('none');
+
+      // 5. Track live in-flight confirmation stepper
+      setLocalInFlight({
+        intentId: intent.intentId,
+        amount: depositAmount,
+        boc: result.boc,
+        status: 'confirming',
       });
 
-      setTransactions((prev) => [
-        {
-          id: `tx-${Date.now()}`,
-          type: 'deposit',
-          amount: depositAmount,
-          timestamp: 'Just now',
-          description: `Deposit (+${depositAmount} GRAM)`,
-          subtext: 'Confirming on TON...',
-          txHash: `${result.boc.slice(0, 16)}...`,
-        },
-        ...prev,
-      ]);
-
-      setActivePanel('none');
+      setNotification({
+        text: `Transaction signed! Confirming ${depositAmount} GRAM on TON...`,
+        type: 'info',
+      });
       setTimeout(() => setNotification(null), 4000);
     } catch (err: any) {
       setIsProcessing(false);
       const errorMsg = err?.message || '';
-      if (errorMsg.toLowerCase().includes('reject') || errorMsg.toLowerCase().includes('cancel') || errorMsg.toLowerCase().includes('closed')) {
+      if (
+        errorMsg.toLowerCase().includes('reject') ||
+        errorMsg.toLowerCase().includes('cancel') ||
+        errorMsg.toLowerCase().includes('closed') ||
+        errorMsg.toLowerCase().includes('user declined')
+      ) {
         setNotification({ text: 'Deposit cancelled.', type: 'info' });
+      } else if (errorMsg.toLowerCase().includes('insufficient') || errorMsg.toLowerCase().includes('balance')) {
+        setNotification({ text: 'Insufficient TON balance in wallet.', type: 'error' });
       } else {
         setNotification({ text: errorMsg || 'Deposit failed. Please try again.', type: 'error' });
       }
@@ -245,12 +289,6 @@ export const BankScreen: React.FC<BankScreenProps> = ({
     } finally {
       setIsProcessing(false);
     }
-  };
-
-  const handleCopy = (text: string) => {
-    navigator.clipboard?.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
   };
 
   const formatShortAddress = (addr: string) => {
@@ -341,6 +379,53 @@ export const BankScreen: React.FC<BankScreenProps> = ({
         >
           <Check className="w-4 h-4 stroke-[3]" />
           <span>{notification.text}</span>
+        </div>
+      )}
+
+      {/* 2b. In-Flight Deposit Stepper (Pending Blockchain Verification) */}
+      {(localInFlight || (activeDeposit && activeDeposit.status === 'pending')) && (
+        <div className="w-full bg-[#f0fdf4] border-2 border-[#166534] p-3.5 sketch-shadow rounded-none flex flex-col gap-2.5 animate-fade-in">
+          <div className="flex items-center justify-between border-b border-[#166534]/30 pb-2">
+            <div className="flex items-center gap-2">
+              <span className={`w-2.5 h-2.5 rounded-full ${localInFlight?.status === 'credited' ? 'bg-[#166534]' : 'bg-green-500 animate-pulse'}`} />
+              <span className="font-sketch text-xs font-bold uppercase tracking-wider text-[#166534]">
+                {localInFlight?.status === 'credited' ? 'Deposit Credited' : 'Deposit In Progress'}
+              </span>
+            </div>
+            <span className="font-sketch text-xs font-bold text-[#166534]">
+              +{formatGram(localInFlight?.amount ?? activeDeposit?.amountGram ?? 0)} GRAM
+            </span>
+          </div>
+
+          <div className="flex flex-col gap-2 text-xs font-sketch font-bold">
+            {/* Step 1: Signed */}
+            <div className="flex items-center gap-2 text-[#166534]">
+              <span className="w-4 h-4 rounded-full bg-[#166534] text-white flex items-center justify-center text-[10px]">✓</span>
+              <span>1. Transaction signed in wallet</span>
+            </div>
+
+            {/* Step 2: Confirming */}
+            <div className="flex items-center gap-2 text-[#166534]">
+              {localInFlight?.status === 'credited' ? (
+                <span className="w-4 h-4 rounded-full bg-[#166534] text-white flex items-center justify-center text-[10px]">✓</span>
+              ) : (
+                <Loader2 className="w-4 h-4 animate-spin text-[#166534]" />
+              )}
+              <span>
+                {localInFlight?.status === 'credited' ? '2. Confirmed on TON blockchain' : '2. Confirming on TON blockchain...'}
+              </span>
+            </div>
+
+            {/* Step 3: Credited */}
+            <div className={`flex items-center gap-2 ${localInFlight?.status === 'credited' ? 'text-[#166534]' : 'text-[#1a1a1a]/40'}`}>
+              <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] ${localInFlight?.status === 'credited' ? 'bg-[#166534] text-white' : 'border border-black/30'}`}>
+                {localInFlight?.status === 'credited' ? '✓' : '3'}
+              </span>
+              <span>
+                {localInFlight?.status === 'credited' ? '3. Vault balance credited!' : '3. Crediting vault balance'}
+              </span>
+            </div>
+          </div>
         </div>
       )}
 
@@ -490,24 +575,10 @@ export const BankScreen: React.FC<BankScreenProps> = ({
             </div>
           </div>
 
-          {/* Dedicated Vault Address */}
-          <div>
-            <span className="font-sketch text-xs font-bold text-[#1a1a1a]/70 block mb-1">
-              Deposit Address:
-            </span>
-            <div className="flex items-center justify-between p-2 bg-[#f2efe9] border-2 border-black">
-              <span className="font-mono text-xs text-[#1a1a1a] font-bold truncate max-w-[200px]">
-                {SYSTEM_DEPOSIT_ADDRESS}
-              </span>
-              <button
-                type="button"
-                onClick={() => handleCopy(SYSTEM_DEPOSIT_ADDRESS)}
-                className="px-2 py-1 bg-white hover:bg-[#fff9c4] border border-black font-sketch text-xs font-bold flex items-center gap-1"
-              >
-                {copied ? <Check className="w-3.5 h-3.5 text-green-700" /> : <Copy className="w-3.5 h-3.5" />}
-                {copied ? 'Copied' : 'Copy'}
-              </button>
-            </div>
+          {/* Direct Instant TON Connect notice */}
+          <div className="p-2.5 bg-[#f0fdf4] border border-[#166534]/30 font-sketch text-[11px] text-[#166534] flex items-center gap-1.5">
+            <Zap className="w-3.5 h-3.5 shrink-0" />
+            <span>Funds are transferred securely through your connected TON wallet.</span>
           </div>
 
           {/* On-Chain Transaction CTA */}

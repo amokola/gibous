@@ -3,6 +3,7 @@ import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { BankScreen } from '../../../src/components/bank/BankScreen';
+import { multiplayerService } from '../../../src/services/multiplayerService';
 
 // Mock TON Connect React UI hooks
 const mockOpenModal = vi.fn();
@@ -34,6 +35,7 @@ vi.mock('../../../src/services/multiplayerService', () => ({
       amountNano: '500000000',
       expiresAt: new Date(Date.now() + 600000).toISOString(),
     }),
+    cancelDepositIntent: vi.fn().mockResolvedValue(undefined),
   },
 }));
 
@@ -149,6 +151,50 @@ describe('BankScreen Component with TON Connect & Real GRAM', () => {
 
     expect(submitDeposit).not.toHaveBeenCalled();
     expect(await screen.findByText(/cancelled/i)).toBeInTheDocument();
+    expect(multiplayerService.cancelDepositIntent).toHaveBeenCalledWith('intent_123');
+  });
+
+  it('handles wallet insufficient funds error, shows clear message and cancels intent', async () => {
+    mockAddress = 'EQD48x9_ton_player_wallet_address_12345';
+    mockWallet = { device: { appName: 'Telegram Wallet' }, account: { address: mockAddress } };
+    mockSendTransaction.mockRejectedValueOnce(new Error('Wallet reported: insufficient balance'));
+
+    const submitDeposit = vi.fn();
+    render(<BankScreen balance={2.45} onSubmitDeposit={submitDeposit} />);
+
+    // Open deposit panel
+    const depositCardBtn = screen.getByRole('button', { name: 'Deposit' });
+    fireEvent.click(depositCardBtn);
+
+    // Confirm deposit
+    const confirmBtn = screen.getByRole('button', { name: /Deposit .* GRAM/i });
+    fireEvent.click(confirmBtn);
+
+    await waitFor(() => {
+      expect(mockSendTransaction).toHaveBeenCalled();
+    });
+
+    expect(submitDeposit).not.toHaveBeenCalled();
+    expect(await screen.findByText(/Insufficient TON balance/i)).toBeInTheDocument();
+    expect(multiplayerService.cancelDepositIntent).toHaveBeenCalledWith('intent_123');
+  });
+
+  it('renders in-flight confirmation stepper when activeDeposit is present', () => {
+    const activeDeposit = {
+      id: 'active_dep_1',
+      amountGram: 2.5,
+      amountNano: '2500000000',
+      status: 'pending',
+      createdAt: new Date().toISOString(),
+      boc: 'sample_boc_abc',
+    };
+
+    render(<BankScreen balance={10.0} activeDeposit={activeDeposit} />);
+
+    expect(screen.getByText(/Deposit In Progress/i)).toBeInTheDocument();
+    expect(screen.getByText(/\+2\.50 GRAM/i)).toBeInTheDocument();
+    expect(screen.getByText(/Transaction signed in wallet/i)).toBeInTheDocument();
+    expect(screen.getByText(/Confirming on TON blockchain/i)).toBeInTheDocument();
   });
 
   it('submits withdrawal when destination and amount are valid', async () => {

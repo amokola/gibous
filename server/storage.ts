@@ -34,7 +34,7 @@ export interface PendingDepositIntent {
   memo?: string;
   boc?: string | null;
   network: 'mainnet' | 'testnet';
-  status: 'pending' | 'confirmed' | 'failed' | 'expired';
+  status: 'pending' | 'confirmed' | 'failed' | 'expired' | 'cancelled';
   expires_at?: Date;
   created_at: Date;
 }
@@ -193,32 +193,42 @@ export class StorageService {
     const user = await this.db.loadUserByTelegramId(telegramId);
     if (!user) return null;
 
-    const transactions = (await this.db.loadTransactionsForUser(user.id)).map((tx: any) => ({
-      id: String(tx.id),
-      type: tx.type,
-      amountGram: Number(tx.amount || 0),
-      status: 'confirmed' as const,
-      createdAt: new Date(tx.created_at || Date.now()).toISOString(),
-      txHash: tx.tx_hash,
-    }));
+    const transactions = (await this.db.loadTransactionsForUser(user.id))
+      .map((tx: any) => ({
+        id: String(tx.id),
+        type: tx.type,
+        amountGram: Number(tx.amount || 0),
+        status: 'confirmed' as const,
+        createdAt: new Date(tx.created_at || Date.now()).toISOString(),
+        txHash: tx.tx_hash,
+      }))
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
-    const pendingDeposits = (await this.db.loadDepositIntentsForUser(telegramId)).map((intent: PendingDepositIntent) => ({
-      id: intent.id,
-      type: 'deposit' as const,
-      amountGram: intent.amount_gram,
-      status: intent.status,
-      createdAt: new Date(intent.created_at).toISOString(),
-      walletAddress: intent.wallet_address,
-      network: intent.network,
-      boc: intent.boc,
-    }));
-
-    // Sort merged timeline chronologically descending
-    const combined = [...pendingDeposits, ...transactions].sort(
-      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    // Isolate financial ledger from ephemeral in-flight intents:
+    // Only return activeDeposit if there is an unexpired pending intent with a broadcasted BOC
+    const userIntents = (await this.db.loadDepositIntentsForUser(telegramId)) as PendingDepositIntent[];
+    const now = Date.now();
+    const activeIntent = userIntents.find(
+      (intent: PendingDepositIntent) =>
+        intent.status === 'pending' &&
+        Boolean(intent.boc) &&
+        (!intent.expires_at || new Date(intent.expires_at).getTime() > now)
     );
 
-    return { ...user, transactions: combined };
+    const activeDeposit = activeIntent
+      ? {
+          id: activeIntent.id,
+          amountGram: activeIntent.amount_gram,
+          amountNano: activeIntent.amount_nano,
+          status: activeIntent.status,
+          createdAt: new Date(activeIntent.created_at).toISOString(),
+          boc: activeIntent.boc,
+          memo: activeIntent.memo,
+          depositAddress: activeIntent.deposit_address,
+        }
+      : null;
+
+    return { ...user, transactions, activeDeposit };
   }
 
   async getDailyBragStats(telegramId: number, now = new Date()) {
@@ -264,6 +274,26 @@ export class StorageService {
       depositAddress: input.depositAddress,
       network: input.network,
     });
+  }
+
+  async cancelDepositIntent(intentId: string, telegramId: number) {
+    const user = await this.db.loadUserByTelegramId(telegramId);
+    if (!user) return { success: false as const, error: 'Account not found' };
+
+    const intent = await this.db.loadDepositIntentById(intentId);
+    if (!intent) return { success: false as const, error: 'Deposit intent not found' };
+
+    if (intent.telegram_id !== telegramId) {
+      return { success: false as const, error: 'Unauthorized' };
+    }
+
+    if (intent.status === 'pending') {
+      await this.db.updatePersistentDepositIntent(intentId, {
+        status: 'cancelled',
+      });
+    }
+
+    return { success: true as const };
   }
 
   async recordPendingDeposit(input: {

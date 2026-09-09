@@ -284,6 +284,10 @@ export function submitDeposit(payload: any) {
   multiplayerService.send('SUBMIT_DEPOSIT', payload);
 }
 
+export function cancelDepositIntent(intentId: string): Promise<void> {
+  return multiplayerService.cancelDepositIntent(intentId);
+}
+
 export function submitWithdrawal(payload: { walletAddress: string; amountNano: string }) {
   if (!checkAuthAndConnection()) return;
   multiplayerService.send('SUBMIT_WITHDRAWAL', payload);

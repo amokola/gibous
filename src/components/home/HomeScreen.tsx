@@ -174,6 +174,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
             onSubmitDeposit={onSubmitDeposit}
             onSubmitWithdrawal={onSubmitWithdrawal}
             initialTransactions={initialTransactions}
+            activeDeposit={(account as any)?.activeDeposit}
           />
         </main>
       )}

@@ -895,6 +895,33 @@ wss.on('connection', (ws: WebSocket, req) => {
           break;
         }
 
+        case 'CANCEL_DEPOSIT_INTENT': {
+          const session = sessionManager.getSession(ws);
+          if (!session) {
+            sendError(ws, 'UNAUTHORIZED', 'Please log in before cancelling a deposit intent.', requestId);
+            break;
+          }
+
+          try {
+            const result = await storage.cancelDepositIntent(message.payload.intentId, session.telegramId);
+            if (!result.success) {
+              sendError(ws, 'CANCEL_DEPOSIT_INTENT_FAILED', result.error || 'Failed to cancel deposit intent', requestId);
+              break;
+            }
+
+            console.log(`[DEPOSIT_INTENT] Cancelled intent ${message.payload.intentId} for user tg:${session.telegramId}`);
+
+            ws.send(JSON.stringify({
+              type: 'DEPOSIT_INTENT_CANCELLED',
+              requestId,
+              payload: { intentId: message.payload.intentId },
+            }));
+          } catch (err: any) {
+            sendError(ws, 'CANCEL_DEPOSIT_INTENT_FAILED', err?.message || 'Failed to cancel deposit intent', requestId);
+          }
+          break;
+        }
+
         case 'SUBMIT_DEPOSIT': {
           const session = sessionManager.getSession(ws);
           if (!session) {

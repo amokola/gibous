@@ -109,6 +109,15 @@ describe('Shared Zod Protocol Contract Tests', () => {
         },
       };
       expect(ClientMessageSchema.safeParse(submitDeposit).success).toBe(true);
+
+      const cancelIntent = {
+        type: 'CANCEL_DEPOSIT_INTENT',
+        requestId: 'req-dep-3',
+        payload: {
+          intentId: 'dep-intent-uuid-1234',
+        },
+      };
+      expect(ClientMessageSchema.safeParse(cancelIntent).success).toBe(true);
     });
   });
 
@@ -179,6 +188,17 @@ describe('Shared Zod Protocol Contract Tests', () => {
           depositAddress: 'EQD48x9_gibous_vault_address_12345',
           amountNano: '1000000000',
           expiresAt: new Date().toISOString(),
+        },
+      };
+      expect(ServerMessageSchema.safeParse(msg).success).toBe(true);
+    });
+
+    it('should validate DEPOSIT_INTENT_CANCELLED server message', () => {
+      const msg = {
+        type: 'DEPOSIT_INTENT_CANCELLED',
+        requestId: 'req-dep-cancel-1',
+        payload: {
+          intentId: 'dep-intent-uuid-1234',
         },
       };
       expect(ServerMessageSchema.safeParse(msg).success).toBe(true);

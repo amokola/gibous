@@ -19,6 +19,7 @@ export async function runMigrations(customDatabaseUrl?: string): Promise<void> {
     path.join(dbDir, 'migrations', '006_game_actions.sql'),
     path.join(dbDir, 'migrations', '007_deposit_intents_user_idx.sql'),
     path.join(dbDir, 'migrations', '008_deposit_withdrawal_memos.sql'),
+    path.join(dbDir, 'migrations', '009_allow_cancelled_deposit_intent.sql'),
   ];
 
   const schemaSql = await readFile(schemaPath, 'utf8');

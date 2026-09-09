@@ -439,6 +439,58 @@ export class MultiplayerService {
     });
   }
 
+  /**
+   * Cancel an in-flight deposit intent on the server if the user aborts or wallet rejects.
+   */
+  public cancelDepositIntent(intentId: string, timeoutMs = 5000): Promise<void> {
+    return new Promise((resolve) => {
+      if (!this.isAuthenticated() || !this.ws || this.ws.readyState !== WebSocket.OPEN) {
+        return resolve();
+      }
+
+      const requestId = this.generateRequestId();
+      let timer: any = null;
+
+      const cleanup = () => {
+        if (timer) clearTimeout(timer);
+        unsubCancelled();
+        unsubError();
+      };
+
+      const unsubCancelled = this.on('DEPOSIT_INTENT_CANCELLED', (_payload: any, msg: any) => {
+        if (msg?.requestId === requestId) {
+          cleanup();
+          resolve();
+        }
+      });
+
+      const unsubError = this.on('ERROR', (_payload: any, msg: any) => {
+        if (msg?.requestId === requestId) {
+          cleanup();
+          resolve();
+        }
+      });
+
+      timer = setTimeout(() => {
+        cleanup();
+        resolve();
+      }, timeoutMs);
+
+      try {
+        this.ws.send(
+          JSON.stringify({
+            type: 'CANCEL_DEPOSIT_INTENT',
+            requestId,
+            payload: { intentId },
+          })
+        );
+      } catch {
+        cleanup();
+        resolve();
+      }
+    });
+  }
+
   private queueMessage(message: ClientMessage) {
     // Selective Queueing: Only queue critical idempotent actions
     // Room creation/joining and deposits are intentionally not replayed after

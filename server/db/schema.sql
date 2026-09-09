@@ -161,7 +161,7 @@ CREATE TABLE IF NOT EXISTS deposit_intents (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT deposit_intents_amount_nano_positive CHECK (amount_nano > 0),
-    CONSTRAINT deposit_intents_status_valid CHECK (status IN ('pending', 'confirmed', 'failed', 'expired'))
+    CONSTRAINT deposit_intents_status_valid CHECK (status IN ('pending', 'confirmed', 'failed', 'expired', 'cancelled'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_deposit_intents_status ON deposit_intents (status, created_at);

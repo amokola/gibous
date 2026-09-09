@@ -107,6 +107,10 @@ export const JoinQueuePayloadSchema = z.object({
   avatarUrl: z.string().optional(),
 });
 
+export const CancelDepositIntentPayloadSchema = z.object({
+  intentId: z.string(),
+});
+
 // Client Message Union Schema
 export const ClientMessageSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('AUTH'), requestId: RequestIdSchema.optional(), payload: AuthPayloadSchema }),
@@ -124,6 +128,7 @@ export const ClientMessageSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('CREATE_ROOM'), requestId: RequestIdSchema.optional(), payload: CreateRoomPayloadSchema }),
   z.object({ type: z.literal('CANCEL_ROOM'), requestId: RequestIdSchema.optional(), payload: CancelRoomPayloadSchema }),
   z.object({ type: z.literal('CREATE_DEPOSIT_INTENT'), requestId: RequestIdSchema.optional(), payload: CreateDepositIntentPayloadSchema }),
+  z.object({ type: z.literal('CANCEL_DEPOSIT_INTENT'), requestId: RequestIdSchema.optional(), payload: CancelDepositIntentPayloadSchema }),
   z.object({ type: z.literal('SUBMIT_DEPOSIT'), requestId: RequestIdSchema.optional(), payload: SubmitDepositPayloadSchema }),
   z.object({ type: z.literal('SUBMIT_WITHDRAWAL'), requestId: RequestIdSchema.optional(), payload: SubmitWithdrawalPayloadSchema }),
   z.object({ type: z.literal('JOIN_QUEUE'), requestId: RequestIdSchema.optional(), payload: JoinQueuePayloadSchema }),
@@ -299,6 +304,7 @@ export const ServerMessageSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('QUEUE_JOINED'), requestId: z.string().optional(), status: z.string().optional(), payload: z.record(z.string(), z.unknown()).optional() }),
   z.object({ type: z.literal('QUEUE_CANCELLED'), requestId: z.string().optional(), payload: z.record(z.string(), z.unknown()).optional() }),
   z.object({ type: z.literal('DEPOSIT_INTENT_CREATED'), requestId: z.string().optional(), payload: DepositIntentCreatedPayloadSchema }),
+  z.object({ type: z.literal('DEPOSIT_INTENT_CANCELLED'), requestId: z.string().optional(), payload: CancelDepositIntentPayloadSchema }),
   z.object({ type: z.literal('TRANSACTION_PENDING'), requestId: z.string().optional(), payload: PendingTransactionSchema }),
   z.object({ type: z.literal('TRANSACTION_CONFIRMED'), requestId: z.string().optional(), payload: TransactionConfirmedPayloadSchema }),
   z.object({ type: z.literal('REMATCH_FAILED'), requestId: z.string().optional(), payload: RematchFailedPayloadSchema }),
