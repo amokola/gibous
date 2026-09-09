@@ -6,10 +6,9 @@ import { HeroBanner } from './HeroBanner';
 import { GameCard } from './GameCard';
 import { BottomNav } from '../layout/BottomNav';
 import { LeaderboardScreen } from '../leaderboard/LeaderboardScreen';
-import { BankScreen } from '../bank/BankScreen';
+import { BankScreen, BankTransactionItem } from '../bank/BankScreen';
 import { ProfileScreen } from '../profile/ProfileScreen';
-import { SnakeIcon, Connect4Icon, ScissorsIcon } from '../icons/GameIcons';
-import { BankTransactionItem } from '../bank/BankScreen';
+import { GameBadge } from '../ui/GameBadge';
 
 interface HomeScreenProps {
   userName: string;
@@ -117,7 +116,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
               badgeColor="bg-[#dcfce7] text-[#166534]"
               minStake={MIN_STAKE}
               bgClass="bg-white"
-              icon={<SnakeIcon size={38} />}
+              icon={<GameBadge game="snake" size="md" />}
               onPlay={onSelectAndPlayGame}
             />
 
@@ -130,7 +129,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
               badgeColor="bg-[#e0f2fe] text-[#1a365d]"
               minStake={MIN_STAKE}
               bgClass="bg-white"
-              icon={<Connect4Icon size={38} />}
+              icon={<GameBadge game="connect4" size="md" />}
               onPlay={onSelectAndPlayGame}
             />
 
@@ -143,7 +142,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
               badgeColor="bg-[#fff9c4] text-[#854d0e]"
               minStake={MIN_STAKE}
               bgClass="bg-white"
-              icon={<ScissorsIcon size={38} />}
+              icon={<GameBadge game="rps" size="md" />}
               onPlay={onSelectAndPlayGame}
             />
           </div>

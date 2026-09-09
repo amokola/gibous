@@ -37,7 +37,7 @@ export const GameCard: React.FC<GameCardProps> = ({
         {/* Left Info */}
         <div className="flex items-center gap-3.5">
           {/* Icon Box with 2px border & sharp corners */}
-          <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-none bg-[#f2efe9] border-2 border-black flex items-center justify-center sketch-shadow-xs group-hover:scale-105 transition-transform duration-150 flex-shrink-0">
+          <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-none bg-[#f2efe9] border-2 border-black flex items-center justify-center p-1 sketch-shadow-xs group-hover:scale-105 transition-transform duration-150 flex-shrink-0">
             {icon}
           </div>
 
