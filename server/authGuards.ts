@@ -21,10 +21,14 @@ export class AuthGuardError extends Error {
  */
 export function validateStake(stake: unknown): number {
   const num = typeof stake === 'number' ? stake : Number(stake);
-  if (!Number.isSafeInteger(num) || num < MIN_STAKE || num > MAX_STAKE) {
+  if (!Number.isFinite(num) || num < MIN_STAKE || num > MAX_STAKE) {
     throw new AuthGuardError('INVALID_STAKE', `Stake must be between ${MIN_STAKE} and ${MAX_STAKE} GRAM`);
   }
-  return num;
+  const fixed = Number(num.toFixed(9));
+  if (Math.abs(num - fixed) > 1e-9) {
+    throw new AuthGuardError('INVALID_STAKE', 'Stake precision cannot exceed 9 decimal places');
+  }
+  return fixed;
 }
 
 /**

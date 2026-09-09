@@ -18,7 +18,15 @@ import { StakeConfirmModal } from './StakeConfirmModal';
 import { GramIcon } from '../ui/GramIcon';
 import { Avatar } from '../ui/Avatar';
 import { MultiplayerService } from '../../services/multiplayerService';
-import { ERROR_MESSAGES, ErrorCode } from '../../../shared';
+import {
+  ERROR_MESSAGES,
+  ErrorCode,
+  MIN_STAKE,
+  MAX_STAKE,
+  STAKE_INCREMENT,
+  DEFAULT_STAKE_PRESETS,
+  calculatePotBreakdown,
+} from '../../../shared';
 
 export interface OpenRoomSummary {
   code: string;
@@ -52,7 +60,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
   selectedGame,
   onSelectGame,
   p1,
-  initialStake = 100,
+  initialStake = 0.5,
   onCreateDuel,
   onJoinDuel,
   onShare,
@@ -68,7 +76,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
   const [gameFilter, setGameFilter] = useState<'all' | GameTitle>('all');
   const [quickJoinCode, setQuickJoinCode] = useState('');
   const [showRulesDrawer, setShowRulesDrawer] = useState(false);
-  const [customStake, setCustomStake] = useState<number>(initialStake || settings?.winningAmount || 100);
+  const [customStake, setCustomStake] = useState<number>(initialStake || settings?.winningAmount || 0.5);
   const [copiedCode, setCopiedCode] = useState(false);
   const [joinError, setJoinError] = useState<string | null>(null);
   const [confirmModal, setConfirmModal] = useState<{
@@ -202,10 +210,11 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
     });
   }, [openRooms, searchQuery, gameFilter]);
 
-  const pot = customStake * 2;
-  const winnerNet = Math.floor(pot * 0.9);
-  const arenaFee = Math.floor(pot * 0.1);
-  const drawRefund = Math.floor(customStake * 0.95);
+  const breakdown = useMemo(() => calculatePotBreakdown(customStake), [customStake]);
+  const pot = breakdown.totalPot;
+  const winnerNet = breakdown.winnerPayout;
+  const arenaFee = breakdown.arenaFee;
+  const drawRefund = breakdown.drawRefundPerPlayer;
 
   return (
     <div className="w-full max-w-[420px] mx-auto h-full min-h-0 flex flex-col p-3 sm:p-4 select-none animate-fade-in pb-4 bg-[#fbfaf7] text-[#1a1a1a]">
@@ -370,9 +379,9 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                 <button
                   type="button"
                   aria-label="Decrease stake"
-                  disabled={customStake <= 10}
+                  disabled={customStake <= MIN_STAKE}
                   onClick={() => {
-                    const nextStake = Math.max(10, customStake - 10);
+                    const nextStake = Math.max(MIN_STAKE, Number((customStake - STAKE_INCREMENT).toFixed(2)));
                     setCustomStake(nextStake);
                     onChangeSettings?.({ winningAmount: nextStake });
                   }}
@@ -383,17 +392,18 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                 <div className="relative flex-1">
                 <input
                   type="number"
-                  min="10"
-                  max="10000"
+                  min={MIN_STAKE}
+                  max={MAX_STAKE}
+                  step={STAKE_INCREMENT}
                   value={customStake || ''}
                   onChange={(e) => {
-                    const val = parseInt(e.target.value, 10);
-                    const safeVal = isNaN(val) ? 0 : Math.min(10000, Math.max(0, val));
+                    const val = parseFloat(e.target.value);
+                    const safeVal = isNaN(val) ? 0 : Math.min(MAX_STAKE, Math.max(0, Number(val.toFixed(2))));
                     setCustomStake(safeVal);
                     onChangeSettings?.({ winningAmount: safeVal });
                   }}
                   className="w-full p-2 bg-[#f2efe9] border-2 border-black font-sketch text-lg font-bold text-[#1a1a1a] focus:outline-none focus:bg-white focus:ring-2 focus:ring-[#9b2c2c]"
-                  placeholder="Enter stake amount (e.g. 250)"
+                  placeholder="Enter stake amount (e.g. 0.5)"
                 />
                 <span className="absolute right-3 top-1/2 -translate-y-1/2 font-sketch text-xs font-bold text-[#1a1a1a]/60">
                   GRAM
@@ -402,9 +412,9 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                 <button
                   type="button"
                   aria-label="Increase stake"
-                  disabled={customStake >= 10000}
+                  disabled={customStake >= MAX_STAKE}
                   onClick={() => {
-                    const nextStake = Math.min(10000, customStake + 10);
+                    const nextStake = Math.min(MAX_STAKE, Number((customStake + STAKE_INCREMENT).toFixed(2)));
                     setCustomStake(nextStake);
                     onChangeSettings?.({ winningAmount: nextStake });
                   }}
@@ -416,7 +426,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
 
               {/* Quick Preset Chips */}
               <div className="grid grid-cols-5 gap-1.5">
-                {[50, 100, 250, 500, 1000].map((amt) => (
+                {DEFAULT_STAKE_PRESETS.map((amt) => (
                   <button
                     key={amt}
                     type="button"

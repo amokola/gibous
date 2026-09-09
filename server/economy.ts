@@ -48,12 +48,12 @@ export class EconomyEngine {
    * @param stakePerPlayer Play GRAM amount staked by each player (S)
    */
   static calculateDrawRefund(stakePerPlayer: number): DrawCalculationResult {
-    const totalPot = stakePerPlayer * 2;
+    const totalPot = Number((stakePerPlayer * 2).toFixed(9));
     // Each player receives 95% of their initial stake
-    const p1Refund = Math.floor(stakePerPlayer * (DRAW_REFUND_PERCENT / 100));
-    const p2Refund = Math.floor(stakePerPlayer * (DRAW_REFUND_PERCENT / 100));
+    const p1Refund = Number((stakePerPlayer * (DRAW_REFUND_PERCENT / 100)).toFixed(9));
+    const p2Refund = Number((stakePerPlayer * (DRAW_REFUND_PERCENT / 100)).toFixed(9));
     // Gibous keeps the remaining fee
-    const arenaFee = totalPot - (p1Refund + p2Refund);
+    const arenaFee = Number((totalPot - (p1Refund + p2Refund)).toFixed(9));
 
     return {
       stakePerPlayer,

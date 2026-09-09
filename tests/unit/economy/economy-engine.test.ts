@@ -27,7 +27,7 @@ describe('EconomyEngine Unit Tests', () => {
   });
 
   it('should conserve total money for any stake: winnerPayout + arenaFee === totalPot', () => {
-    const testStakes = [10, 25, 50, 100, 250, 500, 1000, 5000];
+    const testStakes = [0.5, 1, 2, 5, 10, 25, 50, 100, 250, 500, 1000, 5000];
     for (const stake of testStakes) {
       const winCalc = EconomyEngine.calculateWinPayout(stake);
       expect(winCalc.winnerPayout + winCalc.arenaFee).toBe(winCalc.totalPot);

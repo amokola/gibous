@@ -76,17 +76,17 @@ describe('LobbyScreen Component Tests', () => {
   it('should allow changing stake via preset chips', () => {
     render(<LobbyScreen {...defaultProps} />);
 
-    const preset250 = screen.getByRole('button', { name: '250' });
-    fireEvent.click(preset250);
+    const preset2 = screen.getByRole('button', { name: '2' });
+    fireEvent.click(preset2);
 
-    expect(defaultProps.onChangeSettings).toHaveBeenCalledWith({ winningAmount: 250 });
+    expect(defaultProps.onChangeSettings).toHaveBeenCalledWith({ winningAmount: 2 });
   });
 
   it('should expose minus and plus stake controls', () => {
     render(<LobbyScreen {...defaultProps} />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Decrease stake' }));
-    expect(defaultProps.onChangeSettings).toHaveBeenCalledWith({ winningAmount: 90 });
+    expect(defaultProps.onChangeSettings).toHaveBeenCalledWith({ winningAmount: 99.5 });
 
     fireEvent.click(screen.getByRole('button', { name: 'Increase stake' }));
     expect(defaultProps.onChangeSettings).toHaveBeenCalledWith({ winningAmount: 100 });

@@ -5,9 +5,10 @@
 
 export const ARENA_FEE_PERCENT = 10;
 export const DRAW_REFUND_PERCENT = 95;
-export const DEFAULT_STAKE_PRESETS = [50, 100, 250, 500, 1000] as const;
-export const MIN_STAKE = 10;
+export const DEFAULT_STAKE_PRESETS = [0.5, 1, 2, 5, 10] as const;
+export const MIN_STAKE = 0.5;
 export const MAX_STAKE = 10_000;
+export const STAKE_INCREMENT = 0.5;
 
 export interface PotBreakdown {
   stakePerPlayer: number;
@@ -23,11 +24,11 @@ export interface PotBreakdown {
  * @param stakePerPlayer Play GRAM amount staked by each player (S)
  */
 export function calculatePotBreakdown(stakePerPlayer: number): PotBreakdown {
-  const totalPot = stakePerPlayer * 2;
-  const arenaFee = Math.floor(totalPot * (ARENA_FEE_PERCENT / 100));
-  const winnerPayout = totalPot - arenaFee;
+  const totalPot = Number((stakePerPlayer * 2).toFixed(9));
+  const arenaFee = Number((totalPot * (ARENA_FEE_PERCENT / 100)).toFixed(9));
+  const winnerPayout = Number((totalPot - arenaFee).toFixed(9));
   const loserPayout = 0;
-  const drawRefundPerPlayer = Math.floor(stakePerPlayer * (DRAW_REFUND_PERCENT / 100));
+  const drawRefundPerPlayer = Number((stakePerPlayer * (DRAW_REFUND_PERCENT / 100)).toFixed(9));
 
   return {
     stakePerPlayer,

@@ -5,7 +5,7 @@
  */
 
 import crypto from 'crypto';
-import { gramsToNano, integerGramsToNano, nanoToGrams } from '../money';
+import { gramsToNano, nanoToGrams } from '../money';
 import { metrics } from '../observability';
 
 export interface QueryResult<T = any> {
@@ -442,7 +442,7 @@ export class DatabasePool {
     statePayload?: Record<string, unknown>;
   }) {
     const { code, gameType, stakeAmount, potAmount, p1TelegramId, status = 'waiting', statePayload = {} } = params;
-    const stakeNano = integerGramsToNano(stakeAmount);
+    const stakeNano = gramsToNano(stakeAmount);
 
     if (!this.usesPersistentDatabase()) {
       const user = this.getUserByTelegramId(p1TelegramId);
@@ -627,7 +627,7 @@ export class DatabasePool {
       }
 
       const stake = Number(match.stake_amount);
-      const stakeNano = integerGramsToNano(stake);
+      const stakeNano = gramsToNano(stake);
       const currentBalanceNano = BigInt(String(userRow.balance_nano ?? gramsToNano(Number(userRow.balance_gram))));
       if (currentBalanceNano < BigInt(stakeNano)) {
         return {
@@ -688,7 +688,7 @@ export class DatabasePool {
     statePayload?: Record<string, unknown>;
   }) {
     const { matchCode, nextRoundCode, p1TelegramId, p2TelegramId, stake, statePayload } = params;
-    const stakeNano = integerGramsToNano(stake);
+    const stakeNano = gramsToNano(stake);
 
     if (!this.usesPersistentDatabase()) {
       const u1 = this.getUserByTelegramId(p1TelegramId);
@@ -869,7 +869,7 @@ export class DatabasePool {
   }
 
   async debitUserBalance(telegramId: number, amount: number, matchCode?: string) {
-    const amountNano = integerGramsToNano(amount);
+    const amountNano = gramsToNano(amount);
     if (!this.usesPersistentDatabase()) {
       const user = this.getUserByTelegramId(telegramId);
       if (!user) return { success: false as const, error: 'User account not found' };
@@ -1296,7 +1296,7 @@ export class DatabasePool {
       const winner = this.normalizeUser(winnerRow);
       const loser = this.normalizeUser(loserRow);
       const winnerBalanceNano = BigInt(String(winnerRow.balance_nano ?? gramsToNano(Number(winnerRow.balance_gram))));
-      const winnerPayoutNano = BigInt(integerGramsToNano(calc.winnerPayout));
+      const winnerPayoutNano = BigInt(gramsToNano(calc.winnerPayout));
       const winnerNewBalanceNano = (winnerBalanceNano + winnerPayoutNano).toString();
       winner.balance_gram += calc.winnerPayout;
       winner.total_winnings += calc.winnerPayout - stake;
@@ -1332,13 +1332,13 @@ export class DatabasePool {
           (user_id, match_code, operation_key, type, amount_nano, fee_nano, balance_after_nano)
          VALUES ($1,$2,$3,$4,$5,$6,$7)`,
         [winner.id, matchCode, `settlement:${matchCode}:winner`, 'match_win',
-          winnerPayoutNano.toString(), integerGramsToNano(calc.arenaFee), winnerNewBalanceNano]
+          winnerPayoutNano.toString(), gramsToNano(calc.arenaFee), winnerNewBalanceNano]
       );
       await client.query(
         `INSERT INTO treasury_ledger (match_code, operation_key, type, rake_nano, volume_nano)
          VALUES ($1, $2, 'win_rake', $3, $4)
          ON CONFLICT (operation_key) DO NOTHING`,
-        [matchCode, `treasury:${matchCode}:win`, integerGramsToNano(calc.arenaFee), integerGramsToNano(calc.totalPot)]
+        [matchCode, `treasury:${matchCode}:win`, gramsToNano(calc.arenaFee), gramsToNano(calc.totalPot)]
       );
       await client.query(
         `UPDATE treasury SET
@@ -1346,7 +1346,7 @@ export class DatabasePool {
           win_rake_nano = win_rake_nano + $1,
           total_volume_nano = total_volume_nano + $2,
           updated_at = CURRENT_TIMESTAMP WHERE id = 1`,
-        [integerGramsToNano(calc.arenaFee), integerGramsToNano(calc.totalPot)]
+        [gramsToNano(calc.arenaFee), gramsToNano(calc.totalPot)]
       );
       await client.query(
         `UPDATE matches SET status = 'finished', winner_id = $1, dev_rake = $2, finished_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE code = $3`,
@@ -1467,7 +1467,7 @@ export class DatabasePool {
 
       const p1 = this.normalizeUser(p1Row);
       const p2 = this.normalizeUser(p2Row);
-      const refundNano = integerGramsToNano(calc.p1Refund);
+      const refundNano = gramsToNano(calc.p1Refund);
       const refundAmount = BigInt(refundNano);
       const players = [
         { player: p1, row: p1Row },
@@ -1496,14 +1496,14 @@ export class DatabasePool {
             (user_id, match_code, operation_key, type, amount_nano, fee_nano, balance_after_nano)
            VALUES ($1,$2,$3,$4,$5,$6,$7)`,
           [player.id, matchCode, `settlement:${matchCode}:refund:${player.telegram_id}`, 'match_draw_refund',
-            refundNano, integerGramsToNano(stake - calc.p1Refund), player.balance_nano]
+            refundNano, gramsToNano(stake - calc.p1Refund), player.balance_nano]
         );
       }
       await client.query(
         `INSERT INTO treasury_ledger (match_code, operation_key, type, rake_nano, volume_nano)
          VALUES ($1, $2, 'draw_fee', $3, $4)
          ON CONFLICT (operation_key) DO NOTHING`,
-        [matchCode, `treasury:${matchCode}:draw`, integerGramsToNano(calc.arenaFee), integerGramsToNano(calc.totalPot)]
+        [matchCode, `treasury:${matchCode}:draw`, gramsToNano(calc.arenaFee), gramsToNano(calc.totalPot)]
       );
       await client.query(
         `UPDATE treasury SET
@@ -1511,7 +1511,7 @@ export class DatabasePool {
           draw_fees_nano = draw_fees_nano + $1,
           total_volume_nano = total_volume_nano + $2,
           updated_at = CURRENT_TIMESTAMP WHERE id = 1`,
-        [integerGramsToNano(calc.arenaFee), integerGramsToNano(calc.totalPot)]
+        [gramsToNano(calc.arenaFee), gramsToNano(calc.totalPot)]
       );
       await client.query(
         `UPDATE matches SET status = 'finished', is_draw = TRUE, dev_rake = $1, finished_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE code = $2`,
@@ -1570,7 +1570,7 @@ export class DatabasePool {
                 updated_at = CURRENT_TIMESTAMP
           WHERE telegram_id = $2
         RETURNING *`,
-        [integerGramsToNano(stake), telegramId]
+        [gramsToNano(stake), telegramId]
       );
       if (updated.rowCount === 0) throw new Error('Cannot refund a missing player account');
       await client.query(
@@ -1578,7 +1578,7 @@ export class DatabasePool {
           (user_id, match_code, operation_key, type, amount_nano, fee_nano, balance_after_nano)
          VALUES ($1,$2,$3,$4,$5,$6,$7)`,
         [updated.rows[0].id, matchCode, `refund:${matchCode}:${telegramId}`, 'match_cancelled_refund',
-          integerGramsToNano(stake), '0', String(updated.rows[0].balance_nano)]
+          gramsToNano(stake), '0', String(updated.rows[0].balance_nano)]
       );
       return { success: true as const, balance: Number(updated.rows[0].balance_gram) };
     });
@@ -1624,7 +1624,7 @@ export class DatabasePool {
           'SELECT * FROM users WHERE id = ANY($1::int[]) ORDER BY id FOR UPDATE',
           [playerIds]
         );
-        const stakeNano = integerGramsToNano(Number(match.stake_amount));
+        const stakeNano = gramsToNano(Number(match.stake_amount));
 
         for (const user of users.rows) {
           const settlementCode = `${matchCode}:cancel-refund:${user.telegram_id}`;
@@ -1753,8 +1753,8 @@ export class DatabasePool {
       this.addTreasuryRake(rakeAmount, isDrawFee, volume);
       return;
     }
-    const rakeNano = integerGramsToNano(rakeAmount);
-    const volumeNano = integerGramsToNano(volume);
+    const rakeNano = gramsToNano(rakeAmount);
+    const volumeNano = gramsToNano(volume);
     await this.query(
       `UPDATE treasury SET
         total_rake_nano = total_rake_nano + $1,

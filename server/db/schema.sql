@@ -61,9 +61,9 @@ CREATE TABLE IF NOT EXISTS matches (
     id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     code VARCHAR(16) UNIQUE NOT NULL,
     game_type VARCHAR(32) NOT NULL,
-    stake_amount BIGINT NOT NULL,
-    pot_amount BIGINT NOT NULL,
-    dev_rake BIGINT NOT NULL DEFAULT 0, -- 10% arena fee on win pot, 5% fee per player on draw
+    stake_amount NUMERIC(30,9) NOT NULL,
+    pot_amount NUMERIC(30,9) NOT NULL,
+    dev_rake NUMERIC(30,9) NOT NULL DEFAULT 0, -- 10% arena fee on win pot, 5% fee per player on draw
     p1_id INTEGER REFERENCES users(id),
     p2_id INTEGER REFERENCES users(id),
     p1_telegram_id BIGINT,

@@ -462,7 +462,7 @@ export class StorageService {
     stake: number,
     matchCode: string
   ): Promise<{ success: boolean; balance?: number; error?: string }> {
-    if (!Number.isSafeInteger(stake) || stake < MIN_STAKE || stake > MAX_STAKE) {
+    if (!Number.isFinite(stake) || stake < MIN_STAKE || stake > MAX_STAKE) {
       return { success: false, error: `Stake must be between ${MIN_STAKE} and ${MAX_STAKE} GRAM` };
     }
 
@@ -486,7 +486,7 @@ export class StorageService {
     stake: number,
     matchCode: string
   ): Promise<{ success: boolean; balance?: number }> {
-    if (!Number.isSafeInteger(stake) || stake < MIN_STAKE || stake > MAX_STAKE) {
+    if (!Number.isFinite(stake) || stake < MIN_STAKE || stake > MAX_STAKE) {
       return { success: false };
     }
     return this.runSettlementOnce(`${matchCode}:cancel-refund:${telegramId}`, async () => {

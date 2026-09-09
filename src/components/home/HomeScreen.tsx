@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { GameTitle, NavTab, UserProfile } from '../../types/game';
+import { MIN_STAKE } from '../../../shared';
 import { UserHeaderBar } from './UserHeaderBar';
 import { HeroBanner } from './HeroBanner';
 import { GameCard } from './GameCard';
@@ -114,7 +115,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
               subtitle="Classic race to tile 100"
               badge="Classic"
               badgeColor="bg-[#dcfce7] text-[#166534]"
-              minStake={50}
+              minStake={MIN_STAKE}
               bgClass="bg-white"
               icon={<SnakeIcon size={38} />}
               onPlay={onSelectAndPlayGame}
@@ -127,7 +128,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
               subtitle="Drop discs. Connect four. Win the pot."
               badge="Tactical"
               badgeColor="bg-[#e0f2fe] text-[#1a365d]"
-              minStake={50}
+              minStake={MIN_STAKE}
               bgClass="bg-white"
               icon={<Connect4Icon size={38} />}
               onPlay={onSelectAndPlayGame}
@@ -140,7 +141,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
               subtitle="Fast best-of-three mind game"
               badge="Fast Duel"
               badgeColor="bg-[#fff9c4] text-[#854d0e]"
-              minStake={50}
+              minStake={MIN_STAKE}
               bgClass="bg-white"
               icon={<ScissorsIcon size={38} />}
               onPlay={onSelectAndPlayGame}

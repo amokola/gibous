@@ -259,7 +259,7 @@ export class MatchmakingQueue {
       throw new Error('INVALID_PLAYER_ID');
     }
 
-    if (!Number.isSafeInteger(player.stake) || player.stake < MIN_STAKE || player.stake > MAX_STAKE) {
+    if (!Number.isFinite(player.stake) || player.stake < MIN_STAKE || player.stake > MAX_STAKE) {
       throw new Error('INVALID_STAKE');
     }
 

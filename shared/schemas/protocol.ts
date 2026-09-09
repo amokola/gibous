@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { MIN_STAKE, MAX_STAKE } from '../constants/economics';
 
 // Base Enums & Primitives
 export const GameTypeSchema = z.enum(['snake', 'connect4', 'rps']);
@@ -69,7 +70,7 @@ export const CreateRoomPayloadSchema = z.object({
   // and makes the browser create flow independent of client timing.
   roomCode: z.string().trim().min(3).max(32).optional(),
   gameType: GameTypeSchema.optional(),
-  stake: z.number().int().min(10).max(10_000).optional(),
+  stake: z.number().min(MIN_STAKE).max(MAX_STAKE).optional(),
   telegramId: z.number().optional(),
   playerName: z.string().optional(),
   avatarUrl: z.string().optional(),
@@ -101,7 +102,7 @@ export const SubmitWithdrawalPayloadSchema = z.object({
 
 export const JoinQueuePayloadSchema = z.object({
   gameType: GameTypeSchema.optional(),
-  stake: z.number().int().min(10).max(10_000).optional(),
+  stake: z.number().min(MIN_STAKE).max(MAX_STAKE).optional(),
   telegramId: z.number().optional(),
   playerName: z.string().optional(),
   avatarUrl: z.string().optional(),

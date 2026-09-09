@@ -147,10 +147,10 @@ export class RoomManager {
     const stakeAmount = Number(persisted.stake_amount ?? persisted.stakeAmount);
     const potAmount = Number(persisted.pot_amount ?? persisted.potAmount);
     if (
-      !Number.isSafeInteger(stakeAmount) ||
+      !Number.isFinite(stakeAmount) ||
       stakeAmount < MIN_STAKE ||
       stakeAmount > MAX_STAKE ||
-      !Number.isSafeInteger(potAmount) ||
+      !Number.isFinite(potAmount) ||
       potAmount < stakeAmount
     ) {
       console.error(`Skipping persisted room ${code}: invalid economics`);
@@ -346,7 +346,7 @@ export class RoomManager {
     p1Name: string,
     avatarUrl?: string
   ): Promise<{ room?: GameRoom; error?: string }> {
-    if (!Number.isSafeInteger(stake) || stake < MIN_STAKE || stake > MAX_STAKE) {
+    if (!Number.isFinite(stake) || stake < MIN_STAKE || stake > MAX_STAKE) {
       return { error: `Stake must be between ${MIN_STAKE} and ${MAX_STAKE} GRAM` };
     }
 
@@ -528,7 +528,7 @@ export class RoomManager {
       return { error: 'You cannot join your own duel' };
     }
 
-    if (!Number.isSafeInteger(room.stakeAmount) || room.stakeAmount < MIN_STAKE || room.stakeAmount > MAX_STAKE) {
+    if (!Number.isFinite(room.stakeAmount) || room.stakeAmount < MIN_STAKE || room.stakeAmount > MAX_STAKE) {
       return { error: 'Invalid stake configuration' };
     }
 

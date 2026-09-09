@@ -13,7 +13,17 @@ describe('Shared Economics Constants & Math', () => {
   });
 
   it('should define expected stake presets', () => {
-    expect(DEFAULT_STAKE_PRESETS).toEqual([50, 100, 250, 500, 1000]);
+    expect(DEFAULT_STAKE_PRESETS).toEqual([0.5, 1, 2, 5, 10]);
+  });
+
+  it('should accurately calculate pot breakdown for minimum 0.5 stake', () => {
+    const breakdown = calculatePotBreakdown(0.5);
+    expect(breakdown.stakePerPlayer).toBe(0.5);
+    expect(breakdown.totalPot).toBe(1.0);
+    expect(breakdown.arenaFee).toBe(0.1); // 10% of 1.0
+    expect(breakdown.winnerPayout).toBe(0.9); // 1.0 - 0.1
+    expect(breakdown.loserPayout).toBe(0);
+    expect(breakdown.drawRefundPerPlayer).toBe(0.475); // 95% of 0.5
   });
 
   it('should accurately calculate pot breakdown for standard 100 stake', () => {
