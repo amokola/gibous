@@ -26,7 +26,9 @@ import {
   STAKE_INCREMENT,
   DEFAULT_STAKE_PRESETS,
   calculatePotBreakdown,
+  GAME_CONFIGS,
 } from '../../../shared';
+import { GameBadge } from '../ui/GameBadge';
 
 export interface OpenRoomSummary {
   code: string;
@@ -304,9 +306,12 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                   Waiting for opponent...
                 </span>
               </div>
-              <span className="font-sketch text-xs font-bold text-[#1a365d] bg-white px-2 py-0.5 border border-black">
-                {createdRoom.gameType.toUpperCase()}
-              </span>
+              <div className="flex items-center gap-1.5 bg-white px-2 py-0.5 border border-black">
+                <GameBadge game={createdRoom.gameType} size="xs" />
+                <span className="font-sketch text-xs font-bold text-[#1a365d]">
+                  {GAME_CONFIGS[createdRoom.gameType]?.displayName || createdRoom.gameType.toUpperCase()}
+                </span>
+              </div>
             </div>
 
             <div className="flex items-center justify-between bg-white border-2 border-black p-2">
@@ -364,6 +369,21 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                   onSelectGame(game);
                 }}
               />
+
+              {/* Featured Game Preview Banner */}
+              <div className="flex items-center gap-3 p-2 bg-[#f2efe9] border-2 border-black rounded-none sketch-shadow-xs">
+                <div className="w-12 h-12 rounded-none bg-white border border-black flex items-center justify-center p-0.5 shrink-0">
+                  <GameBadge game={selectedGame} size="md" />
+                </div>
+                <div className="flex flex-col min-w-0">
+                  <span className="font-sketch text-sm font-bold text-[#1a1a1a] truncate">
+                    {GAME_CONFIGS[selectedGame]?.displayName || selectedGame}
+                  </span>
+                  <span className="font-sketch text-[11px] text-[#1a1a1a]/70 truncate">
+                    {GAME_CONFIGS[selectedGame]?.description}
+                  </span>
+                </div>
+              </div>
             </div>
 
             {/* Step 2: Choose Stake Amount (Custom Editable + Quick Presets) */}
@@ -586,11 +606,12 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                       <Avatar name={room.hostName} photoUrl={room.hostAvatar} color="green" size="sm" />
                       <div className="flex flex-col">
                         <div className="flex items-center gap-1.5">
+                          <GameBadge game={room.gameType} size="xs" />
                           <span className="font-sketch text-xs font-bold text-[#1a1a1a]">
                             {room.hostName}
                           </span>
-                          <span className="text-[9px] font-sketch bg-[#f2efe9] px-1.5 py-0.2 border border-black/40 text-[#1a365d] uppercase font-bold">
-                            {room.gameType === 'snake' ? '🐍 Snake' : room.gameType === 'connect4' ? '🔵 Connect4' : '✂️ RPS'}
+                          <span className="text-[9px] font-sketch bg-[#f2efe9] px-1.5 py-0.5 border border-black/40 text-[#1a365d] uppercase font-bold">
+                            {GAME_CONFIGS[room.gameType]?.shortName || room.gameType}
                           </span>
                         </div>
                         <span className="font-mono text-[10px] text-[#1a1a1a]/60 mt-0.5">

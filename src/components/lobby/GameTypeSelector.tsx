@@ -1,6 +1,6 @@
 import React from 'react';
 import { GameTitle } from '../../types/game';
-import { SnakeIcon, Connect4Icon, ScissorsIcon } from '../icons/GameIcons';
+import { GameBadge } from '../ui/GameBadge';
 
 interface GameTypeSelectorProps {
   selectedGame: GameTitle;
@@ -23,7 +23,7 @@ export const GameTypeSelector: React.FC<GameTypeSelectorProps> = ({
             : 'text-[#1a1a1a]/60 border-transparent hover:text-[#1a1a1a]'
         }`}
       >
-        <SnakeIcon size={18} />
+        <GameBadge game="snake" size="xs" />
         <span className="truncate">Snakes</span>
       </button>
 
@@ -37,7 +37,7 @@ export const GameTypeSelector: React.FC<GameTypeSelectorProps> = ({
             : 'text-[#1a1a1a]/60 border-transparent hover:text-[#1a1a1a]'
         }`}
       >
-        <Connect4Icon size={18} />
+        <GameBadge game="connect4" size="xs" />
         <span className="truncate">Connect 4</span>
       </button>
 
@@ -51,7 +51,7 @@ export const GameTypeSelector: React.FC<GameTypeSelectorProps> = ({
             : 'text-[#1a1a1a]/60 border-transparent hover:text-[#1a1a1a]'
         }`}
       >
-        <ScissorsIcon size={18} />
+        <GameBadge game="rps" size="xs" />
         <span className="truncate">R.P.S.</span>
       </button>
     </div>
