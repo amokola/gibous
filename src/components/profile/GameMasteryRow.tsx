@@ -1,5 +1,5 @@
 import React from 'react';
-import { SnakeIcon, Connect4Icon, RockIcon } from '../icons/GameIcons';
+import { GameBadge } from '../ui/GameBadge';
 
 interface GameMasteryRowProps {
   snakesRecord: { wins: number; losses: number; pnl: number };
@@ -15,19 +15,19 @@ export const GameMasteryRow: React.FC<GameMasteryRowProps> = ({
   const games = [
     {
       title: 'Snakes & Ladders',
-      icon: <SnakeIcon size={24} />,
+      icon: <GameBadge game="snake" size="sm" />,
       iconBg: 'bg-[#dcfce7]',
       stats: snakesRecord,
     },
     {
       title: 'Four in a Row',
-      icon: <Connect4Icon size={24} />,
+      icon: <GameBadge game="connect4" size="sm" />,
       iconBg: 'bg-[#e0f2fe]',
       stats: connect4Record,
     },
     {
       title: 'Rock Paper Scissors',
-      icon: <RockIcon size={24} />,
+      icon: <GameBadge game="rps" size="sm" />,
       iconBg: 'bg-[#fff9c4]',
       stats: rpsRecord,
     },
@@ -53,7 +53,7 @@ export const GameMasteryRow: React.FC<GameMasteryRowProps> = ({
               className="bg-white border-2 border-black p-3 sketch-shadow-xs flex flex-col justify-between rounded-none"
             >
               <div className="flex items-center gap-2 mb-2">
-                <div className={`w-8 h-8 ${g.iconBg} border border-black flex items-center justify-center rounded-none flex-shrink-0`}>
+                <div className={`w-8 h-8 ${g.iconBg} border border-black flex items-center justify-center p-0.5 rounded-none flex-shrink-0`}>
                   {g.icon}
                 </div>
                 <div className="overflow-hidden">
