@@ -178,9 +178,10 @@ export class DatabasePool {
       const maxConns = Math.max(5, Math.min(100, Number(process.env.PGPOOL_MAX) || 25));
       this.pgPool = new Pool({
         connectionString: process.env.DATABASE_URL,
-        ssl: process.env.NODE_ENV === 'production'
-          ? { rejectUnauthorized: process.env.PGSSL_REJECT_UNAUTHORIZED !== 'false' }
-          : undefined,
+        ssl:
+          process.env.NODE_ENV === 'production'
+            ? { rejectUnauthorized: process.env.PGSSL_REJECT_UNAUTHORIZED === 'true' }
+            : undefined,
         max: maxConns,
         connectionTimeoutMillis: 10_000,
         idleTimeoutMillis: 30_000,

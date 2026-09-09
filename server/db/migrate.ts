@@ -28,7 +28,10 @@ export async function runMigrations(customDatabaseUrl?: string): Promise<void> {
   })));
   const pool = new Pool({
     connectionString: databaseUrl,
-    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: process.env.PGSSL_REJECT_UNAUTHORIZED !== 'false' } : undefined,
+    ssl:
+      process.env.NODE_ENV === 'production'
+        ? { rejectUnauthorized: process.env.PGSSL_REJECT_UNAUTHORIZED === 'true' }
+        : undefined,
     connectionTimeoutMillis: 10_000,
     idleTimeoutMillis: 30_000,
     max: 10,

@@ -586,10 +586,6 @@ server.on('upgrade', (req, socket, head) => {
   });
 });
 
-if (process.env.NODE_ENV !== 'test') {
-  depositVerificationService.start();
-}
-
 function sendError(ws: WebSocket, code: string, message: string, requestId?: string) {
   logEvent('warn', 'ws.command.rejected', { requestId, code });
   if (ws.readyState === WebSocket.OPEN) {
@@ -1346,6 +1342,10 @@ if (process.env.NODE_ENV !== 'test' && !process.env.VITEST) {
   ───────────────────────────────────────
     `);
 
+      if (process.env.NODE_ENV !== 'test') {
+        depositVerificationService.start();
+      }
+
       // Register Telegram Webhook if public app URL and bot token are available
       const botToken = process.env.TELEGRAM_BOT_TOKEN;
       const publicAppUrl = process.env.PUBLIC_APP_URL;
@@ -1369,6 +1369,6 @@ if (process.env.NODE_ENV !== 'test' && !process.env.VITEST) {
 
   void startServer().catch((error) => {
     console.error('❌ Server startup failed:', error);
-    process.exitCode = 1;
+    process.exit(1);
   });
 }
