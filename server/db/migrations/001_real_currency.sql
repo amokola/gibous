@@ -18,8 +18,7 @@ BEGIN
   ) THEN
     UPDATE transactions SET match_code = match_id::text WHERE match_code IS NULL AND match_id IS NOT NULL;
   END IF;
-DO $$
-BEGIN
+
   IF EXISTS (
     SELECT 1 FROM information_schema.columns
     WHERE table_name = 'transactions' AND column_name = 'amount' AND is_generated = 'NEVER'
