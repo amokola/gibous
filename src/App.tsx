@@ -143,7 +143,7 @@ export const App: React.FC = () => {
     }
   }, [currentRoom?.status, currentScreen, setScreen]);
 
-  // Transaction mapping for HomeScreen (temporary — will move to component in Task 4)
+  // Transaction mapping for HomeScreen recent activity feed
   const accountTransactions = useMemo(() => {
     const raw = Array.isArray(authenticatedUser?.transactions) ? authenticatedUser.transactions : [];
     return raw.map((transaction: any) => ({

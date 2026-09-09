@@ -5,7 +5,7 @@ import { ArrowUpRight, ArrowDownLeft, Check, History, ShieldCheck, Zap, Wallet, 
 import { GramIcon } from '../ui/GramIcon';
 import { BankVaultIcon } from '../icons/GameIcons';
 import { toNanoGram, formatGram } from '../../utils/tonUnits';
-import { getTonConnectNetworkId, type TonNetwork } from '../../../shared/constants/ton';
+import { getTonConnectNetworkId, type TonNetwork } from '../../../shared';
 import { multiplayerService } from '../../services/multiplayerService';
 
 interface BankScreenProps {

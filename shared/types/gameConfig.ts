@@ -27,7 +27,7 @@ export const GAME_CONFIGS: Record<GameType, GameConfig> = {
     scoreLabel: 'Wins',
     displayName: 'Rock Paper Scissors',
     shortName: 'RPS',
-    description: 'Fast best-of-five mind game',
+    description: 'Fast best-of-three mind game',
     maxPlayers: 2,
   },
 };

@@ -14,6 +14,7 @@ export async function runMigrations(customDatabaseUrl?: string): Promise<void> {
     path.join(dbDir, 'migrations', '001_real_currency.sql'),
     path.join(dbDir, 'migrations', '002_financial_invariants.sql'),
     path.join(dbDir, 'migrations', '003_hardened_production_schema.sql'),
+    path.join(dbDir, 'migrations', '004_withdrawals.sql'),
     path.join(dbDir, 'migrations', '004_settlement_foreign_keys_and_guards.sql'),
     path.join(dbDir, 'migrations', '005_leaderboard_and_cancellation.sql'),
     path.join(dbDir, 'migrations', '006_game_actions.sql'),
