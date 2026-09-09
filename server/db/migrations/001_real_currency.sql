@@ -18,11 +18,18 @@ BEGIN
   ) THEN
     UPDATE transactions SET match_code = match_id::text WHERE match_code IS NULL AND match_id IS NOT NULL;
   END IF;
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'transactions' AND column_name = 'amount' AND is_generated = 'NEVER'
+  ) THEN
+    ALTER TABLE transactions
+      ALTER COLUMN amount TYPE NUMERIC(30,9) USING amount::numeric,
+      ALTER COLUMN fee TYPE NUMERIC(30,9) USING fee::numeric,
+      ALTER COLUMN balance_after TYPE NUMERIC(30,9) USING balance_after::numeric;
+  END IF;
 END $$;
-ALTER TABLE transactions
-  ALTER COLUMN amount TYPE NUMERIC(30,9) USING amount::numeric,
-  ALTER COLUMN fee TYPE NUMERIC(30,9) USING fee::numeric,
-  ALTER COLUMN balance_after TYPE NUMERIC(30,9) USING balance_after::numeric;
 
 ALTER TABLE users
   DROP CONSTRAINT IF EXISTS users_balance_gram_check;
@@ -32,11 +39,19 @@ ALTER TABLE users
 CREATE UNIQUE INDEX IF NOT EXISTS idx_transactions_operation_key
   ON transactions (operation_key) WHERE operation_key IS NOT NULL;
 
-ALTER TABLE treasury
-  ALTER COLUMN total_rake_collected TYPE NUMERIC(30,9) USING total_rake_collected::numeric,
-  ALTER COLUMN win_rake_collected TYPE NUMERIC(30,9) USING win_rake_collected::numeric,
-  ALTER COLUMN draw_fees_collected TYPE NUMERIC(30,9) USING draw_fees_collected::numeric,
-  ALTER COLUMN total_volume_processed TYPE NUMERIC(30,9) USING total_volume_processed::numeric;
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'treasury' AND column_name = 'total_rake_collected' AND is_generated = 'NEVER'
+  ) THEN
+    ALTER TABLE treasury
+      ALTER COLUMN total_rake_collected TYPE NUMERIC(30,9) USING total_rake_collected::numeric,
+      ALTER COLUMN win_rake_collected TYPE NUMERIC(30,9) USING win_rake_collected::numeric,
+      ALTER COLUMN draw_fees_collected TYPE NUMERIC(30,9) USING draw_fees_collected::numeric,
+      ALTER COLUMN total_volume_processed TYPE NUMERIC(30,9) USING total_volume_processed::numeric;
+  END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS deposit_intents (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
