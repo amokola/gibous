@@ -211,10 +211,10 @@ function broadcastOpenRooms() {
 
 // TON Connect Manifest Endpoint (Public, CORS-enabled for all TON Wallets)
 app.get(['/tonconnect-manifest.json', '/api/tonconnect-manifest.json'], (req, res) => {
-  const host = req.get('host') || 'gibous.fourreal.xyz';
+  const host = req.get('host') || 'gibous.win';
   const protocol = req.secure || req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http';
   const origin = `${protocol}://${host}`;
-  const resolvedOrigin = origin.includes('localhost') ? 'https://gibous.fourreal.xyz' : origin;
+  const resolvedOrigin = origin.includes('localhost') ? 'https://gibous.win' : origin;
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
@@ -394,7 +394,7 @@ app.post('/api/telegram/webhook', async (req, res) => {
   res.status(200).send('OK');
 
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
-  const publicAppUrl = process.env.PUBLIC_APP_URL || 'https://gibous.fourreal.xyz';
+  const publicAppUrl = process.env.PUBLIC_APP_URL || 'https://gibous.win';
   if (!botToken || botToken === 'DEMO_BOT_TOKEN') return;
 
   try {

@@ -26,7 +26,7 @@ const getManifestUrl = (): string => {
   if (typeof window !== 'undefined' && window.location?.origin) {
     return `${window.location.origin}/tonconnect-manifest.json`;
   }
-  return 'https://gibous.fourreal.xyz/tonconnect-manifest.json';
+  return 'https://gibous.win/tonconnect-manifest.json';
 };
 
 const manifestUrl = getManifestUrl();

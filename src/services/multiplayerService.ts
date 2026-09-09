@@ -88,7 +88,7 @@ export class MultiplayerService {
       const protocol = isHttps ? 'wss:' : 'ws:';
       const host = window.location.hostname;
 
-      // When running on Cloudflare Tunnel / custom domain (gibous.fourreal.xyz) or any remote host
+      // When running on Cloudflare Tunnel / custom domain (gibous.win) or any remote host
       if (host !== 'localhost' && host !== '127.0.0.1') {
         const envUrl = typeof import.meta !== 'undefined' && import.meta.env ? import.meta.env.VITE_WS_URL : undefined;
         if (envUrl && envUrl.startsWith('wss://')) {
