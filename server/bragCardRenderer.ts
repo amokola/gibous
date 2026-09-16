@@ -51,7 +51,7 @@ function graphMarkup(history: BragCardData['history']): string {
   const area = `${line} L ${points.at(-1)?.x.toFixed(1)} ${baseline} L ${points[0]?.x.toFixed(1)} ${baseline} Z`;
 
   return `
-    <text x="${chart.x}" y="690" font-family="Arial, sans-serif" font-size="24" font-weight="700" letter-spacing="2" fill="${COLORS.muted}">7-DAY PNL</text>
+    <text x="${chart.x}" y="690" font-family="Arial, sans-serif" font-size="24" font-weight="700" letter-spacing="2" fill="${COLORS.muted}">LAST 7 DAYS</text>
     <rect x="${chart.x}" y="${chart.y}" width="${chart.width}" height="${chart.height}" fill="${COLORS.paper}" stroke="${COLORS.ink}" stroke-width="4" />
     <line x1="${chart.x}" y1="${baseline}" x2="${chart.x + chart.width}" y2="${baseline}" stroke="${COLORS.ink}" stroke-width="2" stroke-dasharray="10 10" opacity="0.45" />
     <path d="${area}" fill="${COLORS.gold}" opacity="0.28" />
@@ -102,12 +102,12 @@ export async function renderBragCard(stats: BragCardData): Promise<Buffer> {
       <rect width="1080" height="1350" fill="${COLORS.warmPaper}" />
       <rect x="42" y="42" width="996" height="1266" rx="12" fill="${COLORS.yellow}" stroke="${COLORS.ink}" stroke-width="8" />
       <rect x="72" y="72" width="936" height="120" fill="${COLORS.paper}" stroke="${COLORS.ink}" stroke-width="4" />
-      <text x="104" y="122" font-family="Arial, sans-serif" font-size="28" font-weight="700" letter-spacing="4" fill="${COLORS.red}">GIBOUS • DAILY BRAG</text>
+      <text x="104" y="122" font-family="Arial, sans-serif" font-size="28" font-weight="700" letter-spacing="4" fill="${COLORS.red}">GIBOUS • DAILY STATS</text>
       <text x="104" y="168" font-family="Arial, sans-serif" font-size="42" font-weight="800" fill="${COLORS.ink}">${escapeXml(stats.name)}</text>
       <text x="976" y="122" text-anchor="end" font-family="Arial, sans-serif" font-size="24" font-weight="700" fill="${COLORS.muted}">${escapeXml(dateLabel)}</text>
       <text x="976" y="168" text-anchor="end" font-family="Arial, sans-serif" font-size="25" font-weight="700" fill="${COLORS.blue}">@${escapeXml(stats.username || 'player')}</text>
 
-      <text x="104" y="258" font-family="Arial, sans-serif" font-size="25" font-weight="700" letter-spacing="3" fill="${COLORS.muted}">TODAY&apos;S NET PNL</text>
+      <text x="104" y="258" font-family="Arial, sans-serif" font-size="25" font-weight="700" letter-spacing="3" fill="${COLORS.muted}">TODAY&apos;S PROFIT / LOSS</text>
       <text x="104" y="378" font-family="Arial, sans-serif" font-size="112" font-weight="900" fill="${pnlColor}">${formatSigned(stats.today.pnl)}</text>
       <text x="106" y="426" font-family="Arial, sans-serif" font-size="31" font-weight="800" fill="${COLORS.ink}">GRAM</text>
 
@@ -120,16 +120,16 @@ export async function renderBragCard(stats: BragCardData): Promise<Buffer> {
       <text x="650" y="458" font-family="Arial, sans-serif" font-size="50" font-weight="900" fill="${COLORS.blue}">${formatNumber(stats.today.winRate)}%</text>
 
       <rect x="72" y="520" width="936" height="126" fill="${COLORS.paper}" stroke="${COLORS.ink}" stroke-width="4" />
-      <text x="104" y="568" font-family="Arial, sans-serif" font-size="24" font-weight="700" letter-spacing="2" fill="${COLORS.muted}">RECORD</text>
+      <text x="104" y="568" font-family="Arial, sans-serif" font-size="24" font-weight="700" letter-spacing="2" fill="${COLORS.muted}">TODAY&apos;S RECORD</text>
       <text x="104" y="616" font-family="Arial, sans-serif" font-size="40" font-weight="900" fill="${COLORS.ink}">${record}</text>
-      <text x="548" y="568" font-family="Arial, sans-serif" font-size="24" font-weight="700" letter-spacing="2" fill="${COLORS.muted}">CURRENT STREAK</text>
-      <text x="548" y="616" font-family="Arial, sans-serif" font-size="40" font-weight="900" fill="${COLORS.red}">🔥 ${stats.currentStreak} WINS</text>
+      <text x="548" y="568" font-family="Arial, sans-serif" font-size="24" font-weight="700" letter-spacing="2" fill="${COLORS.muted}">WIN STREAK</text>
+      <text x="548" y="616" font-family="Arial, sans-serif" font-size="40" font-weight="900" fill="${COLORS.red}">${stats.currentStreak > 0 ? `🔥 ${stats.currentStreak} in a row!` : 'No streak yet'}</text>
 
       ${graphMarkup(stats.history)}
 
       <line x1="72" y1="1090" x2="1008" y2="1090" stroke="${COLORS.ink}" stroke-width="4" />
-      <text x="104" y="1154" font-family="Arial, sans-serif" font-size="26" font-weight="800" fill="${COLORS.blue}">SERVER-VERIFIED DUEL LEDGER</text>
-      <text x="104" y="1204" font-family="Arial, sans-serif" font-size="26" fill="${COLORS.muted}">Can you beat today&apos;s record?</text>
+      <text x="104" y="1154" font-family="Arial, sans-serif" font-size="26" font-weight="800" fill="${COLORS.blue}">VERIFIED ON GIBOUS</text>
+      <text x="104" y="1204" font-family="Arial, sans-serif" font-size="26" fill="${COLORS.muted}">Think you can beat this? 👇</text>
       <text x="976" y="1204" text-anchor="end" font-family="Arial, sans-serif" font-size="25" font-weight="800" fill="${COLORS.red}">GIBOUS</text>
     </svg>
   `;

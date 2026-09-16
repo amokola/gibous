@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Send, Check, Sparkles, Flame, Trophy, Coins, Loader2 } from 'lucide-react';
 import { useTelegram } from '../../hooks/useTelegram';
 
@@ -20,6 +20,14 @@ export const BoastCard: React.FC<BoastCardProps> = ({
   const [shareState, setShareState] = useState<'idle' | 'preparing' | 'sent' | 'cancelled' | 'unsupported' | 'error'>('idle');
   const { sharePreparedBragCard } = useTelegram();
   const hasActivity = totalVolume > 0 || totalWins > 0;
+
+  // Auto-reset share button state after 4 seconds
+  useEffect(() => {
+    if (shareState === 'sent' || shareState === 'cancelled' || shareState === 'error') {
+      const timer = setTimeout(() => setShareState('idle'), 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [shareState]);
 
   const handleShareToTelegram = async () => {
     if (!hasActivity || shareState === 'preparing') return;
@@ -46,7 +54,7 @@ export const BoastCard: React.FC<BoastCardProps> = ({
     <div className="w-full bg-[#fff9c4] border-2 border-black p-4 select-none sketch-shadow rounded-none relative">
       {/* Top Tape Badge */}
       <div className="absolute -top-3 right-4 border border-black px-2.5 py-0.5 bg-[#fef08a] font-sketch text-[10px] font-bold rotate-1 uppercase tracking-wider">
-        Brag Card
+        Stats Card
       </div>
 
       {/* Header */}
@@ -56,10 +64,10 @@ export const BoastCard: React.FC<BoastCardProps> = ({
         </div>
         <div>
           <h4 className="font-sketch text-lg font-bold text-[#1a1a1a] leading-tight">
-            Brag Card
+            Your Stats Card
           </h4>
           <span className="font-sketch text-[11px] text-[#1a1a1a]/60">
-            Share your stats and challenge friends
+            Show off your wins — challenge anyone
           </span>
         </div>
       </div>
@@ -69,7 +77,7 @@ export const BoastCard: React.FC<BoastCardProps> = ({
         <div>
           <div className="flex items-center gap-1">
             <Coins className="w-3.5 h-3.5 text-[#166534]" />
-            <span className="text-[10px] font-bold font-sketch text-[#1a1a1a]/60 uppercase">Net PnL</span>
+            <span className="text-[10px] font-bold font-sketch text-[#1a1a1a]/60 uppercase">Profit / Loss</span>
           </div>
           <span className={`font-sketch text-lg font-bold ${isProfit ? 'text-[#166534]' : 'text-[#991b1b]'}`}>
             {isProfit ? `+${pnl}` : pnl} GRAM
@@ -79,10 +87,10 @@ export const BoastCard: React.FC<BoastCardProps> = ({
         <div>
           <div className="flex items-center gap-1">
             <Flame className="w-3.5 h-3.5 text-[#b91c1c]" />
-            <span className="text-[10px] font-bold font-sketch text-[#1a1a1a]/60 uppercase">Streak</span>
+            <span className="text-[10px] font-bold font-sketch text-[#1a1a1a]/60 uppercase">Win Streak</span>
           </div>
           <span className="font-sketch text-lg font-bold text-[#b91c1c]">
-            {winStreak}X Streak
+            {winStreak > 0 ? `🔥 ${winStreak} in a row` : 'No streak yet'}
           </span>
         </div>
 
@@ -92,14 +100,14 @@ export const BoastCard: React.FC<BoastCardProps> = ({
             <span className="text-[10px] font-bold font-sketch text-[#1a1a1a]/60 uppercase">Win Rate</span>
           </div>
           <span className="font-sketch text-lg font-bold text-[#1a1a1a]">
-            {winRate}% ({totalWins}W)
+            {winRate}% · {totalWins} wins
           </span>
         </div>
 
         <div>
           <div className="flex items-center gap-1">
             <Sparkles className="w-3.5 h-3.5 text-[#1a365d]" />
-            <span className="text-[10px] font-bold font-sketch text-[#1a1a1a]/60 uppercase">Volume</span>
+            <span className="text-[10px] font-bold font-sketch text-[#1a1a1a]/60 uppercase">Total Wagered</span>
           </div>
           <span className="font-sketch text-lg font-bold text-[#1a365d]">
             {totalVolume} GRAM
@@ -117,37 +125,37 @@ export const BoastCard: React.FC<BoastCardProps> = ({
         {shareState === 'preparing' ? (
           <>
             <Loader2 className="w-4 h-4 text-[#1a365d] animate-spin" />
-            <span>Generating card...</span>
+            <span>Creating your card...</span>
           </>
         ) : shareState === 'sent' ? (
           <>
             <Check className="w-4 h-4 text-[#166534] stroke-[3]" />
-            <span>Shared!</span>
+            <span>✨ Sent to Telegram!</span>
           </>
         ) : shareState === 'cancelled' ? (
           <>
             <Send className="w-4 h-4 text-[#1a365d]" />
-            <span>Share cancelled</span>
+            <span>Sharing cancelled — try again?</span>
           </>
         ) : shareState === 'unsupported' ? (
           <>
             <Send className="w-4 h-4 text-[#854d0e]" />
-            <span>Open in Telegram to share</span>
+            <span>Open Gibous in Telegram to share</span>
           </>
         ) : shareState === 'error' ? (
           <>
             <Send className="w-4 h-4 text-[#991b1b]" />
-            <span>Could not share. Try again.</span>
+            <span>Something went wrong. Tap to retry.</span>
           </>
         ) : !hasActivity ? (
           <>
             <Sparkles className="w-4 h-4 text-[#854d0e]" />
-            <span>Play a match to unlock</span>
+            <span>Play your first match to unlock</span>
           </>
         ) : (
           <>
             <Send className="w-4 h-4 text-[#1a365d]" />
-            <span>Share Brag Card</span>
+            <span>Share My Stats</span>
           </>
         )}
       </button>

@@ -194,6 +194,20 @@ if (process.env.NODE_ENV !== 'test' && !process.env.VITEST) {
   });
 }
 
+export function safeSend(ws: WebSocket, message: object | string): boolean {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return false;
+  try {
+    const data = typeof message === 'string' ? message : JSON.stringify(message);
+    ws.send(data);
+    return true;
+  } catch (err) {
+    logEvent('warn', 'websocket.send.failed', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return false;
+  }
+}
+
 // Broadcast open rooms list to all connected clients
 function broadcastOpenRooms() {
   const openRooms = roomManager.getOpenRooms();
@@ -203,9 +217,7 @@ function broadcastOpenRooms() {
   };
   const raw = JSON.stringify(payload);
   wss.clients.forEach((client) => {
-    if (client.readyState === WebSocket.OPEN) {
-      client.send(raw);
-    }
+    safeSend(client, raw);
   });
 }
 
@@ -406,40 +418,63 @@ app.post('/api/telegram/webhook', async (req, res) => {
       const chatId = message.chat.id;
 
       if (text.startsWith('/start')) {
-        const richHtml = `<h1>🎲 GIBOUS DUEL ARENA</h1>
-<b>Real games. Real stakes. Instant TON payouts.</b>
-
-Drop your chips, roll the dice, or throw hands.
-Back your skills with GRAM and take the pot.
-
-<tg-button-row align="center">
-  <tg-button type="web_app" url="${publicAppUrl}" style="primary">🎮 Launch Arena & Play</tg-button>
-</tg-button-row>
-
-<blockquote expandable>
-<b>🕹 GAME MODES</b>
-
-🐍 <b>Snakes & Ladders</b>
-&nbsp;&nbsp;&nbsp;▸ <i>100-tile board race with live dice rolls</i>
-
-🔴 <b>Connect 4</b>
-&nbsp;&nbsp;&nbsp;▸ <i>7×6 gravity grid • Pure mind games</i>
-
-✂️ <b>Rock Paper Scissors</b>
-&nbsp;&nbsp;&nbsp;▸ <i>Best-of-3 blitz • 10-second turns</i>
-
-<b>💰 THE RULES</b>
-&nbsp;&nbsp;&nbsp;• <i>Every match is 1v1 with live escrow</i>
-&nbsp;&nbsp;&nbsp;• <i>Winner takes pot instantly on TON</i>
-&nbsp;&nbsp;&nbsp;• <i>No delays, no middleman holding your funds</i>
-</blockquote>
-
-<tg-button-row align="center">
-  <tg-button type="switch_inline_query" data="">⚔️ Challenge a Friend</tg-button>
-  <tg-button type="url" url="https://t.me/gibous_community">💬 Community & Duels</tg-button>
-</tg-button-row>
-
-<code>💡 Tip: Type @gbousbot in any chat to challenge someone instantly.</code>`;
+        // ── Rich Message (Bot API 10.1+ blocks format) ─────────────────
+        const richBlocks = [
+          {
+            type: 'section_heading',
+            text: '🎲  GIBOUS DUEL ARENA',
+          },
+          {
+            type: 'paragraph',
+            text: 'Pick a game. Set a stake. Winner takes the pot.',
+          },
+          {
+            type: 'paragraph',
+            text: 'Challenge anyone to a 1v1 duel — your GRAM is held in escrow until the match ends. No middleman, no delays.',
+          },
+          { type: 'divider' },
+          {
+            type: 'section_heading',
+            text: '🕹  CHOOSE YOUR GAME',
+          },
+          {
+            type: 'table',
+            is_compact: true,
+            rows: [
+              { cells: [{ text: '🐍' }, { text: 'Snakes & Ladders' }, { text: 'Race to tile 100 with live dice' }] },
+              { cells: [{ text: '🔴' }, { text: 'Connect 4' }, { text: 'Drop discs on a 7×6 grid' }] },
+              { cells: [{ text: '✂️' }, { text: 'Rock Paper Scissors' }, { text: 'Best-of-3 blitz · 10s turns' }] },
+            ],
+          },
+          {
+            type: 'expandable_block_quotation',
+            text: '💰 How does it work?',
+            blocks: [
+              {
+                type: 'list',
+                items: [
+                  { text: 'Both players stake the same amount of GRAM' },
+                  { text: 'Winner takes 90% of the pot — instantly' },
+                  { text: 'Draws refund 95% of your stake' },
+                  { text: 'All matches are server-verified and fair' },
+                ],
+              },
+            ],
+          },
+          { type: 'divider' },
+          {
+            type: 'buttons',
+            buttons: [
+              { text: '🎮 Play Now', type: 'web_app', url: publicAppUrl },
+              { text: '⚔️ Challenge a Friend', type: 'switch_inline_query', data: '' },
+              { text: '💬 Join Community', type: 'url', url: 'https://t.me/gibous_community' },
+            ],
+          },
+          {
+            type: 'footer',
+            text: '💡 Type @gbousbot in any chat to send a duel challenge.',
+          },
+        ];
 
         let sent = false;
         try {
@@ -448,13 +483,12 @@ Back your skills with GRAM and take the pot.
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               chat_id: chatId,
-              rich_message: {
-                html: richHtml,
-              },
+              rich_message: { blocks: richBlocks },
             }),
           });
           if (richRes.ok) {
-            sent = true;
+            const richData = await richRes.json() as { ok?: boolean };
+            sent = richData.ok === true;
           }
         } catch {
           sent = false;
@@ -462,7 +496,31 @@ Back your skills with GRAM and take the pot.
 
         // Fallback to standard sendMessage with inline_keyboard if sendRichMessage is unsupported
         if (!sent) {
-          const fallbackText = `🎲 <b>GIBOUS DUEL ARENA</b>\n<b>Real games. Real stakes. Instant TON payouts.</b>\n\nDrop your chips, roll the dice, or throw hands.\nBack your skills with GRAM and take the pot.\n\n<blockquote expandable><b>🕹 GAME MODES</b>\n\n🐍 <b>Snakes & Ladders</b>\n&nbsp;&nbsp;&nbsp;▸ <i>100-tile board race with live dice rolls</i>\n\n🔴 <b>Connect 4</b>\n&nbsp;&nbsp;&nbsp;▸ <i>7×6 gravity grid • Pure mind games</i>\n\n✂️ <b>Rock Paper Scissors</b>\n&nbsp;&nbsp;&nbsp;▸ <i>Best-of-3 blitz • 10-second turns</i>\n\n<b>💰 THE RULES</b>\n&nbsp;&nbsp;&nbsp;• <i>Every match is 1v1 with live escrow</i>\n&nbsp;&nbsp;&nbsp;• <i>Winner takes pot instantly on TON</i>\n&nbsp;&nbsp;&nbsp;• <i>No delays, no middleman holding your funds</i></blockquote>\n\n<code>💡 Tip: Type @gbousbot in any chat to challenge someone instantly.</code>`;
+          const fallbackText = [
+            `🎲 <b>GIBOUS DUEL ARENA</b>`,
+            `<b>Pick a game. Set a stake. Winner takes the pot.</b>`,
+            ``,
+            `Challenge anyone to a 1v1 duel — your GRAM is held`,
+            `in escrow until the match ends. No middleman, no delays.`,
+            ``,
+            `<blockquote expandable><b>🕹 GAMES</b>`,
+            ``,
+            `🐍 <b>Snakes & Ladders</b>`,
+            `   ▸ <i>Race to tile 100 with live dice rolls</i>`,
+            ``,
+            `🔴 <b>Connect 4</b>`,
+            `   ▸ <i>Drop discs on a 7×6 grid — outsmart your opponent</i>`,
+            ``,
+            `✂️ <b>Rock Paper Scissors</b>`,
+            `   ▸ <i>Best-of-3 blitz with 10-second turns</i>`,
+            ``,
+            `<b>💰 HOW IT WORKS</b>`,
+            `   • <i>Both players stake the same amount of GRAM</i>`,
+            `   • <i>Winner takes 90% of the pot instantly</i>`,
+            `   • <i>Draws refund 95% of your stake</i></blockquote>`,
+            ``,
+            `<code>💡 Type @gbousbot in any chat to send a duel challenge.</code>`,
+          ].join('\n');
 
           await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
             method: 'POST',
@@ -475,7 +533,7 @@ Back your skills with GRAM and take the pot.
                 inline_keyboard: [
                   [
                     {
-                      text: '🎮 Launch Arena & Play',
+                      text: '🎮 Play Now',
                       web_app: { url: publicAppUrl },
                     },
                   ],
@@ -485,7 +543,7 @@ Back your skills with GRAM and take the pot.
                       switch_inline_query: '',
                     },
                     {
-                      text: '💬 Community & Duels',
+                      text: '💬 Join Community',
                       url: 'https://t.me/gibous_community',
                     },
                   ],
@@ -588,15 +646,11 @@ server.on('upgrade', (req, socket, head) => {
 
 function sendError(ws: WebSocket, code: string, message: string, requestId?: string) {
   logEvent('warn', 'ws.command.rejected', { requestId, code });
-  if (ws.readyState === WebSocket.OPEN) {
-    ws.send(
-      JSON.stringify({
-        type: 'ERROR',
-        requestId,
-        payload: { code, message },
-      })
-    );
-  }
+  safeSend(ws, {
+    type: 'ERROR',
+    requestId,
+    payload: { code, message },
+  });
 }
 
 // WebSocket Connection Handling
@@ -736,13 +790,22 @@ wss.on('connection', (ws: WebSocket, req) => {
             sessionManager.register(ws, verifiedId, verifiedName, verifiedPhoto, connectionId);
             clearTimeout(authTimeout);
 
-            ws.send(
-              JSON.stringify({
-                type: 'AUTH_OK',
-                requestId,
-                payload: { telegramId: verifiedId, user },
-              })
-            );
+            const activeRoom = roomManager.getActiveRoomForPlayer(verifiedId);
+            const activeRoomSnapshot = activeRoom ? roomManager.getRoomSnapshot(activeRoom) : undefined;
+            if (activeRoom) {
+              const role = activeRoom.p1?.telegramId === verifiedId ? 'p1' : 'p2';
+              sessionManager.attachRoom(ws, activeRoom.code, role);
+            }
+
+            safeSend(ws, {
+              type: 'AUTH_OK',
+              requestId,
+              payload: {
+                telegramId: verifiedId,
+                user,
+                ...(activeRoomSnapshot ? { activeRoom: activeRoomSnapshot } : {}),
+              },
+            });
             break;
           }
 
@@ -762,13 +825,22 @@ wss.on('connection', (ws: WebSocket, req) => {
           sessionManager.register(ws, telegramId, playerName, avatarUrl, connectionId);
           clearTimeout(authTimeout);
 
-          ws.send(
-            JSON.stringify({
-              type: 'AUTH_OK',
-              requestId,
-              payload: { telegramId, user },
-            })
-          );
+          const activeRoom = roomManager.getActiveRoomForPlayer(telegramId);
+          const activeRoomSnapshot = activeRoom ? roomManager.getRoomSnapshot(activeRoom) : undefined;
+          if (activeRoom) {
+            const role = activeRoom.p1?.telegramId === telegramId ? 'p1' : 'p2';
+            sessionManager.attachRoom(ws, activeRoom.code, role);
+          }
+
+          safeSend(ws, {
+            type: 'AUTH_OK',
+            requestId,
+            payload: {
+              telegramId,
+              user,
+              ...(activeRoomSnapshot ? { activeRoom: activeRoomSnapshot } : {}),
+            },
+          });
           break;
         }
 
@@ -965,6 +1037,7 @@ wss.on('connection', (ws: WebSocket, req) => {
             telegramId: session.telegramId,
             walletAddress: message.payload.walletAddress,
             amountNano: message.payload.amountNano,
+            operationKey: requestId,
           });
 
           if (!result.success) {
@@ -981,11 +1054,11 @@ wss.on('connection', (ws: WebSocket, req) => {
             },
           });
 
-          ws.send(JSON.stringify({
+          safeSend(ws, {
             type: 'TRANSACTION_CONFIRMED',
             requestId,
             payload: result.transaction,
-          }));
+          });
           break;
         }
 
@@ -1040,29 +1113,43 @@ wss.on('connection', (ws: WebSocket, req) => {
 
         case 'SYNC_ROOM': {
           const code = message.payload.roomCode.toUpperCase();
-          const room = roomManager.getRoom(code);
-          if (!room) {
-            sendError(ws, 'ROOM_NOT_FOUND', 'Duel room not found', requestId);
-            break;
-          }
-
           const session = sessionManager.getSession(ws);
-          const isMember = Boolean(
-            session && (room.p1?.telegramId === session.telegramId || room.p2?.telegramId === session.telegramId)
-          );
-          if (!isMember) {
-            sendError(ws, 'UNAUTHORIZED', 'You are not in this duel', requestId);
+          if (!session) {
+            sendError(ws, 'UNAUTHORIZED', 'Not authenticated', requestId);
             break;
           }
 
-          const snapshot = roomManager.getRoomSnapshot(room);
-          ws.send(
-            JSON.stringify({
+          await roomCommandQueue.withRoomLock(code, async () => {
+            let room = roomManager.getRoom(code);
+            if (!room) {
+              room = await roomManager.restorePersistedRoomByCode(code);
+            }
+            if (!room) {
+              sendError(ws, 'ROOM_NOT_FOUND', 'Duel room not found', requestId);
+              return;
+            }
+
+            const isMember = Boolean(
+              room.p1?.telegramId === session.telegramId || room.p2?.telegramId === session.telegramId
+            );
+            if (!isMember) {
+              sendError(ws, 'UNAUTHORIZED', 'You are not in this duel', requestId);
+              return;
+            }
+
+            const { room: reconnectedRoom, role } = await roomManager.reconnectPlayer(code, session.telegramId);
+            const targetRoom = reconnectedRoom || room;
+            if (role) {
+              sessionManager.attachRoom(ws, code, role);
+            }
+
+            const snapshot = roomManager.getRoomSnapshot(targetRoom);
+            safeSend(ws, {
               type: 'ROOM_STATE',
               requestId,
               payload: snapshot,
-            })
-          );
+            });
+          });
           break;
         }
 

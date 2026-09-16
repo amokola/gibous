@@ -82,17 +82,4 @@ export function formatShareInvite(roomCode: string, stake: number): { text: stri
   return { text, url };
 }
 
-export function formatBoastReceipt(params: {
-  name: string;
-  username?: string;
-  pnl: number;
-  winStreak: number;
-  winRate: number;
-  totalVolume: number;
-  totalWins: number;
-}): { text: string; url: string } {
-  const pnlSign = params.pnl >= 0 ? `+${params.pnl}` : `${params.pnl}`;
-  const bragText = `🌙 GIBOUS DUEL ARENA STATS\n\n👤 Player: ${params.name} (@${params.username || 'player'})\n💰 PnL: ${pnlSign} GRAM\n🔥 Win Streak: ${params.winStreak}X\n🏆 Win Rate: ${params.winRate}%\n💎 Volume: ${params.totalVolume} GRAM (${params.totalWins} Wins)\n\nCan you beat my record? Challenge me now in Gibous! 👇`;
-  const url = `https://t.me/share/url?url=${encodeURIComponent(BRAND.links.botAppUrl)}&text=${encodeURIComponent(bragText)}`;
-  return { text: bragText, url };
-}
+
