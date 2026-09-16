@@ -418,63 +418,47 @@ app.post('/api/telegram/webhook', async (req, res) => {
       const chatId = message.chat.id;
 
       if (text.startsWith('/start')) {
-        // ── Rich Message (Bot API 10.1+ blocks format) ─────────────────
-        const richBlocks = [
-          {
-            type: 'section_heading',
-            text: '🎲  GIBOUS DUEL ARENA',
-          },
-          {
-            type: 'paragraph',
-            text: 'Pick a game. Set a stake. Winner takes the pot.',
-          },
-          {
-            type: 'paragraph',
-            text: 'Challenge anyone to a 1v1 duel — your GRAM is held in escrow until the match ends. No middleman, no delays.',
-          },
-          { type: 'divider' },
-          {
-            type: 'section_heading',
-            text: '🕹  CHOOSE YOUR GAME',
-          },
-          {
-            type: 'table',
-            is_compact: true,
-            rows: [
-              { cells: [{ text: '🐍' }, { text: 'Snakes & Ladders' }, { text: 'Race to tile 100 with live dice' }] },
-              { cells: [{ text: '🔴' }, { text: 'Connect 4' }, { text: 'Drop discs on a 7×6 grid' }] },
-              { cells: [{ text: '✂️' }, { text: 'Rock Paper Scissors' }, { text: 'Best-of-3 blitz · 10s turns' }] },
-            ],
-          },
-          {
-            type: 'expandable_block_quotation',
-            text: '💰 How does it work?',
-            blocks: [
-              {
-                type: 'list',
-                items: [
-                  { text: 'Both players stake the same amount of GRAM' },
-                  { text: 'Winner takes 90% of the pot — instantly' },
-                  { text: 'Draws refund 95% of your stake' },
-                  { text: 'All matches are server-verified and fair' },
-                ],
-              },
-            ],
-          },
-          { type: 'divider' },
-          {
-            type: 'buttons',
-            buttons: [
-              { text: '🎮 Play Now', type: 'web_app', url: publicAppUrl },
-              { text: '⚔️ Challenge a Friend', type: 'switch_inline_query', data: '' },
-              { text: '💬 Join Community', type: 'url', url: 'https://t.me/gibous_community' },
-            ],
-          },
-          {
-            type: 'footer',
-            text: '💡 Type @gbousbot in any chat to send a duel challenge.',
-          },
-        ];
+        const parts = text.split(/\s+/);
+        const startParam = parts.length > 1 ? parts[1].trim() : '';
+        const appUrl = startParam ? `${publicAppUrl}?startapp=${encodeURIComponent(startParam)}` : publicAppUrl;
+        const playButtonText = startParam ? `⚔️ Join Duel #${startParam}` : '🎮 Launch Arena & Play';
+
+        const richHtml = [
+          `<h1>🎲 GIBOUS DUEL ARENA</h1>`,
+          `<b>Fast 1v1 duels • Real GRAM stakes • Instant payouts</b>`,
+          ``,
+          `Challenge anyone to a live match. Your GRAM is secured safely in escrow — winner takes the pot the instant the duel ends!`,
+          ``,
+          `<tg-button-row align="center">`,
+          `  <tg-button type="web_app" url="${appUrl}" style="primary">${playButtonText}</tg-button>`,
+          `</tg-button-row>`,
+          ``,
+          `<blockquote expandable>`,
+          `<b>🕹 CHOOSE YOUR GAME</b>`,
+          ``,
+          `🐍 <b>Snakes & Ladders</b>`,
+          `&nbsp;&nbsp;&nbsp;▸ <i>Race to tile 100 with live dice rolls</i>`,
+          ``,
+          `🔴 <b>Connect 4</b>`,
+          `&nbsp;&nbsp;&nbsp;▸ <i>Drop discs on a 7×6 grid — pure tactical skill</i>`,
+          ``,
+          `✂️ <b>Rock Paper Scissors</b>`,
+          `&nbsp;&nbsp;&nbsp;▸ <i>Lightning blitz with 10-second turns (Best of 3)</i>`,
+          ``,
+          `<b>💰 HOW IT WORKS</b>`,
+          `&nbsp;&nbsp;&nbsp;• <i>Both players stake equal GRAM</i>`,
+          `&nbsp;&nbsp;&nbsp;• <i>Winner claims 90% of the pot instantly</i>`,
+          `&nbsp;&nbsp;&nbsp;• <i>Draws automatically refund 95% of your stake</i>`,
+          `&nbsp;&nbsp;&nbsp;• <i>No middleman holding funds, ever</i>`,
+          `</blockquote>`,
+          ``,
+          `<tg-button-row align="center">`,
+          `  <tg-button type="switch_inline_query" data="">⚔️ Challenge a Friend</tg-button>`,
+          `  <tg-button type="url" url="https://t.me/gibous_community">💬 Community & Duels</tg-button>`,
+          `</tg-button-row>`,
+          ``,
+          `<code>💡 Pro Tip: Type @gbousbot in any chat to challenge someone on the spot.</code>`,
+        ].join('\n');
 
         let sent = false;
         try {
@@ -483,11 +467,13 @@ app.post('/api/telegram/webhook', async (req, res) => {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               chat_id: chatId,
-              rich_message: { blocks: richBlocks },
+              rich_message: {
+                html: richHtml,
+              },
             }),
           });
           if (richRes.ok) {
-            const richData = await richRes.json() as { ok?: boolean };
+            const richData = (await richRes.json()) as { ok?: boolean };
             sent = richData.ok === true;
           }
         } catch {
@@ -498,28 +484,28 @@ app.post('/api/telegram/webhook', async (req, res) => {
         if (!sent) {
           const fallbackText = [
             `🎲 <b>GIBOUS DUEL ARENA</b>`,
-            `<b>Pick a game. Set a stake. Winner takes the pot.</b>`,
+            `<b>Fast 1v1 duels • Real GRAM stakes • Instant payouts</b>`,
             ``,
-            `Challenge anyone to a 1v1 duel — your GRAM is held`,
-            `in escrow until the match ends. No middleman, no delays.`,
+            `Challenge anyone to a live match. Your GRAM is secured safely in escrow — winner takes the pot the instant the duel ends!`,
             ``,
-            `<blockquote expandable><b>🕹 GAMES</b>`,
+            `<blockquote expandable><b>🕹 CHOOSE YOUR GAME</b>`,
             ``,
             `🐍 <b>Snakes & Ladders</b>`,
             `   ▸ <i>Race to tile 100 with live dice rolls</i>`,
             ``,
             `🔴 <b>Connect 4</b>`,
-            `   ▸ <i>Drop discs on a 7×6 grid — outsmart your opponent</i>`,
+            `   ▸ <i>Drop discs on a 7×6 grid — pure tactical skill</i>`,
             ``,
             `✂️ <b>Rock Paper Scissors</b>`,
-            `   ▸ <i>Best-of-3 blitz with 10-second turns</i>`,
+            `   ▸ <i>Lightning blitz with 10-second turns (Best of 3)</i>`,
             ``,
             `<b>💰 HOW IT WORKS</b>`,
-            `   • <i>Both players stake the same amount of GRAM</i>`,
-            `   • <i>Winner takes 90% of the pot instantly</i>`,
-            `   • <i>Draws refund 95% of your stake</i></blockquote>`,
+            `   • <i>Both players stake equal GRAM</i>`,
+            `   • <i>Winner claims 90% of the pot instantly</i>`,
+            `   • <i>Draws automatically refund 95% of your stake</i>`,
+            `   • <i>No middleman holding funds, ever</i></blockquote>`,
             ``,
-            `<code>💡 Type @gbousbot in any chat to send a duel challenge.</code>`,
+            `<code>💡 Pro Tip: Type @gbousbot in any chat to challenge someone on the spot.</code>`,
           ].join('\n');
 
           await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
@@ -529,12 +515,13 @@ app.post('/api/telegram/webhook', async (req, res) => {
               chat_id: chatId,
               text: fallbackText,
               parse_mode: 'HTML',
+              link_preview_options: { is_disabled: true },
               reply_markup: {
                 inline_keyboard: [
                   [
                     {
-                      text: '🎮 Play Now',
-                      web_app: { url: publicAppUrl },
+                      text: playButtonText,
+                      web_app: { url: appUrl },
                     },
                   ],
                   [
@@ -543,7 +530,7 @@ app.post('/api/telegram/webhook', async (req, res) => {
                       switch_inline_query: '',
                     },
                     {
-                      text: '💬 Join Community',
+                      text: '💬 Community & Duels',
                       url: 'https://t.me/gibous_community',
                     },
                   ],
