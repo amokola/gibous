@@ -126,4 +126,46 @@ describe('Withdrawal Flow & Invariants', () => {
     expect(resultBadAddr.success).toBe(false);
     expect(resultBadAddr.error).toContain('Invalid recipient wallet address');
   });
+
+  it('deduplicates duplicate withdrawal requests with identical operationKey', async () => {
+    const telegramId = 880005;
+    await storage.getOrCreateUser({ id: telegramId, first_name: 'Idempotent Player' });
+
+    const db = DatabasePool.getInstance();
+    const inMemUser = db.getUserByTelegramId(telegramId);
+    if (inMemUser) {
+      inMemUser.balance_nano = '10000000000'; // 10 GRAM
+      inMemUser.balance_gram = 10;
+      db.saveUser(inMemUser);
+    }
+
+    const opKey = 'req-withdrawal-dedup-test-1';
+
+    // First request
+    const firstResult = await storage.requestWithdrawal({
+      telegramId,
+      walletAddress: 'UQATZc4GlaIi1yqeAQ8RwG_JpJN27ZdgFrEtVM1UZkOnT8Cz',
+      amountNano: '3000000000',
+      operationKey: opKey,
+    });
+    expect(firstResult.success).toBe(true);
+    expect(firstResult.transaction?.amountGram).toBe(3);
+
+    const midUser = db.getUserByTelegramId(telegramId);
+    expect(midUser?.balance_gram).toBe(7);
+
+    // Second request with same operationKey (e.g. network retry)
+    const secondResult = await storage.requestWithdrawal({
+      telegramId,
+      walletAddress: 'UQATZc4GlaIi1yqeAQ8RwG_JpJN27ZdgFrEtVM1UZkOnT8Cz',
+      amountNano: '3000000000',
+      operationKey: opKey,
+    });
+    expect(secondResult.success).toBe(true);
+    expect(secondResult.transaction?.id).toBe(firstResult.transaction?.id);
+
+    // Balance must NOT have been debited twice!
+    const finalUser = db.getUserByTelegramId(telegramId);
+    expect(finalUser?.balance_gram).toBe(7);
+  });
 });

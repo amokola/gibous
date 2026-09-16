@@ -129,7 +129,7 @@ describe('Production Hardening Regression Tests', () => {
       expect(room?.p2DisconnectTimer).toBeDefined();
 
       // Fast-forward past forfeit timeout
-      vi.advanceTimersByTime(DISCONNECT_FORFEIT_TIMEOUT_MS + 1000);
+      await vi.advanceTimersByTimeAsync(DISCONNECT_FORFEIT_TIMEOUT_MS + 1000);
 
       // Settle forfeit executes and awards match to P1
       expect(room?.status).toBe('gameover');
@@ -149,7 +149,7 @@ describe('Production Hardening Regression Tests', () => {
 
       // In Connect 4, Alice (p1) is active first.
       // Fast-forward past 20s turn timeout without any move from Alice
-      vi.advanceTimersByTime(21_000);
+      await vi.advanceTimersByTimeAsync(21_000);
 
       // Alice (p1) should be forfeited for inactivity, awarding win to Bob (p2)
       expect(room?.status).toBe('gameover');

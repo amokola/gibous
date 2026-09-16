@@ -52,8 +52,13 @@ export const RPSArena: React.FC<RPSArenaProps> = ({ duelState, onChooseRPS }) =>
     }
   };
 
+  const hasAlreadyChosen = Boolean(
+    (myRole === 'p1' && gameState?.p1HasChosen) || (myRole === 'p2' && gameState?.p2HasChosen)
+  );
+  const isChoiceLocked = myLockedChoice !== null || hasAlreadyChosen;
+
   const handleSelect = (choice: RPSChoice) => {
-    if (!myRole || myLockedChoice || clashState || clashCountdown !== null) return;
+    if (!myRole || isChoiceLocked || clashState || clashCountdown !== null) return;
     setMyLockedChoice(choice);
     onChooseRPS(choice);
   };
@@ -234,11 +239,11 @@ export const RPSArena: React.FC<RPSArenaProps> = ({ duelState, onChooseRPS }) =>
                 : `${opponentName.toUpperCase()} WON ROUND`}
             </div>
           </div>
-        ) : myLockedChoice ? (
+        ) : isChoiceLocked ? (
           <div className="flex flex-col items-center text-center animate-card-lock">
             <div className="relative w-20 h-24 rounded-none bg-white border-2 border-black sketch-shadow-md flex flex-col items-center justify-center p-2 mb-2">
               <div className="mb-1 flex items-center justify-center">
-                {renderChoiceIcon(myLockedChoice, 36)}
+                {myLockedChoice ? renderChoiceIcon(myLockedChoice, 36) : <Lock className="w-9 h-9 text-[#9b2c2c]" />}
               </div>
               <div className="flex items-center gap-1 font-sketch font-bold text-[9px] text-[#9b2c2c] tracking-widest uppercase border border-[#9b2c2c] px-1.5 py-0.5 bg-[#fee2e2]">
                 <Lock className="w-2.5 h-2.5 stroke-[2.5]" />
@@ -246,7 +251,7 @@ export const RPSArena: React.FC<RPSArenaProps> = ({ duelState, onChooseRPS }) =>
               </div>
             </div>
             <span className="font-sketch font-bold text-xs text-[#166534] uppercase tracking-wider">
-              YOUR CHOICE: {myLockedChoice}
+              {myLockedChoice ? `YOUR CHOICE: ${myLockedChoice}` : 'CHOICE LOCKED IN'}
             </span>
             <span className="font-body text-xs text-neutral-600 mt-0.5 animate-pulse">
               Waiting for {opponentName} to commit...
@@ -268,7 +273,7 @@ export const RPSArena: React.FC<RPSArenaProps> = ({ duelState, onChooseRPS }) =>
       <div className="grid grid-cols-3 gap-2 w-full mt-1">
         {choices.map((c) => {
           const isSelected = myLockedChoice === c.type;
-          const isDisabled = !myRole || myLockedChoice !== null || clashState !== null || clashCountdown !== null;
+          const isDisabled = !myRole || isChoiceLocked || clashState !== null || clashCountdown !== null;
           return (
             <button
               key={c.type}

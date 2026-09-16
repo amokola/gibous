@@ -41,14 +41,24 @@ export function initEventRouter() {
   });
 
   // Auth events
-  multiplayerService.on<{ user: any; telegramId?: number }>('AUTH_OK', (payload) => {
+  multiplayerService.on<{ user: any; telegramId?: number; activeRoom?: RoomStatePayload }>('AUTH_OK', (payload) => {
     useAuthStore.getState().setUser(payload.user);
-    if (payload.telegramId) {
-      setMyTelegramId(payload.telegramId);
+    const tgId = payload.telegramId || payload.user?.id;
+    if (tgId) {
+      setMyTelegramId(tgId);
     }
-    const persistedRoomCode = multiplayerService.getCurrentRoomCode();
-    if (persistedRoomCode) {
-      multiplayerService.send('SYNC_ROOM', { roomCode: persistedRoomCode });
+    if (payload.activeRoom) {
+      useRoomStore.getState().setRoom(payload.activeRoom);
+      if (tgId) {
+        useRoomStore.getState().resolveMyRole(tgId);
+      }
+      useGameStore.getState().syncFromRoom(payload.activeRoom);
+      multiplayerService.setCurrentRoomCode(payload.activeRoom.code);
+    } else {
+      const persistedRoomCode = multiplayerService.getCurrentRoomCode();
+      if (persistedRoomCode) {
+        multiplayerService.send('SYNC_ROOM', { roomCode: persistedRoomCode });
+      }
     }
   });
 

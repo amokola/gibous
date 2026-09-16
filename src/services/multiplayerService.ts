@@ -38,7 +38,6 @@ export class MultiplayerService {
   private pendingAuthRequestId: string | null = null;
   private authenticatingGeneration: number | null = null;
   private authenticatedGeneration: number | null = null;
-  private shouldSyncRoomOnAuth = false;
 
   private reconnectAttempts: number = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -114,9 +113,10 @@ export class MultiplayerService {
 
     window.addEventListener('online', () => {
       this.isOnline = true;
-      if (this.state === 'DISCONNECTED' || this.state === 'RECONNECTING') {
+      const isStale = !this.ws || this.ws.readyState !== WebSocket.OPEN || (Date.now() - this.lastPongReceivedAt > 20000);
+      if (isStale || this.state === 'DISCONNECTED' || this.state === 'RECONNECTING') {
         this.reconnectAttempts = 0;
-        this.connect();
+        this.connect(true);
       }
     });
 
@@ -133,7 +133,7 @@ export class MultiplayerService {
           if (isStale) {
             console.log('📱 App returned to foreground from sleep/background. Resuming active connection...');
             this.reconnectAttempts = 0;
-            this.connect();
+            this.connect(true);
           }
         }
       });
@@ -204,19 +204,26 @@ export class MultiplayerService {
   /**
    * Connect to the WebSocket Server
    */
-  public connect(): void {
+  public connect(force = false): void {
     if (!this.isOnline) {
       return;
     }
 
-    if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
+    if (!force && this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
       return;
+    }
+
+    if (force && this.ws) {
+      try {
+        this.ws.close();
+      } catch {
+        // Ignore
+      }
+      this.ws = null;
     }
 
     this.isIntentionalClose = false;
     this.clearReconnectTimer();
-    const isReconnecting = this.reconnectAttempts > 0 || this.state === 'RECONNECTING';
-    this.shouldSyncRoomOnAuth = isReconnecting && Boolean(this.currentRoomCode);
     this.setConnectionState(this.reconnectAttempts > 0 ? 'RECONNECTING' : 'CONNECTING');
 
     this.url = this.resolveWsUrl();
@@ -261,23 +268,8 @@ export class MultiplayerService {
         if (message.type === 'AUTH_OK') {
           this.authenticatingGeneration = null;
           this.authenticatedGeneration = currentGeneration;
-          const shouldSyncRoom = this.shouldSyncRoomOnAuth;
-          const hasQueuedRoomSync = this.sendQueue.some(
-            (queuedMessage) =>
-              queuedMessage.type === 'SYNC_ROOM' &&
-              queuedMessage.payload.roomCode === this.currentRoomCode,
-          );
-
           this.dispatchMessage(message);
           this.flushQueue();
-
-          // A reconnect always converges from an authoritative snapshot, but
-          // only after AUTH_OK and only once when a sync was not already queued.
-          if (shouldSyncRoom && this.currentRoomCode && !hasQueuedRoomSync) {
-            console.log(`🔄 Connection restored. Auto-syncing room state for ${this.currentRoomCode}...`);
-            this.send('SYNC_ROOM', { roomCode: this.currentRoomCode });
-          }
-          this.shouldSyncRoomOnAuth = false;
           return;
         }
 
@@ -630,7 +622,7 @@ export class MultiplayerService {
 
       // Check if previous pong timed out
       this.pingTimeoutTimer = setTimeout(() => {
-        if (Date.now() - this.lastPongReceivedAt > this.PONG_TIMEOUT_MS + this.PING_INTERVAL_MS) {
+        if (this.lastPongReceivedAt < this.lastPingSentAt && Date.now() - this.lastPingSentAt >= this.PONG_TIMEOUT_MS) {
           console.warn('⚠️ Server heartbeat timeout (No PONG received). Terminating dead socket...');
           if (this.ws) {
             try {

@@ -402,6 +402,7 @@ export class StorageService {
     telegramId: number;
     walletAddress: string;
     amountNano: string;
+    operationKey?: string;
   }) {
     const user = await this.db.loadUserByTelegramId(input.telegramId);
     if (!user) return { success: false as const, error: 'Account not found' };
@@ -424,7 +425,8 @@ export class StorageService {
     const result = await this.db.requestWithdrawal(
       input.telegramId,
       trimmedAddress,
-      input.amountNano
+      input.amountNano,
+      input.operationKey
     );
 
     if (!result.success) {

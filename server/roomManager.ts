@@ -7,6 +7,7 @@ import { ServerRPSEngine } from './engines/RPSEngine';
 import { connectionManager } from './connectionManager';
 import { StorageService } from './storage';
 import { MAX_STAKE, MIN_STAKE } from '../shared/constants/economics';
+import { roomCommandQueue } from './roomCommandQueue';
 
 export const DISCONNECT_FORFEIT_TIMEOUT_MS = 45000;
 
@@ -470,6 +471,17 @@ export class RoomManager {
     return null;
   }
 
+  getActiveRoomForPlayer(telegramId: number): GameRoom | undefined {
+    for (const room of this.rooms.values()) {
+      if (room.status === 'waiting' || room.status === 'playing') {
+        if (room.p1?.telegramId === telegramId || room.p2?.telegramId === telegramId) {
+          return room;
+        }
+      }
+    }
+    return undefined;
+  }
+
   getRoom(code: string): GameRoom | undefined {
     return this.rooms.get(code);
   }
@@ -584,8 +596,11 @@ export class RoomManager {
   }
 
   async reconnectPlayer(code: string, tgId: number): Promise<{ room?: GameRoom; role?: PlayerRole }> {
-    const room = this.rooms.get(code);
-    if (!room) return {};
+    let room = this.rooms.get(code);
+    if (!room) {
+      room = await this.restorePersistedRoomByCode(code);
+      if (!room) return {};
+    }
 
     let role: PlayerRole | undefined;
 
@@ -641,66 +656,85 @@ export class RoomManager {
   }
 
   async handleDisconnect(tgId: number) {
+    const activeConn = connectionManager.getConnection(tgId);
+    if (activeConn && activeConn.state === 'connected' && activeConn.ws.readyState === 1) {
+      return;
+    }
+
     for (const [code, room] of this.rooms.entries()) {
-      let playerRole: PlayerRole | null = null;
-
-      if (room.p1 && room.p1.telegramId === tgId) {
-        room.p1.isConnected = false;
-        playerRole = 'p1';
-      } else if (room.p2 && room.p2.telegramId === tgId) {
-        room.p2.isConnected = false;
-        playerRole = 'p2';
-      }
-
-      if (playerRole) {
-        room.version += 1;
-        room.lastActivityAt = Date.now();
-        await this.persistRoomState(room).catch((error) => {
-          console.error(`Could not persist disconnect for room ${code}:`, error);
-        });
-
-        if (room.status === 'playing') {
-          this.clearTurnTimer(room);
-          connectionManager.broadcast(room, {
-            type: 'PLAYER_DISCONNECTED',
-            payload: {
-              player: playerRole,
-              version: room.version,
-              timeoutMs: DISCONNECT_FORFEIT_TIMEOUT_MS,
-            },
-          });
-
-          if (playerRole === 'p1' && !room.p1DisconnectTimer) {
-            room.p1DisconnectTimer = setTimeout(() => {
-              this.handleForfeitTimeout(code, 'p1');
-            }, DISCONNECT_FORFEIT_TIMEOUT_MS);
-          } else if (playerRole === 'p2' && !room.p2DisconnectTimer) {
-            room.p2DisconnectTimer = setTimeout(() => {
-              this.handleForfeitTimeout(code, 'p2');
-            }, DISCONNECT_FORFEIT_TIMEOUT_MS);
+      if (
+        (room.p1 && room.p1.telegramId === tgId) ||
+        (room.p2 && room.p2.telegramId === tgId)
+      ) {
+        await roomCommandQueue.withRoomLock(code, async () => {
+          const freshConn = connectionManager.getConnection(tgId);
+          if (freshConn && freshConn.state === 'connected' && freshConn.ws.readyState === 1) {
+            return;
           }
-        } else {
-          connectionManager.broadcast(room, {
-            type: 'PLAYER_DISCONNECTED',
-            payload: { player: playerRole, version: room.version },
-          });
 
-          const isP1Disconnected = !room.p1 || !room.p1.isConnected;
-          const isP2Disconnected = !room.p2 || !room.p2.isConnected;
+          const freshRoom = this.rooms.get(code);
+          if (!freshRoom) return;
 
-          if (isP1Disconnected && isP2Disconnected && !room.emptyRoomTimer) {
-            room.emptyRoomTimer = setTimeout(() => {
-              const currentRoom = this.rooms.get(code);
-              if (
-                currentRoom &&
-                (!currentRoom.p1 || !currentRoom.p1.isConnected) &&
-                (!currentRoom.p2 || !currentRoom.p2.isConnected)
-              ) {
-                this.deleteRoom(code);
+          let playerRole: PlayerRole | null = null;
+          if (freshRoom.p1 && freshRoom.p1.telegramId === tgId) {
+            freshRoom.p1.isConnected = false;
+            playerRole = 'p1';
+          } else if (freshRoom.p2 && freshRoom.p2.telegramId === tgId) {
+            freshRoom.p2.isConnected = false;
+            playerRole = 'p2';
+          }
+
+          if (playerRole) {
+            freshRoom.version += 1;
+            freshRoom.lastActivityAt = Date.now();
+            await this.persistRoomState(freshRoom).catch((error) => {
+              console.error(`Could not persist disconnect for room ${code}:`, error);
+            });
+
+            if (freshRoom.status === 'playing') {
+              this.clearTurnTimer(freshRoom);
+              connectionManager.broadcast(freshRoom, {
+                type: 'PLAYER_DISCONNECTED',
+                payload: {
+                  player: playerRole,
+                  version: freshRoom.version,
+                  timeoutMs: DISCONNECT_FORFEIT_TIMEOUT_MS,
+                },
+              });
+
+              if (playerRole === 'p1' && !freshRoom.p1DisconnectTimer) {
+                freshRoom.p1DisconnectTimer = setTimeout(() => {
+                  void this.handleForfeitTimeout(code, 'p1');
+                }, DISCONNECT_FORFEIT_TIMEOUT_MS);
+              } else if (playerRole === 'p2' && !freshRoom.p2DisconnectTimer) {
+                freshRoom.p2DisconnectTimer = setTimeout(() => {
+                  void this.handleForfeitTimeout(code, 'p2');
+                }, DISCONNECT_FORFEIT_TIMEOUT_MS);
               }
-            }, 30000);
+            } else {
+              connectionManager.broadcast(freshRoom, {
+                type: 'PLAYER_DISCONNECTED',
+                payload: { player: playerRole, version: freshRoom.version },
+              });
+
+              const isP1Disconnected = !freshRoom.p1 || !freshRoom.p1.isConnected;
+              const isP2Disconnected = !freshRoom.p2 || !freshRoom.p2.isConnected;
+
+              if (isP1Disconnected && isP2Disconnected && !freshRoom.emptyRoomTimer) {
+                freshRoom.emptyRoomTimer = setTimeout(() => {
+                  const currentRoom = this.rooms.get(code);
+                  if (
+                    currentRoom &&
+                    (!currentRoom.p1 || !currentRoom.p1.isConnected) &&
+                    (!currentRoom.p2 || !currentRoom.p2.isConnected)
+                  ) {
+                    void this.deleteRoom(code);
+                  }
+                }, 30000);
+              }
+            }
           }
-        }
+        });
       }
     }
   }
@@ -803,12 +837,27 @@ export class RoomManager {
   }
 
   async handleForfeitTimeout(code: string, disconnectedRole: PlayerRole) {
-    const room = this.rooms.get(code);
-    if (!room || room.status !== 'playing') return;
-    const disconnectedPlayer = disconnectedRole === 'p1' ? room.p1 : room.p2;
-    if (!disconnectedPlayer || disconnectedPlayer.isConnected) return;
+    await roomCommandQueue.withRoomLock(code, async () => {
+      const room = this.rooms.get(code);
+      if (!room || room.status !== 'playing') return;
+      const disconnectedPlayer = disconnectedRole === 'p1' ? room.p1 : room.p2;
+      if (!disconnectedPlayer || disconnectedPlayer.isConnected) return;
 
-    await this.settleForfeit(code, disconnectedRole, 'disconnect_timeout');
+      const activeConn = connectionManager.getConnection(disconnectedPlayer.telegramId);
+      if (activeConn && activeConn.state === 'connected' && activeConn.ws.readyState === 1) {
+        disconnectedPlayer.isConnected = true;
+        if (disconnectedRole === 'p1' && room.p1DisconnectTimer) {
+          clearTimeout(room.p1DisconnectTimer);
+          room.p1DisconnectTimer = undefined;
+        } else if (disconnectedRole === 'p2' && room.p2DisconnectTimer) {
+          clearTimeout(room.p2DisconnectTimer);
+          room.p2DisconnectTimer = undefined;
+        }
+        return;
+      }
+
+      await this.settleForfeit(code, disconnectedRole, 'disconnect_timeout');
+    });
   }
 
   clearTurnTimer(room: GameRoom): void {
@@ -835,47 +884,49 @@ export class RoomManager {
   }
 
   async handleTurnTimeout(code: string): Promise<void> {
-    const room = this.rooms.get(code);
-    if (!room || room.status !== 'playing') return;
+    await roomCommandQueue.withRoomLock(code, async () => {
+      const room = this.rooms.get(code);
+      if (!room || room.status !== 'playing') return;
 
-    if (room.gameType === 'rps') {
-      const state = room.engine.getState() as any;
-      const p1HasChosen = Boolean(state.p1HasChosen);
-      const p2HasChosen = Boolean(state.p2HasChosen);
+      if (room.gameType === 'rps') {
+        const state = room.engine.getState() as any;
+        const p1HasChosen = Boolean(state.p1HasChosen);
+        const p2HasChosen = Boolean(state.p2HasChosen);
 
-      if (!p1HasChosen && p2HasChosen) {
-        await this.settleForfeit(code, 'p1', 'disconnect_timeout');
-      } else if (!p2HasChosen && p1HasChosen) {
-        await this.settleForfeit(code, 'p2', 'disconnect_timeout');
-      } else if (!p1HasChosen && !p2HasChosen) {
-        this.clearTurnTimer(room);
-        await this.storage.cancelMatch(code);
-        room.status = 'gameover';
-        room.winner = 'draw';
-        room.settlementStatus = 'committed';
-        room.version += 1;
-        connectionManager.broadcast(room, {
-          type: 'GAME_OVER',
-          payload: {
-            roomCode: code,
-            winner: 'draw',
-            potAmount: room.potAmount,
-            winnerPayout: room.stakeAmount,
-            loserPayout: room.stakeAmount,
-            arenaFee: 0,
-            xpEarned: 0,
-            version: room.version,
-            isForfeit: true,
-            settlementStatus: 'committed',
-          },
-        });
-        await this.notifyAccounts([room.p1?.telegramId, room.p2?.telegramId]);
+        if (!p1HasChosen && p2HasChosen) {
+          await this.settleForfeit(code, 'p1', 'disconnect_timeout');
+        } else if (!p2HasChosen && p1HasChosen) {
+          await this.settleForfeit(code, 'p2', 'disconnect_timeout');
+        } else if (!p1HasChosen && !p2HasChosen) {
+          this.clearTurnTimer(room);
+          await this.storage.cancelMatch(code);
+          room.status = 'gameover';
+          room.winner = 'draw';
+          room.settlementStatus = 'committed';
+          room.version += 1;
+          connectionManager.broadcast(room, {
+            type: 'GAME_OVER',
+            payload: {
+              roomCode: code,
+              winner: 'draw',
+              potAmount: room.potAmount,
+              winnerPayout: room.stakeAmount,
+              loserPayout: room.stakeAmount,
+              arenaFee: 0,
+              xpEarned: 0,
+              version: room.version,
+              isForfeit: true,
+              settlementStatus: 'committed',
+            },
+          });
+          await this.notifyAccounts([room.p1?.telegramId, room.p2?.telegramId]);
+        }
+        return;
       }
-      return;
-    }
 
-    const activePlayer = room.engine.getActivePlayer();
-    await this.settleForfeit(code, activePlayer, 'disconnect_timeout');
+      const activePlayer = room.engine.getActivePlayer();
+      await this.settleForfeit(code, activePlayer, 'disconnect_timeout');
+    });
   }
 
   /**
@@ -1082,6 +1133,18 @@ export class RoomManager {
 
     if (transition.isGameOver) {
       this.clearTurnTimer(room);
+      if (room.p1DisconnectTimer) {
+        clearTimeout(room.p1DisconnectTimer);
+        room.p1DisconnectTimer = undefined;
+      }
+      if (room.p2DisconnectTimer) {
+        clearTimeout(room.p2DisconnectTimer);
+        room.p2DisconnectTimer = undefined;
+      }
+      if (room.emptyRoomTimer) {
+        clearTimeout(room.emptyRoomTimer);
+        room.emptyRoomTimer = undefined;
+      }
     } else if (room.status === 'playing') {
       this.startTurnTimer(code);
     }

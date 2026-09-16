@@ -1056,8 +1056,30 @@ export class DatabasePool {
     const amountGram = nanoToGrams(amountNano);
 
     if (!this.usesPersistentDatabase()) {
+      const existingTx = (this.inMemoryDb.get('transactions') || []).find(
+        (t: any) => t.operation_key === opKey
+      );
       const user = this.getUserByTelegramId(telegramId);
       if (!user) return { success: false, error: 'Account not found' };
+
+      if (existingTx) {
+        const existingWithdrawal = (this.inMemoryDb.get('withdrawals') || []).find(
+          (w: any) => w.operation_key === opKey
+        );
+        return {
+          success: true,
+          withdrawal: existingWithdrawal,
+          user: this.normalizeUser(user),
+          transaction: {
+            id: existingWithdrawal?.id || existingTx.id,
+            type: 'withdraw',
+            amountGram: existingWithdrawal ? existingWithdrawal.amount_gram : existingTx.amount,
+            status: 'completed',
+            createdAt: existingWithdrawal ? existingWithdrawal.created_at : existingTx.created_at,
+            walletAddress,
+          },
+        };
+      }
 
       const userNano = BigInt(user.balance_nano ?? gramsToNano(user.balance_gram));
       if (userNano < nanoAmount) {
@@ -1122,9 +1144,27 @@ export class DatabasePool {
       );
       if (existingTx.rowCount && existingTx.rowCount > 0) {
         const userRes = await client.query('SELECT * FROM users WHERE telegram_id = $1', [telegramId]);
+        if (!userRes.rows[0]) {
+          return { success: false, error: 'Account not found' };
+        }
+        const existingWithdrawalRes = await client.query(
+          'SELECT * FROM withdrawals WHERE operation_key = $1',
+          [opKey]
+        );
+        const wRow = existingWithdrawalRes.rows[0];
+        const txRow = existingTx.rows[0];
         return {
           success: true,
-          user: userRes.rows[0] ? this.normalizeUser(userRes.rows[0]) : undefined,
+          withdrawal: wRow,
+          user: this.normalizeUser(userRes.rows[0]),
+          transaction: {
+            id: wRow ? String(wRow.id) : String(txRow.id),
+            type: 'withdraw',
+            amountGram: wRow ? Number(wRow.amount_gram) : nanoToGrams(String(txRow.amount_nano)),
+            status: 'completed',
+            createdAt: wRow ? new Date(wRow.created_at).toISOString() : new Date().toISOString(),
+            walletAddress: wRow?.wallet_address || walletAddress,
+          },
         };
       }
 

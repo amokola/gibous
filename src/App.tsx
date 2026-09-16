@@ -128,7 +128,12 @@ export const App: React.FC = () => {
     if (currentRoom.status === 'waiting' && currentScreen !== 'waiting') {
       setScreen('waiting');
     } else if (currentRoom.status === 'playing' && currentScreen !== 'game' && currentScreen !== 'vs-intro') {
-      setScreen('vs-intro');
+      const isReconnectedOngoingMatch = Boolean(currentRoom.version && currentRoom.version > 1);
+      if (isReconnectedOngoingMatch) {
+        setScreen('game');
+      } else {
+        setScreen('vs-intro');
+      }
     } else if (currentRoom.status === 'gameover' && currentScreen !== 'gameover') {
       // Delay transition to gameover screen when in active gameplay
       // so players can clearly watch final move animations, clash reveals, and board outcome

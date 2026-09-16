@@ -49,15 +49,17 @@ describe('WebSocket Disconnect, Reconnect & Forfeit Integration Tests', () => {
 
     // Reconnect P1 with new socket
     ws1 = await connectTestClient(wsUrl);
-    await sendAndAwaitResponse(ws1, { type: 'AUTH', payload: { telegramId: p1TgId, playerName: 'P1' } }, 'AUTH_OK');
+    const authOk = await sendAndAwaitResponse(ws1, { type: 'AUTH', payload: { telegramId: p1TgId, playerName: 'P1' } }, 'AUTH_OK');
+    expect(authOk.payload.activeRoom).toBeDefined();
+    expect(authOk.payload.activeRoom.code).toBe('RECON01');
 
     const reconnectPromiseP2 = waitForMessage(ws2, (msg) => msg.type === 'PLAYER_RECONNECTED');
 
-    // Send JOIN_ROOM to rejoin active room
+    // Send SYNC_ROOM to rejoin active room (the authentic frontend reconnection flow)
     const statePromiseP1 = waitForMessage(ws1, (msg) => msg.type === 'ROOM_STATE');
     ws1.send(JSON.stringify({
-      type: 'JOIN_ROOM',
-      payload: { roomCode: 'RECON01', telegramId: p1TgId, playerName: 'P1' },
+      type: 'SYNC_ROOM',
+      payload: { roomCode: 'RECON01' },
     }));
 
     const [reconnectEvent, p1State] = await Promise.all([reconnectPromiseP2, statePromiseP1]);
@@ -65,6 +67,15 @@ describe('WebSocket Disconnect, Reconnect & Forfeit Integration Tests', () => {
     expect(reconnectEvent.payload.player).toBe('p1');
     expect(p1State.type).toBe('ROOM_STATE');
     expect(p1State.payload.code).toBe('RECON01');
+
+    const inMemoryRoom = roomManager.getRoom('RECON01');
+    expect(inMemoryRoom?.p1?.isConnected).toBe(true);
+    expect(inMemoryRoom?.p1DisconnectTimer).toBeUndefined();
+
+    // Verify calling handleForfeitTimeout after reconnect does NOT forfeit the player
+    await roomManager.handleForfeitTimeout('RECON01', 'p1');
+    expect(inMemoryRoom?.status).toBe('playing');
+    expect(inMemoryRoom?.winner).toBeNull();
 
     ws1.close();
     ws2.close();
@@ -102,5 +113,27 @@ describe('WebSocket Disconnect, Reconnect & Forfeit Integration Tests', () => {
     expect(gameOverEvent.payload.isForfeit).toBe(true);
 
     ws2.close();
+  });
+
+  it('should gracefully handle abruptly terminated sockets during room broadcasts without crashing', async () => {
+    const dummyClient = await connectTestClient(wsUrl);
+    // Destroy the underlying socket abruptly
+    dummyClient.terminate();
+
+    // Trigger room creation which calls broadcastOpenRooms()
+    const activeClient = await connectTestClient(wsUrl);
+    const tgId = 660005;
+    await storage.getOrCreateUser({ id: tgId, first_name: 'SafeBroadcaster' });
+    await sendAndAwaitResponse(activeClient, { type: 'AUTH', payload: { telegramId: tgId, playerName: 'SafeBroadcaster' } }, 'AUTH_OK');
+
+    const createRes = await sendAndAwaitResponse(
+      activeClient,
+      { type: 'CREATE_ROOM', payload: { roomCode: 'SAFE01', gameType: 'connect4', stake: 100 } },
+      'ROOM_CREATED'
+    );
+    expect(createRes.type).toBe('ROOM_CREATED');
+    expect(createRes.payload.code).toBe('SAFE01');
+
+    activeClient.close();
   });
 });
