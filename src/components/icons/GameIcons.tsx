@@ -5,6 +5,22 @@ interface IconProps {
   className?: string;
 }
 
+interface AssetIconProps extends IconProps {
+  src: string;
+}
+
+const AssetIcon: React.FC<AssetIconProps> = ({ src, size = 36, className = '' }) => (
+  <img
+    src={src}
+    width={size}
+    height={size}
+    alt=""
+    aria-hidden="true"
+    draggable={false}
+    className={`inline-block select-none object-contain ${className}`}
+  />
+);
+
 // 1. Bold, readable snake mark for compact game cards.
 export const SnakeIcon: React.FC<IconProps> = ({ size = 36, className = '' }) => (
   <svg
@@ -55,161 +71,22 @@ export const Connect4Icon: React.FC<IconProps> = ({ size = 36, className = '' })
 
 // 5. Premium Meteorite Rock / Fist Icon (Crystalline Facets, Sharp Ink Cuts)
 export const RockIcon: React.FC<IconProps> = ({ size = 36, className = '' }) => (
-  <svg
-    width={size}
-    height={size}
-    viewBox="0 0 64 64"
-    fill="none"
-    xmlns="http://www.w3.org/2000/svg"
-    className={`inline-block select-none filter drop-shadow-[0_2px_4px_rgba(0,0,0,0.4)] ${className}`}
-  >
-    <defs>
-      <linearGradient id="rockGrad1" x1="0%" y1="0%" x2="100%" y2="100%">
-        <stop offset="0%" stopColor="#f59e0b" />
-        <stop offset="100%" stopColor="#b45309" />
-      </linearGradient>
-      <linearGradient id="rockGrad2" x1="0%" y1="0%" x2="100%" y2="100%">
-        <stop offset="0%" stopColor="#fbbf24" />
-        <stop offset="100%" stopColor="#d97706" />
-      </linearGradient>
-      <linearGradient id="rockGrad3" x1="0%" y1="0%" x2="100%" y2="100%">
-        <stop offset="0%" stopColor="#d97706" />
-        <stop offset="100%" stopColor="#78350f" />
-      </linearGradient>
-    </defs>
-
-    {/* Solid Hard Shadow */}
-    <polygon points="32,6 52,18 58,42 42,58 20,56 8,36 16,14" fill="#000000" stroke="#000000" strokeWidth="4" />
-
-    {/* Facet 1: Top Right */}
-    <polygon points="32,6 52,18 36,32 16,14" fill="url(#rockGrad2)" stroke="#000000" strokeWidth="2.5" strokeLinejoin="round" />
-
-    {/* Facet 2: Bottom Right Dark Base */}
-    <polygon points="52,18 58,42 42,58 34,42 36,32" fill="url(#rockGrad3)" stroke="#000000" strokeWidth="2.5" strokeLinejoin="round" />
-
-    {/* Facet 3: Bottom Left */}
-    <polygon points="16,14 36,32 34,42 20,56 8,36" fill="url(#rockGrad1)" stroke="#000000" strokeWidth="2.5" strokeLinejoin="round" />
-
-    {/* Facet 4: Center Core */}
-    <polygon points="36,32 44,24 46,38 34,42" fill="#fde68a" stroke="#000000" strokeWidth="2" strokeLinejoin="round" />
-
-    {/* Sharp Edge Highlight Cuts */}
-    <line x1="32" y1="8" x2="36" y2="30" stroke="#ffffff" strokeWidth="2" strokeLinecap="round" opacity="0.8" />
-    <line x1="18" y1="16" x2="34" y2="31" stroke="#ffffff" strokeWidth="1.5" strokeLinecap="round" opacity="0.8" />
-  </svg>
+  <AssetIcon src="/images/icons/rps/rock.svg" size={size} className={className} />
 );
 
 // 6. Premium Blueprint / Origami Paper Icon (Wax Seal, Ruled Ink Lines, Corner Fold)
 export const PaperIcon: React.FC<IconProps> = ({ size = 36, className = '' }) => (
-  <svg
-    width={size}
-    height={size}
-    viewBox="0 0 64 64"
-    fill="none"
-    xmlns="http://www.w3.org/2000/svg"
-    className={`inline-block select-none filter drop-shadow-[0_2px_4px_rgba(0,0,0,0.4)] ${className}`}
-  >
-    <defs>
-      <linearGradient id="paperGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-        <stop offset="0%" stopColor="#7dd3fc" />
-        <stop offset="50%" stopColor="#38bdf8" />
-        <stop offset="100%" stopColor="#0284c7" />
-      </linearGradient>
-      <linearGradient id="foldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-        <stop offset="0%" stopColor="#e0f2fe" />
-        <stop offset="100%" stopColor="#bae6fd" />
-      </linearGradient>
-    </defs>
-
-    {/* Solid Hard Shadow */}
-    <path d="M14 10 L44 10 L54 20 L54 56 L14 56 Z" fill="#000000" stroke="#000000" strokeWidth="4" />
-
-    {/* Main Blueprint Parchment */}
-    <path
-      d="M14 8 L44 8 L54 18 L54 54 L14 54 Z"
-      fill="url(#paperGrad)"
-      stroke="#000000"
-      strokeWidth="3"
-      strokeLinejoin="round"
-    />
-
-    {/* Realistic Corner Fold */}
-    <path
-      d="M44 8 L44 18 L54 18 Z"
-      fill="url(#foldGrad)"
-      stroke="#000000"
-      strokeWidth="2.5"
-      strokeLinejoin="round"
-    />
-
-    {/* Ruled Blueprint Ink Lines */}
-    <line x1="22" y1="20" x2="36" y2="20" stroke="#0f172a" strokeWidth="3" strokeLinecap="round" />
-    <line x1="22" y1="28" x2="46" y2="28" stroke="#0f172a" strokeWidth="3" strokeLinecap="round" />
-    <line x1="22" y1="36" x2="46" y2="36" stroke="#0f172a" strokeWidth="3" strokeLinecap="round" />
-    <line x1="22" y1="44" x2="34" y2="44" stroke="#0f172a" strokeWidth="3" strokeLinecap="round" />
-
-    {/* Stamped Red Wax Seal */}
-    <circle cx="44" cy="44" r="5" fill="#ef4444" stroke="#000000" strokeWidth="2" />
-    <path d="M42 44 L44 42 L46 44 L44 46 Z" fill="#ffffff" />
-  </svg>
+  <AssetIcon src="/images/icons/rps/paper.svg" size={size} className={className} />
 );
 
 // 7. Bold scissors mark with clean blades and high-contrast handles.
 export const ScissorsIcon: React.FC<IconProps> = ({ size = 36, className = '' }) => (
-  <svg
-    width={size}
-    height={size}
-    viewBox="0 0 64 64"
-    fill="none"
-    xmlns="http://www.w3.org/2000/svg"
-    aria-hidden="true"
-    className={`inline-block select-none ${className}`}
-  >
-    <path d="M26 38L10 10L34 32L26 38Z" fill="#e2e8f0" stroke="#000" strokeWidth="2.5" strokeLinejoin="round" />
-    <path d="M38 38L54 10L30 32L38 38Z" fill="#cbd5e1" stroke="#000" strokeWidth="2.5" strokeLinejoin="round" />
-    <path d="M13 13L29 32M51 13L35 32" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" opacity="0.9" />
-    <circle cx="18" cy="48" r="8" fill="#4ade80" stroke="#000" strokeWidth="3" />
-    <circle cx="46" cy="48" r="8" fill="#4ade80" stroke="#000" strokeWidth="3" />
-    <circle cx="18" cy="48" r="3.5" fill="#fbfaf7" stroke="#000" strokeWidth="2" />
-    <circle cx="46" cy="48" r="3.5" fill="#fbfaf7" stroke="#000" strokeWidth="2" />
-    <circle cx="32" cy="32" r="3.5" fill="#facc15" stroke="#000" strokeWidth="2" />
-  </svg>
+  <AssetIcon src="/images/icons/rps/scissors.svg" size={size} className={className} />
 );
 
 // 8. Premium Fantasy Crossed Swords Clash Icon
 export const SwordsClashIcon: React.FC<IconProps> = ({ size = 36, className = '' }) => (
-  <svg
-    width={size}
-    height={size}
-    viewBox="0 0 64 64"
-    fill="none"
-    xmlns="http://www.w3.org/2000/svg"
-    className={`inline-block select-none filter drop-shadow-[0_2px_4px_rgba(0,0,0,0.4)] ${className}`}
-  >
-    {/* Sword 1 (NW to SE) */}
-    <line x1="12" y1="12" x2="52" y2="52" stroke="#000000" strokeWidth="7" strokeLinecap="round" />
-    <line x1="12" y1="12" x2="52" y2="52" stroke="#e2e8f0" strokeWidth="4" strokeLinecap="round" />
-    <line x1="12" y1="12" x2="52" y2="52" stroke="#ffffff" strokeWidth="1.5" strokeLinecap="round" />
-    {/* Crossguard & Pommel */}
-    <line x1="44" y1="56" x2="56" y2="44" stroke="#d97706" strokeWidth="5" strokeLinecap="round" />
-    <circle cx="54" cy="54" r="3.5" fill="#facc15" stroke="#000000" strokeWidth="2" />
-
-    {/* Sword 2 (NE to SW) */}
-    <line x1="52" y1="12" x2="12" y2="52" stroke="#000000" strokeWidth="7" strokeLinecap="round" />
-    <line x1="52" y1="12" x2="12" y2="52" stroke="#e2e8f0" strokeWidth="4" strokeLinecap="round" />
-    <line x1="52" y1="12" x2="12" y2="52" stroke="#ffffff" strokeWidth="1.5" strokeLinecap="round" />
-    {/* Crossguard & Pommel */}
-    <line x1="20" y1="56" x2="8" y2="44" stroke="#d97706" strokeWidth="5" strokeLinecap="round" />
-    <circle cx="10" cy="54" r="3.5" fill="#facc15" stroke="#000000" strokeWidth="2" />
-
-    {/* Center Impact Blast Star */}
-    <polygon
-      points="32,22 35,28 42,32 35,36 32,42 29,36 22,32 29,28"
-      fill="#facc15"
-      stroke="#000000"
-      strokeWidth="2"
-    />
-  </svg>
+  <AssetIcon src="/images/icons/weapons.svg" size={size} className={className} />
 );
 
 // 9. Premium Championship Trophy Cup Icon (Laurel Wreath, Star Medallion, Solid Plinth)
@@ -326,45 +203,7 @@ export const GiftRewardIcon: React.FC<IconProps> = ({ size = 36, className = '' 
 
 // 11. Premium Steel Bank Vault Icon (Heavy Bolted Hinges, Combination Wheel)
 export const BankVaultIcon: React.FC<IconProps> = ({ size = 36, className = '' }) => (
-  <svg
-    width={size}
-    height={size}
-    viewBox="0 0 64 64"
-    fill="none"
-    xmlns="http://www.w3.org/2000/svg"
-    className={`inline-block select-none filter drop-shadow-[0_2px_4px_rgba(0,0,0,0.4)] ${className}`}
-  >
-    <defs>
-      <linearGradient id="vaultOuterGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-        <stop offset="0%" stopColor="#334155" />
-        <stop offset="100%" stopColor="#0f172a" />
-      </linearGradient>
-      <linearGradient id="vaultDoorGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-        <stop offset="0%" stopColor="#64748b" />
-        <stop offset="100%" stopColor="#1e293b" />
-      </linearGradient>
-    </defs>
-
-    {/* Vault Outer Chassis */}
-    <rect x="8" y="8" width="48" height="48" rx="8" fill="url(#vaultOuterGrad)" stroke="#000000" strokeWidth="4" />
-
-    {/* Reinforced Vault Door */}
-    <circle cx="32" cy="32" r="18" fill="url(#vaultDoorGrad)" stroke="#000000" strokeWidth="3" />
-
-    {/* Heavy Perimeter Locking Bolts */}
-    {[0, 45, 90, 135, 180, 225, 270, 315].map((deg) => {
-      const rad = (deg * Math.PI) / 180;
-      const bx = 32 + 14 * Math.cos(rad);
-      const by = 32 + 14 * Math.sin(rad);
-      return <circle key={deg} cx={bx} cy={by} r="1.5" fill="#f8fafc" stroke="#000000" strokeWidth="1" />;
-    })}
-
-    {/* Heavy Rotating Handle Wheel */}
-    <circle cx="32" cy="32" r="7" fill="#facc15" stroke="#000000" strokeWidth="2.5" />
-    <line x1="32" y1="18" x2="32" y2="46" stroke="#000000" strokeWidth="3" strokeLinecap="round" />
-    <line x1="18" y1="32" x2="46" y2="32" stroke="#000000" strokeWidth="3" strokeLinecap="round" />
-    <circle cx="32" cy="32" r="2.5" fill="#000000" />
-  </svg>
+  <AssetIcon src="/images/icons/vault.svg" size={size} className={className} />
 );
 
 // 12. Premium Imperial King's Crown Icon (Velvet Cap, Inset Rubies & Sapphires)
