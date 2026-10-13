@@ -90,53 +90,9 @@ describe('Tier 4: Real-World Workloads E2E Test Suite', () => {
   });
 
   // =========================================================================
-  // WORKLOAD 2: Matchmaking Queue to Snake & Ladder Playthrough
+  // WORKLOAD 2: Full Rock Paper Scissors Duel with Tie and Decisive Victory
   // =========================================================================
-  it('4.2 should pair players from matchmaking queue and progress through a Snake & Ladder match', async () => {
-    const p1TgId = 402001;
-    const p2TgId = 402002;
-    await setupE2EUser(p1TgId, 'Queue_Snake_1', 10000);
-    await setupE2EUser(p2TgId, 'Queue_Snake_2', 10000);
-
-    const p1 = await createAuthClient(p1TgId, 'Queue_Snake_1');
-    const p2 = await createAuthClient(p2TgId, 'Queue_Snake_2');
-
-    // Both players enter matchmaking queue for Snake & Ladder
-    const startP1Promise = p1.waitForType('GAME_START');
-    const startP2Promise = p2.waitForType('GAME_START');
-
-    await p1.sendAndAwait({ type: 'JOIN_QUEUE', payload: { gameType: 'snake', stake: 100 } }, 'QUEUE_JOINED');
-    await p2.sendAndAwait({ type: 'JOIN_QUEUE', payload: { gameType: 'snake', stake: 100 } }, 'QUEUE_JOINED');
-
-    const [startP1, startP2] = await Promise.all([startP1Promise, startP2Promise]);
-    expect(startP1.payload.code).toBe(startP2.payload.code);
-    expect(startP1.payload.status).toBe('playing');
-    const roomCode = startP1.payload.code;
-
-    // Both players execute multiple turns
-    for (let round = 0; round < 6; round++) {
-      const activeClient = round % 2 === 0 ? p1 : p2;
-      const rollWait = p1.waitForType('DICE_ROLLED');
-      activeClient.send({ type: 'ROLL_DICE', payload: { roomCode } });
-      const roll = await rollWait;
-      expect(roll.payload.value).toBeGreaterThanOrEqual(1);
-      expect(roll.payload.value).toBeLessThanOrEqual(6);
-    }
-
-    // Verify room state is consistent via SYNC_ROOM
-    const syncRes = await p2.sendAndAwait({ type: 'SYNC_ROOM', payload: { roomCode } }, 'ROOM_STATE');
-    expect(syncRes.payload.status).toBe('playing');
-    expect(syncRes.payload.gameState.p1Position).toBeGreaterThan(1);
-    expect(syncRes.payload.gameState.p2Position).toBeGreaterThan(1);
-
-    p1.close();
-    p2.close();
-  });
-
-  // =========================================================================
-  // WORKLOAD 3: Full Rock Paper Scissors Duel with Tie and Decisive Victory
-  // =========================================================================
-  it('4.3 should execute a multi-round Rock Paper Scissors duel with draws, score updates, and match conclusion', async () => {
+  it('4.2 should execute a multi-round Rock Paper Scissors duel with draws, score updates, and match conclusion', async () => {
     const p1TgId = 403001;
     const p2TgId = 403002;
     await setupE2EUser(p1TgId, 'RPS_Master_A', 10000);
@@ -202,9 +158,9 @@ describe('Tier 4: Real-World Workloads E2E Test Suite', () => {
   });
 
   // =========================================================================
-  // WORKLOAD 4: Resilient Disconnect & Reconnection Recovery Journey
+  // WORKLOAD 3: Resilient Disconnect & Reconnection Recovery Journey
   // =========================================================================
-  it('4.4 should recover cleanly from unexpected socket drops mid-game and complete the match', async () => {
+  it('4.3 should recover cleanly from unexpected socket drops mid-game and complete the match', async () => {
     const p1TgId = 404001;
     const p2TgId = 404002;
     await setupE2EUser(p1TgId, 'Resilient_P1', 10000);
@@ -263,9 +219,9 @@ describe('Tier 4: Real-World Workloads E2E Test Suite', () => {
   });
 
   // =========================================================================
-  // WORKLOAD 5: Voluntary Surrender / Forfeit Flow with Instant Settlement
+  // WORKLOAD 4: Voluntary Surrender / Forfeit Flow with Instant Settlement
   // =========================================================================
-  it('4.5 should instantly settle match and credit opponent upon voluntary resignation', async () => {
+  it('4.4 should instantly settle match and credit opponent upon voluntary resignation', async () => {
     const p1TgId = 405001;
     const p2TgId = 405002;
     await setupE2EUser(p1TgId, 'Surrender_Winner', 10000);

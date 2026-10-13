@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { RoomManager, DISCONNECT_FORFEIT_TIMEOUT_MS } from '../../../server/roomManager';
-import { MatchmakingQueue } from '../../../server/matchmaking';
 import { connectionManager } from '../../../server/connectionManager';
 import { ServerRPSEngine } from '../../../server/engines/RPSEngine';
 import { StorageService } from '../../../server/storage';
@@ -161,61 +160,6 @@ describe('Milestone 2 Adversarial Challenger Stress Suite', () => {
       const join3 = await roomManager.joinRoom('FULL_ROOM', p3, 'P3');
       expect(join3.error).toBe('Room is full or already in progress');
       expect(join3.room).toBeUndefined();
-    });
-
-    it('prevents match creation when a queued player is already in an active playing duel', async () => {
-      const p1 = 21008;
-      const p2 = 21009;
-      await storage.getOrCreateUser({ id: p1, first_name: 'Q_P1' });
-      await storage.getOrCreateUser({ id: p2, first_name: 'Q_P2' });
-
-      // Put P1 into an active playing duel first
-      await roomManager.createRoom('ACTIVE_P1', 'snake', 100, p1, 'Q_P1');
-      await roomManager.joinRoom('ACTIVE_P1', 99999, 'Bot');
-
-      const activeRoom = roomManager.getRoom('ACTIVE_P1')!;
-      expect(activeRoom.status).toBe('playing');
-
-      // Create MatchmakingQueue with standard match founder
-      const mq = new MatchmakingQueue(async (reservation) => {
-        const createRes = await roomManager.createRoom(
-          undefined,
-          reservation.gameType,
-          reservation.stake,
-          reservation.p1.telegramId,
-          reservation.p1.name
-        );
-        if (!createRes.room) {
-          throw new Error(createRes.error || 'Failed to create room during matchmaking');
-        }
-      });
-
-      const mockWs1: any = { readyState: 1, send: vi.fn() };
-      const mockWs2: any = { readyState: 1, send: vi.fn() };
-
-      // P1 enqueues
-      await mq.enqueue({
-        telegramId: p1,
-        name: 'Q_P1',
-        gameType: 'snake',
-        stake: 100,
-        joinedAt: Date.now(),
-        ws: mockWs1,
-      });
-
-      // P2 enqueues, triggering match with P1
-      await expect(
-        mq.enqueue({
-          telegramId: p2,
-          name: 'Q_P2',
-          gameType: 'snake',
-          stake: 100,
-          joinedAt: Date.now(),
-          ws: mockWs2,
-        })
-      ).rejects.toThrow('You are already in an active duel');
-
-      mq.close();
     });
 
   });
@@ -500,13 +444,5 @@ describe('Milestone 2 Adversarial Challenger Stress Suite', () => {
       expect(() => roomManager.close()).not.toThrow();
     });
 
-    it('shuts down MatchmakingQueue cleanly', () => {
-      const mq = new MatchmakingQueue(async () => {});
-      expect((mq as any).cleanupTimer).toBeDefined();
-      mq.close();
-      expect((mq as any).cleanupTimer).toBeNull();
-      // Double close is safe
-      expect(() => mq.close()).not.toThrow();
-    });
   });
 });

@@ -16,6 +16,18 @@ export const ConnectionBanner: React.FC<ConnectionBannerProps> = ({
     return null;
   }
 
+  if (connectionState === 'AUTH_REQUIRED') {
+    return (
+      <div
+        role="alert"
+        aria-live="assertive"
+        className={`w-full shrink-0 z-30 bg-[#fee2e2] text-[#991b1b] border-2 border-black font-sketch text-xs font-bold px-3 py-1.5 flex items-center justify-center gap-2 sketch-shadow-xs animate-fade-in ${className}`.trim()}
+      >
+        <span>Your Telegram session expired. Reopen Gibous from Telegram to sign in again.</span>
+      </div>
+    );
+  }
+
   if (connectionState === 'CONNECTING') {
     return (
       <div

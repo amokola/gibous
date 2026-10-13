@@ -17,7 +17,6 @@ The Gibous E2E test suite provides opaque-box verification of the multiplayer Du
 │                                                                                 │
 │  ├── Connection & Session Manager (AUTH, Heartbeats, Session Tracking)          │
 │  ├── Room Manager & Mutex Queue (Concurrency Serialization, Turn Timers)        │
-│  ├── Matchmaking Queue (O(1) Bucket Pairing by GameType & Stake)                │
 │  ├── Authoritative Game Engines (Connect 4, Snake & Ladder, Rock Paper Scissors)│
 │  └── Escrow Ledger Storage (Atomic Balance Updates, Rake Calculation, Payouts)  │
 └─────────────────────────────────────────────────────────────────────────────────┘
@@ -40,10 +39,10 @@ The Gibous E2E test suite provides opaque-box verification of the multiplayer Du
 ```
 tests/e2e/
 ├── e2e-harness.ts                  # Test server bootstrap, client wrapper & DB helpers
-├── tier1-feature-coverage.test.ts  # Tier 1: Core feature coverage (26 tests)
+├── tier1-feature-coverage.test.ts  # Tier 1: Core feature coverage (21 tests)
 ├── tier2-boundary-corner.test.ts   # Tier 2: Boundary, limit & error cases (17 tests)
 ├── tier3-cross-feature.test.ts     # Tier 3: Pairwise cross-feature interactions (6 tests)
-└── tier4-real-world-workloads.test.ts # Tier 4: Real-world match play-through journeys (5 tests)
+└── tier4-real-world-workloads.test.ts # Tier 4: Real-world match play-through journeys (4 tests)
 ```
 
 ---
@@ -69,16 +68,11 @@ tests/e2e/
 | Rock Paper Scissors | 3.3 | Resolution of Paper beating Rock with score increment | PASS |
 | Rock Paper Scissors | 3.4 | Tie round resolution with unchanged scores | PASS |
 | Rock Paper Scissors | 3.5 | Match victory conclusion upon reaching point threshold | PASS |
-| Matchmaking | 4.1 | Queue entry and `QUEUE_JOINED` status verification | PASS |
-| Matchmaking | 4.2 | Queue cancellation and removal verification | PASS |
-| Matchmaking | 4.3 | Automatic match pairing for matching game and stake | PASS |
-| Matchmaking | 4.4 | Queue isolation across different game types | PASS |
-| Matchmaking | 4.5 | Queue isolation across different stake tiers | PASS |
-| Disconnect/Reconnect | 5.1 | Socket drop broadcasts `PLAYER_DISCONNECTED` with 45s timer | PASS |
-| Disconnect/Reconnect | 5.2 | Reconnecting client discovers active room in `AUTH_OK` | PASS |
-| Disconnect/Reconnect | 5.3 | Reconnected client recovers room state and broadcasts `PLAYER_RECONNECTED` | PASS |
-| Disconnect/Reconnect | 5.4 | Voluntary forfeit via `LEAVE_ROOM` awards victory to opponent | PASS |
-| Disconnect/Reconnect | 5.5 | Host cancellation of waiting room refunds escrow | PASS |
+| Disconnect/Reconnect | 4.1 | Socket drop broadcasts `PLAYER_DISCONNECTED` with 45s timer | PASS |
+| Disconnect/Reconnect | 4.2 | Reconnecting client discovers active room in `AUTH_OK` | PASS |
+| Disconnect/Reconnect | 4.3 | Reconnected client recovers room state and broadcasts `PLAYER_RECONNECTED` | PASS |
+| Disconnect/Reconnect | 4.4 | Voluntary forfeit via `LEAVE_ROOM` awards victory to opponent | PASS |
+| Disconnect/Reconnect | 4.5 | Host cancellation of waiting room refunds escrow | PASS |
 
 ### Tier 2: Boundary & Corner Cases (`tier2-boundary-corner.test.ts`)
 | Category | Test ID | Description | Result |
@@ -115,10 +109,9 @@ tests/e2e/
 | Workload | Test ID | Description | Result |
 |----------|---------|-------------|--------|
 | Full Connect 4 Match | 4.1 | Room creation, lobby discovery, join, full turn-by-turn play, horizontal win, rematch | PASS |
-| Full Snake Matchmaking | 4.2 | Queue matchmaking, duel creation, multi-turn dice rolls, ladder/snake mechanics, sync | PASS |
-| Full RPS Best-of-3 Duel | 4.3 | Multi-round duel with ties, comeback rounds, and decisive 3-point victory | PASS |
-| Disconnect Recovery Flow | 4.4 | Real-world socket drop mid-match, countdown warning, reconnect, and match completion | PASS |
-| Voluntary Forfeit Flow | 4.5 | High-stakes duel (500 GRAM) voluntary surrender, instant settlement & payout credit | PASS |
+| Full RPS Best-of-3 Duel | 4.2 | Multi-round duel with ties, comeback rounds, and decisive 3-point victory | PASS |
+| Disconnect Recovery Flow | 4.3 | Real-world socket drop mid-match, countdown warning, reconnect, and match completion | PASS |
+| Voluntary Forfeit Flow | 4.4 | High-stakes duel (500 GRAM) voluntary surrender, instant settlement & payout credit | PASS |
 
 ---
 

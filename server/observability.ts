@@ -1,4 +1,5 @@
 import { createHmac } from 'node:crypto';
+import { availableParallelism, cpus, totalmem } from 'node:os';
 
 export type StructuredLogLevel = 'debug' | 'info' | 'warn' | 'error';
 
@@ -83,6 +84,13 @@ export interface SystemMetricsSnapshot {
     heapTotalMb: number;
     heapUsedMb: number;
     externalMb: number;
+    capacityMb: number;
+    rssPercentOfCapacity: number;
+  };
+  cpu: {
+    processPercent: number;
+    hostPercent: number;
+    availableParallelism: number;
   };
   eventLoopLagMs: number;
 }
@@ -101,6 +109,9 @@ export class MetricsRegistry {
   private histogramSamples: Map<string, number[]> = new Map();
   private maxSamplesPerHistogram: number;
   private lastLagSampleMs: number = 0;
+  private lastCpuSample = process.cpuUsage();
+  private lastCpuSampleAt = performance.now();
+  private lastHostCpuSample = this.readHostCpuCounters();
   private lagCheckTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(maxSamplesPerHistogram = 1000) {
@@ -121,6 +132,18 @@ export class MetricsRegistry {
     if (this.lagCheckTimer && typeof this.lagCheckTimer === 'object' && 'unref' in this.lagCheckTimer) {
       (this.lagCheckTimer as any).unref();
     }
+  }
+
+  private readHostCpuCounters(): { busy: number; total: number } {
+    let busy = 0;
+    let total = 0;
+    for (const cpu of cpus()) {
+      const times = cpu.times;
+      const coreTotal = times.user + times.nice + times.sys + times.idle + times.irq;
+      total += coreTotal;
+      busy += coreTotal - times.idle;
+    }
+    return { busy, total };
   }
 
   private formatMetricKey(name: string, labels?: Record<string, string>): string {
@@ -158,6 +181,20 @@ export class MetricsRegistry {
 
   getSnapshot(): MetricsSnapshot {
     const mem = process.memoryUsage();
+    const currentCpu = process.cpuUsage();
+    const cpuDelta = process.cpuUsage(this.lastCpuSample);
+    const cpuElapsedMs = Math.max(1, performance.now() - this.lastCpuSampleAt);
+    const cpuCores = Math.max(1, availableParallelism());
+    const processCpuPercent = ((cpuDelta.user + cpuDelta.system) / (cpuElapsedMs * 1000 * cpuCores)) * 100;
+    this.lastCpuSample = currentCpu;
+    this.lastCpuSampleAt = performance.now();
+    const hostCpuNow = this.readHostCpuCounters();
+    const hostCpuTotalDelta = hostCpuNow.total - this.lastHostCpuSample.total;
+    const hostCpuBusyDelta = hostCpuNow.busy - this.lastHostCpuSample.busy;
+    const hostCpuPercent = hostCpuTotalDelta > 0 ? (hostCpuBusyDelta / hostCpuTotalDelta) * 100 : 0;
+    this.lastHostCpuSample = hostCpuNow;
+    const constrainedMemoryBytes = typeof process.constrainedMemory === 'function' ? process.constrainedMemory() : 0;
+    const memoryCapacityBytes = constrainedMemoryBytes > 0 ? constrainedMemoryBytes : totalmem();
     const countersObj: Record<string, number> = {};
     for (const [k, v] of this.counters) {
       countersObj[k] = v;
@@ -201,6 +238,13 @@ export class MetricsRegistry {
           heapTotalMb: Number((mem.heapTotal / (1024 * 1024)).toFixed(2)),
           heapUsedMb: Number((mem.heapUsed / (1024 * 1024)).toFixed(2)),
           externalMb: Number((mem.external / (1024 * 1024)).toFixed(2)),
+          capacityMb: Number((memoryCapacityBytes / (1024 * 1024)).toFixed(2)),
+          rssPercentOfCapacity: Number(((mem.rss / memoryCapacityBytes) * 100).toFixed(2)),
+        },
+        cpu: {
+          processPercent: Number(processCpuPercent.toFixed(2)),
+          hostPercent: Number(hostCpuPercent.toFixed(2)),
+          availableParallelism: cpuCores,
         },
         eventLoopLagMs: Number(this.lastLagSampleMs.toFixed(2)),
       },

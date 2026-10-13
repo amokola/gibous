@@ -1,12 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { RoomManager, DISCONNECT_FORFEIT_TIMEOUT_MS } from '../../../server/roomManager';
-import { MatchmakingQueue } from '../../../server/matchmaking';
 import { connectionManager } from '../../../server/connectionManager';
 import { AuthOkPayloadSchema } from '../../../shared/schemas/protocol';
 import { ServerRPSEngine } from '../../../server/engines/RPSEngine';
 import { StorageService } from '../../../server/storage';
 import { ensureE2EServer, createAuthClient, generateRoomCode } from '../../e2e/e2e-harness';
-import { matchmakingQueue as serverMatchmakingQueue, roomManager as serverRoomManager } from '../../../server/server';
+import { roomManager as serverRoomManager } from '../../../server/server';
 
 
 describe('Milestone 2 Hardening Regressions Suite', () => {
@@ -161,90 +160,6 @@ describe('Milestone 2 Hardening Regressions Suite', () => {
       expect(create2.room?.code).toBe('WAIT_1');
     });
 
-    it('should dequeue player from matchmaking queue cleanly', async () => {
-      const mq = new MatchmakingQueue(async () => {});
-      const mockWs: any = { readyState: 1, send: vi.fn() };
-
-      await mq.enqueue({
-        telegramId: 20107,
-        name: 'QueuedPlayer',
-        gameType: 'snake',
-        stake: 100,
-        joinedAt: Date.now(),
-        ws: mockWs,
-      });
-
-      expect(mq.hasPlayer(20107)).toBe(true);
-
-      const dequeued = mq.dequeueByPlayer(20107);
-      expect(dequeued).toBe(true);
-      expect(mq.hasPlayer(20107)).toBe(false);
-
-      mq.close();
-    });
-
-    it('should reject JOIN_QUEUE with ACTIVE_DUEL_EXISTS when player is already in an active playing duel', async () => {
-      vi.useRealTimers();
-      await ensureE2EServer();
-      const p1TgId = 20110;
-      const p2TgId = 20111;
-      const p1 = await createAuthClient(p1TgId, 'ActiveP1');
-      const p2 = await createAuthClient(p2TgId, 'ActiveP2');
-      const roomCode = generateRoomCode('ACTV');
-
-      try {
-        await p1.sendAndAwait({ type: 'CREATE_ROOM', payload: { roomCode, gameType: 'connect4', stake: 100 } }, 'ROOM_CREATED');
-        const startP1 = p1.waitForType('GAME_START');
-        await p2.sendAndAwait({ type: 'JOIN_ROOM', payload: { roomCode } }, 'GAME_START');
-        await startP1;
-
-        // P1 attempts to join queue while playing in roomCode
-        const queueErr = await p1.sendAndAwait({ type: 'JOIN_QUEUE', payload: { gameType: 'snake', stake: 100 } }, 'ERROR');
-        expect(queueErr.payload.code).toBe('ACTIVE_DUEL_EXISTS');
-        expect(queueErr.payload.message).toContain('active duel');
-      } finally {
-        p1.close();
-        p2.close();
-        await serverRoomManager.deleteRoom(roomCode);
-        vi.useFakeTimers();
-      }
-    });
-
-    it('should auto-dequeue player from matchmakingQueue on CREATE_ROOM and JOIN_ROOM', async () => {
-      vi.useRealTimers();
-      await ensureE2EServer();
-      const hostTgId = 20112;
-      const joinerTgId = 20113;
-      const host = await createAuthClient(hostTgId, 'HostQ');
-      const joiner = await createAuthClient(joinerTgId, 'JoinerQ');
-      let roomCode = '';
-
-      try {
-        // 1. Host enters queue
-        await host.sendAndAwait({ type: 'JOIN_QUEUE', payload: { gameType: 'connect4', stake: 100 } }, 'QUEUE_JOINED');
-        expect(serverMatchmakingQueue.hasPlayer(hostTgId)).toBe(true);
-
-        // 2. Host creates room -> auto-dequeued
-        const roomRes = await host.sendAndAwait({ type: 'CREATE_ROOM', payload: { gameType: 'connect4', stake: 100 } }, 'ROOM_CREATED');
-        expect(serverMatchmakingQueue.hasPlayer(hostTgId)).toBe(false);
-        roomCode = roomRes.payload.code;
-
-        // 3. Joiner enters queue
-        await joiner.sendAndAwait({ type: 'JOIN_QUEUE', payload: { gameType: 'snake', stake: 100 } }, 'QUEUE_JOINED');
-        expect(serverMatchmakingQueue.hasPlayer(joinerTgId)).toBe(true);
-
-        // 4. Joiner joins room -> auto-dequeued
-        await joiner.sendAndAwait({ type: 'JOIN_ROOM', payload: { roomCode } }, 'GAME_START');
-        expect(serverMatchmakingQueue.hasPlayer(joinerTgId)).toBe(false);
-      } finally {
-        host.close();
-        joiner.close();
-        if (roomCode) {
-          await serverRoomManager.deleteRoom(roomCode);
-        }
-        vi.useFakeTimers();
-      }
-    });
   });
 
 
@@ -450,14 +365,6 @@ describe('Milestone 2 Hardening Regressions Suite', () => {
 
       // No new forfeit timer should have been scheduled
       expect(room.p2DisconnectTimer).toBeUndefined();
-    });
-
-    it('should clear matchmaking cleanupTimer on close()', () => {
-      const mq = new MatchmakingQueue(async () => {});
-      expect((mq as any).cleanupTimer).toBeDefined();
-
-      mq.close();
-      expect((mq as any).cleanupTimer).toBeNull();
     });
 
     it('should arm disconnect timers for disconnected players in restored playing rooms', async () => {

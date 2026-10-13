@@ -75,6 +75,7 @@ describe('ConnectionManager Unit Tests', () => {
   });
 
   it('should enforce transport token-bucket rate limit (max 30 burst)', () => {
+    const monotonicNow = vi.spyOn(performance, 'now').mockReturnValue(1234);
     const ws = createMockSocket();
     cm.registerConnection(1004, ws);
 
@@ -85,9 +86,11 @@ describe('ConnectionManager Unit Tests', () => {
 
     // 31st message in burst -> rate limited
     expect(cm.checkTransportRateLimit(ws)).toBe(false);
+    monotonicNow.mockRestore();
   });
 
   it('should rate-limit unauthenticated sockets before identity registration', () => {
+    const monotonicNow = vi.spyOn(performance, 'now').mockReturnValue(2345);
     const ws = createMockSocket();
 
     for (let i = 0; i < 10; i++) {
@@ -95,6 +98,7 @@ describe('ConnectionManager Unit Tests', () => {
     }
 
     expect(cm.checkTransportRateLimit(ws)).toBe(false);
+    monotonicNow.mockRestore();
   });
 
   it('should enforce gameplay action rate limit (max 5 burst)', () => {
@@ -129,7 +133,7 @@ describe('ConnectionManager Unit Tests', () => {
     expect(result.failed).toEqual([]);
   });
 
-  it('should update lastSeen when touchConnection is called and mark heartbeat alive', () => {
+  it('should update lastSeen when touchConnection or protocol PONG marks heartbeat alive', () => {
     const ws = createMockSocket();
     cm.registerConnection(3001, ws);
 
@@ -150,6 +154,12 @@ describe('ConnectionManager Unit Tests', () => {
     cm.cleanupStaleConnections();
     expect(ws.terminate).not.toHaveBeenCalled();
     expect(cm.getConnectionByTgId(3001)).toBeDefined();
+
+    conn!.lastSeen = Date.now() - 50000;
+    conn!.isAlive = false;
+    cm.markHeartbeatAlive(ws);
+    expect(conn!.isAlive).toBe(true);
+    expect(Date.now() - conn!.lastSeen).toBeLessThan(100);
   });
 
   it('should terminate connection during cleanup and trigger onDisconnected if not touched beyond stale timeout', () => {
@@ -169,6 +179,21 @@ describe('ConnectionManager Unit Tests', () => {
     expect(ws.terminate).toHaveBeenCalled();
     expect(cm.getConnectionByTgId(3002)).toBeUndefined();
     expect(onDisconnected).toHaveBeenCalledWith(expect.objectContaining({ telegramId: 3002 }), 'stale_inactivity');
+  });
+
+  it('removes and terminates a socket when its protocol heartbeat PONG is missing', () => {
+    const onDisconnected = vi.fn();
+    cm.setLifecycleListener({ onDisconnected });
+    const ws = createMockSocket();
+    cm.registerConnection(3003, ws);
+    const conn = cm.getConnectionByTgId(3003)!;
+    conn.isAlive = false;
+
+    cm.sweepHeartbeats();
+
+    expect(cm.getConnectionByTgId(3003)).toBeUndefined();
+    expect(ws.terminate).toHaveBeenCalledOnce();
+    expect(onDisconnected).toHaveBeenCalledWith(expect.objectContaining({ telegramId: 3003 }), 'stale_heartbeat');
   });
 
   it('should enforce IP connection admission limit', () => {
@@ -193,6 +218,20 @@ describe('ConnectionManager Unit Tests', () => {
     }
   });
 
+  it('does not count the same socket twice against its IP admission limit', () => {
+    const testIp = '192.168.1.101';
+    const first = createMockSocket();
+    expect(cm.trackSocketIp(first, testIp)).toBe(true);
+    expect(cm.trackSocketIp(first, testIp)).toBe(true);
+
+    const remaining = Array.from({ length: 29 }, () => createMockSocket());
+    for (const socket of remaining) expect(cm.trackSocketIp(socket, testIp)).toBe(true);
+    expect(cm.canAcceptConnection(testIp)).toBe(false);
+
+    cm.removeConnection(first);
+    for (const socket of remaining) cm.removeConnection(socket);
+  });
+
   it('should terminate socket on buffer overflow during send', () => {
     const onDisconnected = vi.fn();
     cm.setLifecycleListener({ onDisconnected });
@@ -202,7 +241,7 @@ describe('ConnectionManager Unit Tests', () => {
 
     const sent = cm.sendToPlayer(4001, { type: 'BIG_PAYLOAD' });
     expect(sent).toBe(false);
-    expect(wsOverflow.close).toHaveBeenCalledWith(1008, 'Buffer overflow');
+    expect(wsOverflow.close).toHaveBeenCalledWith(1013, 'Client is too slow');
     expect(onDisconnected).toHaveBeenCalledWith(expect.objectContaining({ telegramId: 4001 }), 'buffer_overflow');
   });
 });

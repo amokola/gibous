@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { TelegramAuth } from '../../../server/auth';
 import { generateValidInitData, TEST_BOT_TOKEN } from '../../setup/mock-data';
 
@@ -44,6 +44,19 @@ describe('TelegramAuth Unit Tests', () => {
 
     expect(result.valid).toBe(false);
     expect(result.error).toContain('Invalid HMAC signature');
+  });
+
+  it('does not write Telegram initData or signature material to logs', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const invalidInitData = generateValidInitData({ id: 123456789, first_name: 'PrivateAuthMarker' }, TEST_BOT_TOKEN)
+      .replace(/hash=[a-f0-9]+/, 'hash=credential-marker-signature');
+
+    auth.verifyInitData(invalidInitData);
+
+    const loggedData = JSON.stringify(warn.mock.calls);
+    expect(loggedData).not.toContain(invalidInitData);
+    expect(loggedData).not.toContain('credential-marker-signature');
+    warn.mockRestore();
   });
 
   it('should reject initData when hash parameter is missing', () => {

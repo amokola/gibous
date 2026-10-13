@@ -5,7 +5,7 @@ import { MIN_STAKE, MAX_STAKE } from '../constants/economics';
 export const GameTypeSchema = z.enum(['snake', 'connect4', 'rps']);
 export const PlayerRoleSchema = z.enum(['p1', 'p2']);
 export const MatchWinnerSchema = z.enum(['p1', 'p2', 'draw']).nullable();
-export const ConnectionStateSchema = z.enum(['DISCONNECTED', 'CONNECTING', 'CONNECTED', 'RECONNECTING']);
+export const ConnectionStateSchema = z.enum(['DISCONNECTED', 'CONNECTING', 'CONNECTED', 'RECONNECTING', 'AUTH_REQUIRED']);
 
 export const RPSChoiceSchema = z.enum(['rock', 'paper', 'scissors']);
 export const RequestIdSchema = z.string().min(1).max(128).regex(/^[A-Za-z0-9._:-]+$/, 'Invalid requestId format');
@@ -14,6 +14,7 @@ export const RequestIdSchema = z.string().min(1).max(128).regex(/^[A-Za-z0-9._:-
 export const AuthPayloadSchema = z.object({
   telegramId: z.number().int().positive(),
   initData: z.string().max(32768).optional(),
+  reconnectTicket: z.string().max(2048).optional(),
   playerName: z.string().trim().min(1).max(128),
   avatarUrl: z.string().max(2048).optional(),
 });
@@ -101,14 +102,6 @@ export const RequestWithdrawalQuotePayloadSchema = z.object({
 }).strict();
 export const ConfirmWithdrawalPayloadSchema = z.object({ quoteId: z.string().uuid() }).strict();
 
-export const JoinQueuePayloadSchema = z.object({
-  gameType: GameTypeSchema.optional(),
-  stake: z.number().min(MIN_STAKE).max(MAX_STAKE).optional(),
-  telegramId: z.number().optional(),
-  playerName: z.string().optional(),
-  avatarUrl: z.string().optional(),
-});
-
 export const CancelDepositIntentPayloadSchema = z.object({
   intentId: z.string(),
 });
@@ -134,8 +127,6 @@ export const ClientMessageSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('SUBMIT_DEPOSIT'), requestId: RequestIdSchema.optional(), payload: SubmitDepositPayloadSchema }),
   z.object({ type: z.literal('REQUEST_WITHDRAWAL_QUOTE'), requestId: RequestIdSchema.optional(), payload: RequestWithdrawalQuotePayloadSchema }),
   z.object({ type: z.literal('CONFIRM_WITHDRAWAL'), requestId: RequestIdSchema.optional(), payload: ConfirmWithdrawalPayloadSchema }),
-  z.object({ type: z.literal('JOIN_QUEUE'), requestId: RequestIdSchema.optional(), payload: JoinQueuePayloadSchema }),
-  z.object({ type: z.literal('CANCEL_QUEUE'), requestId: RequestIdSchema.optional(), payload: z.record(z.string(), z.unknown()).optional() }),
 ]);
 
 // Server Message Schemas
@@ -296,6 +287,7 @@ export const PongPayloadSchema = z.object({
 export const AuthOkPayloadSchema = z.object({
   telegramId: z.number(),
   user: z.record(z.string(), z.unknown()),
+  reconnectTicket: z.string().max(2048).optional(),
   activeRoom: RoomStatePayloadSchema.optional(),
 });
 export type AuthOkPayload = z.infer<typeof AuthOkPayloadSchema>;
@@ -321,8 +313,6 @@ export const ServerMessageSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('ROOMS_LIST'), requestId: z.string().optional(), rooms: z.array(z.record(z.string(), z.unknown())).optional(), payload: z.record(z.string(), z.unknown()).optional() }),
   z.object({ type: z.literal('ROOM_CREATED'), requestId: z.string().optional(), room: z.record(z.string(), z.unknown()).optional(), payload: z.record(z.string(), z.unknown()).optional() }),
   z.object({ type: z.literal('ROOM_CANCELLED'), requestId: z.string().optional(), roomCode: z.string().optional(), payload: z.record(z.string(), z.unknown()).optional() }),
-  z.object({ type: z.literal('QUEUE_JOINED'), requestId: z.string().optional(), status: z.string().optional(), payload: z.record(z.string(), z.unknown()).optional() }),
-  z.object({ type: z.literal('QUEUE_CANCELLED'), requestId: z.string().optional(), payload: z.record(z.string(), z.unknown()).optional() }),
   z.object({ type: z.literal('DEPOSIT_INTENT_CREATED'), requestId: z.string().optional(), payload: DepositIntentCreatedPayloadSchema }),
   z.object({ type: z.literal('DEPOSIT_INTENT_CANCELLED'), requestId: z.string().optional(), payload: CancelDepositIntentPayloadSchema }),
   z.object({ type: z.literal('TRANSACTION_PENDING'), requestId: z.string().optional(), payload: PendingTransactionSchema }),

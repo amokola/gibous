@@ -75,7 +75,6 @@ The client is an intent-and-rendering boundary. It does not decide dice outcomes
 | TON transfer evidence | TON chain/indexer, then `deposit_intents` | PostgreSQL | Chain evidence plus database workflow state |
 | Open-room directory | Derived from `RoomManager` | Rebuilt from matches | Reconstructable |
 | WebSocket connection registry | `ConnectionManager` | None | Ephemeral, single-instance |
-| Matchmaking queue | `MatchmakingQueue` | None | Ephemeral, single-instance |
 
 ## 4. Current data flow
 
@@ -142,7 +141,7 @@ The client is an intent-and-rendering boundary. It does not decide dice outcomes
 ### Prototype-quality or formerly prototype-quality
 
 - The in-memory database adapter is suitable for deterministic unit/integration fixtures but does not prove PostgreSQL isolation, constraints, or rollback behavior.
-- Runtime room and matchmaking maps are single-process state and require a deliberate multi-instance design before scale-out.
+- Runtime room and socket maps are single-process state and require a deliberate multi-instance design before scale-out.
 - Observability currently has structured request logs and IDs, but not a full OpenTelemetry SDK/export pipeline.
 - The client retains some compatibility-oriented component props and broad `any` room-summary types.
 
@@ -481,7 +480,7 @@ Latest local verification: single-worker Vitest passed 53 test files and 242 tes
 ### P5 — scalability
 
 - Objective: define the threshold for multi-instance deployment.
-- Current problem: room, matchmaking, and socket registries are process-local.
+- Current problem: room and socket registries are process-local.
 - Reference: distributed-systems implications of the above standards; no technology mandate.
 - Target design: first scale vertically/single instance; add Redis/pub-sub only with measured multi-instance demand.
 - Files affected: deployment and a future adapter boundary around rooms/events.

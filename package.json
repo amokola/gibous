@@ -8,6 +8,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "server": "tsx server/server.ts",
+    "ws:load": "tsx scripts/ws-load-harness.ts",
     "db:migrate": "tsx server/db/migrate.ts",
     "start": "concurrently \"vite\" \"npm run server\"",
     "typecheck:client": "tsc --noEmit",

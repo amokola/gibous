@@ -1,6 +1,8 @@
 import { WebSocket } from 'ws';
 import { randomUUID } from 'crypto';
-import { actorKeyForLog, logEvent } from './observability';
+import { actorKeyForLog, logEvent, metrics } from './observability';
+import { readWebSocketLimits } from './wsConfig';
+import { sendWebSocketMessage } from './wsTransport';
 
 export type DisconnectReason =
   | 'client_close'
@@ -8,6 +10,7 @@ export type DisconnectReason =
   | 'stale_inactivity'
   | 'replaced'
   | 'buffer_overflow'
+  | 'send_failed'
   | 'rate_limited'
   | 'server_shutdown';
 
@@ -76,10 +79,7 @@ export class ConnectionManager {
   private lifecycleListener?: ConnectionLifecycleListener;
 
   // Configurable thresholds
-  private readonly MAX_CONNECTIONS_PER_IP = 30;
-  private readonly MAX_TOTAL_CONNECTIONS = 10_000;
-  private readonly MAX_PRE_AUTH_BURST = 10;
-  private readonly MAX_BUFFERED_BYTES = 1024 * 1024;
+  private readonly limits = readWebSocketLimits();
   private readonly STALE_CONNECTION_TIMEOUT_MS = 60_000;
 
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
@@ -113,12 +113,12 @@ export class ConnectionManager {
   }
 
   canAcceptConnection(ip?: string): boolean {
-    if (this.socketToIp.size >= this.MAX_TOTAL_CONNECTIONS) {
+    if (this.socketToIp.size >= this.limits.maxTotalConnections) {
       return false;
     }
     if (ip) {
       const current = this.ipConnections.get(ip) || 0;
-      if (current >= this.MAX_CONNECTIONS_PER_IP) {
+      if (current >= this.limits.maxConnectionsPerIp) {
         return false;
       }
     }
@@ -126,6 +126,8 @@ export class ConnectionManager {
   }
 
   trackSocketIp(ws: WebSocket, ip?: string): boolean {
+    const existingIp = this.socketToIp.get(ws);
+    if (existingIp !== undefined) return !ip || existingIp === ip;
     if (!this.canAcceptConnection(ip)) {
       return false;
     }
@@ -192,9 +194,9 @@ export class ConnectionManager {
       isAlive: true,
       state: 'connected',
       ip,
-      transportBucket: new TokenBucket(30, 30),
-      actionBucket: new TokenBucket(5, 5),
-      emoteBucket: new TokenBucket(2, 2),
+      transportBucket: new TokenBucket(this.limits.transportBurst, this.limits.transportRefillPerSecond),
+      actionBucket: new TokenBucket(this.limits.actionBurst, this.limits.actionRefillPerSecond),
+      emoteBucket: new TokenBucket(this.limits.emoteBurst, this.limits.emoteRefillPerSecond),
     };
 
     if (ip) {
@@ -267,6 +269,7 @@ export class ConnectionManager {
       const conn = this.connections.get(tgId);
       if (conn && conn.ws === ws) {
         conn.isAlive = true;
+        conn.lastSeen = Date.now();
       }
     }
   }
@@ -277,6 +280,7 @@ export class ConnectionManager {
 
       if (!conn.isAlive) {
         logEvent('warn', 'ws.heartbeat.timeout', { actorKey: actorKeyForLog(tgId) });
+        metrics.incrementCounter('ws_heartbeat_timeouts_total');
         this.removeConnectionInternal(conn, 'stale_heartbeat');
         try {
           conn.ws.terminate();
@@ -353,7 +357,7 @@ export class ConnectionManager {
     if (tgId === undefined) {
       let bucket = this.unauthenticatedRateBuckets.get(ws);
       if (!bucket) {
-        bucket = new TokenBucket(this.MAX_PRE_AUTH_BURST, 10);
+        bucket = new TokenBucket(this.limits.preAuthBurst, this.limits.preAuthRefillPerSecond);
         this.unauthenticatedRateBuckets.set(ws, bucket);
       }
       return bucket.tryConsume(1);
@@ -418,29 +422,29 @@ export class ConnectionManager {
     return this.connections.size;
   }
 
+  handleSocketBufferLimit(ws: WebSocket): void {
+    const conn = this.getConnectionBySocket(ws);
+    if (!conn || conn.state === 'closing') return;
+    logEvent('warn', 'ws.buffer_limit.closed', { actorKey: actorKeyForLog(conn.telegramId) });
+    metrics.incrementCounter('ws_buffer_limit_closes_total');
+    this.removeConnectionInternal(conn, 'buffer_overflow');
+  }
+
+  handleSocketSendFailure(ws: WebSocket): void {
+    const conn = this.getConnectionBySocket(ws);
+    if (!conn || conn.state === 'closing') return;
+    metrics.incrementCounter('ws_send_failures_total');
+    this.removeConnectionInternal(conn, 'send_failed');
+  }
+
   sendToPlayer(telegramId: number, message: object): boolean {
     const conn = this.connections.get(telegramId);
     if (conn && conn.state === 'connected' && conn.ws.readyState === WebSocket.OPEN) {
-      try {
-        if (typeof conn.ws.bufferedAmount === 'number' && conn.ws.bufferedAmount > this.MAX_BUFFERED_BYTES) {
-          logEvent('warn', 'ws.buffer_overflow', { actorKey: actorKeyForLog(telegramId) });
-          this.removeConnectionInternal(conn, 'buffer_overflow');
-          try {
-            conn.ws.close(1008, 'Buffer overflow');
-          } catch {
-            conn.ws.terminate();
-          }
-          return false;
-        }
-        conn.ws.send(JSON.stringify(message));
-        return true;
-      } catch (err) {
-        logEvent('error', 'ws.send_failed', {
-          actorKey: actorKeyForLog(telegramId),
-          error: err instanceof Error ? err.message : String(err),
-        });
-        return false;
-      }
+      return sendWebSocketMessage(conn.ws, message, {
+        maxBufferedBytes: this.limits.maxBufferedBytes,
+        onBufferLimit: () => this.handleSocketBufferLimit(conn.ws),
+        onSendError: () => this.handleSocketSendFailure(conn.ws),
+      });
     }
     return false;
   }

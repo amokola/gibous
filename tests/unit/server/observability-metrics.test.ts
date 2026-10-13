@@ -51,7 +51,12 @@ describe('MetricsRegistry & Observability Telemetry', () => {
     expect(snapshot.system.uptimeSeconds).toBeGreaterThanOrEqual(0);
     expect(snapshot.system.memory.rssMb).toBeGreaterThan(0);
     expect(snapshot.system.memory.heapUsedMb).toBeGreaterThan(0);
+    expect(snapshot.system.memory.capacityMb).toBeGreaterThan(0);
+    expect(snapshot.system.memory.rssPercentOfCapacity).toBeGreaterThan(0);
     expect(typeof snapshot.system.eventLoopLagMs).toBe('number');
+    expect(typeof snapshot.system.cpu.processPercent).toBe('number');
+    expect(snapshot.system.cpu.availableParallelism).toBeGreaterThan(0);
+    expect(typeof snapshot.system.cpu.hostPercent).toBe('number');
   });
 
   it('global metrics singleton functions as expected', () => {

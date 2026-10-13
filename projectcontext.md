@@ -42,7 +42,7 @@ The project is structured as a **Hybrid Server-Authoritative Real-Time Client/Se
 │   Express 4.21 + ws 8.18 + Node.js Crypto + Sharp (SVG->JPEG) + TonClient Indexer        │
 │   ├── TelegramAuth (HMAC-SHA256 initData Verification)                                   │
 │   ├── SessionManager & ConnectionManager (Dual Sliding-Window Rate Limiters)             │
-│   ├── RoomManager & MatchmakingQueue (Lifecycle, Versioning, Forfeit Timers)             │
+│   ├── RoomManager (Lifecycle, Versioning, Forfeit Timers)                                │
 │   ├── Authoritative Engines (SnakeLadderEngine | Connect4Engine | RPSEngine)             │
 │   ├── StorageService & EconomyEngine (Escrow, 90/10 Win Pots, 95% Draw Refunds)          │
 │   └── DepositVerificationService (Background Poller for TON On-Chain Deposits)           │
@@ -123,7 +123,6 @@ gibous/
 │   ├── bragStats.ts                  # 7-day PnL, win rate, and streak calculation helpers
 │   ├── connectionManager.ts          # Connection tracking, sliding-window rate limiters, stale reaper
 │   ├── economy.ts                    # Pure financial calculation engine (90/10 win, 95% draw refund)
-│   ├── matchmaking.ts                # FIFO duel matchmaking queue by game type & stake
 │   ├── roomManager.ts                # Room lifecycle, state versioning, reconnect/forfeit timers
 │   ├── sessionManager.ts             # Authenticated WebSocket session store
 │   ├── storage.ts                    # High-level business storage layer (Users, Deposits, Settlements)
@@ -198,8 +197,7 @@ The server initializes through a deterministic sequential lifecycle:
 ```
 [1. Process Handlers] -> Register uncaughtException & unhandledRejection
 [2. Environment & Config] -> Load dotenv; configure PORT (3001), CORS_ORIGIN
-[3. Service Instantiation] -> RoomManager, StorageService, DepositVerificationService, TelegramAuth, MatchmakingQueue
-[4. Matchmaking Hook] -> Register auto-room creation & pairing callback
+[3. Service Instantiation] -> RoomManager, StorageService, DepositVerificationService, TelegramAuth
 [5. Express Middleware] -> cors(), express.json()
 [6. Express HTTP Routes] -> Mount /api/health, /api/rooms, /api/leaderboard, /api/telegram/brag/*, etc.
 [7. HTTP & WS Server] -> createServer(app) & new WebSocketServer({ server, path: '/ws' })
@@ -604,7 +602,6 @@ Gibous features a server-side media generation pipeline (`server/bragCardRendere
 | **`server/roomManager.ts`** | Backend Logic | Room lifecycle, state versioning, forfeit timers, rematch logic | `IServerGameEngine`, `StorageService`, `ConnectionManager` | `server/server.ts`, Game Engines |
 | **`server/storage.ts`** | Backend Data | High-level ledger operations, balance credits/debits, settlements | `DatabasePool`, `EconomyEngine`, `bragStats` | `server/server.ts`, `server/roomManager.ts` |
 | **`server/economy.ts`** | Backend Math | Pot division (90/10 win, 95% draw refund) & XP calculation formulas | `shared/constants/economics` | `server/storage.ts` |
-| **`server/matchmaking.ts`** | Backend Logic | FIFO matchmaking queue matching game type & stake | `ws` | `server/server.ts` |
 | **`server/tonVerifier.ts`** | Backend Blockchain | Polls Toncenter API to verify native TON deposit transactions | `@ton/core`, `@ton/ton`, `StorageService` | `server/storage.ts`, Toncenter API |
 | **`server/bragCardRenderer.ts`**| Backend Media | Generates 1080x1350 branded JPEG boast cards from SVG templates | `sharp`, `bragStats` | `server/server.ts` |
 | **`server/bragShareToken.ts`** | Backend Security | Signed HMAC URL token generation/verification for boast images | `node:crypto`, `bragStats` | `server/server.ts` |
@@ -663,9 +660,9 @@ Gibous features a server-side media generation pipeline (`server/bragCardRendere
 ### High Severity
 
 #### 3. Single-Node In-Memory State in Multi-Process / Scaled Deployment
-* **Location:** `server/roomManager.ts`, `server/connectionManager.ts`, `server/matchmaking.ts`
-* **Problem:** Active rooms, matchmaking queues, and active WebSocket connections are stored in Node.js heap memory (`Map<string, GameRoom>`, `Map<number, PlayerConnection>`).
-* **Impact:** The backend cannot be scaled horizontally across multiple instances (e.g. via PM2 clustering, Docker containers, Kubernetes, or serverless instances) without losing room state and disconnecting paired players.
+* **Location:** `server/roomManager.ts`, `server/connectionManager.ts`
+* **Problem:** Active rooms and active WebSocket connections are stored in Node.js heap memory (`Map<string, GameRoom>`, `Map<number, PlayerConnection>`).
+* **Impact:** The backend cannot be scaled horizontally across multiple instances (e.g. via PM2 clustering, Docker containers, Kubernetes, or serverless instances) without losing room state or disconnecting players.
 * **Remediation:** Introduce a Redis pub/sub layer or socket.io Redis adapter for distributed connection state, room events, and distributed locks.
 
 #### 4. Fallback In-Memory Storage Discrepancy with PostgreSQL
@@ -678,13 +675,7 @@ Gibous features a server-side media generation pipeline (`server/bragCardRendere
 
 ### Medium Severity
 
-#### 5. Ephemeral Matchmaking Queue Without Latency Relaxation
-* **Location:** `server/matchmaking.ts`
-* **Problem:** `MatchmakingQueue.enqueue()` searches only for an exact match on `gameType` and `stake`. There is no bracket relaxation, timeout bot filling, or matchmaking latency expansion.
-* **Impact:** If player liquidity is low, players will sit in queue indefinitely.
-* **Remediation:** Add matchmaking expansion timers (e.g. match within ±20% stake bracket after 10 seconds).
-
-#### 6. Polling-Based Open Rooms List in `LobbyScreen.tsx`
+#### 5. Polling-Based Open Rooms List in `LobbyScreen.tsx`
 * **Location:** `src/components/lobby/LobbyScreen.tsx:119`
 * **Problem:** `LobbyScreen` sets a `setInterval` polling `GET /api/rooms` every 2,500ms in addition to listening for WebSocket `ROOMS_LIST` broadcasts.
 * **Impact:** Generates redundant HTTP load on the server.

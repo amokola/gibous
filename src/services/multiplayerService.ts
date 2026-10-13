@@ -38,6 +38,7 @@ export class MultiplayerService {
   private pendingAuthRequestId: string | null = null;
   private authenticatingGeneration: number | null = null;
   private authenticatedGeneration: number | null = null;
+  private authTerminalFailure = false;
 
   private reconnectAttempts: number = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -113,6 +114,7 @@ export class MultiplayerService {
 
     window.addEventListener('online', () => {
       this.isOnline = true;
+      if (this.authTerminalFailure) return;
       const isStale = !this.ws || this.ws.readyState !== WebSocket.OPEN || (Date.now() - this.lastPongReceivedAt > 20000);
       if (isStale || this.state === 'DISCONNECTED' || this.state === 'RECONNECTING') {
         this.reconnectAttempts = 0;
@@ -128,7 +130,7 @@ export class MultiplayerService {
 
     if (typeof document !== 'undefined') {
       document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'visible' && this.isOnline && !this.isIntentionalClose) {
+        if (document.visibilityState === 'visible' && this.isOnline && !this.isIntentionalClose && !this.authTerminalFailure) {
           const isStale = !this.ws || this.ws.readyState !== WebSocket.OPEN || (Date.now() - this.lastPongReceivedAt > 20000);
           if (isStale) {
             console.log('📱 App returned to foreground from sleep/background. Resuming active connection...');
@@ -193,6 +195,7 @@ export class MultiplayerService {
    */
   public authenticate(payload: AuthPayload): string {
     const requestId = this.generateRequestId();
+    this.authTerminalFailure = false;
     this.authPayload = payload;
     this.pendingAuthRequestId = requestId;
     this.isIntentionalClose = false;
@@ -205,7 +208,7 @@ export class MultiplayerService {
    * Connect to the WebSocket Server
    */
   public connect(force = false): void {
-    if (!this.isOnline) {
+    if (!this.isOnline || this.authTerminalFailure) {
       return;
     }
 
@@ -236,7 +239,6 @@ export class MultiplayerService {
       if (socket !== this.ws || currentGeneration !== this.socketGeneration) return;
       console.log('✅ [WebSocket] Connected successfully to:', this.url);
 
-      this.reconnectAttempts = 0;
       this.startHeartbeat();
 
       // Authenticate before flushing queued commands or syncing a room. The
@@ -268,8 +270,18 @@ export class MultiplayerService {
         if (message.type === 'AUTH_OK') {
           this.authenticatingGeneration = null;
           this.authenticatedGeneration = currentGeneration;
+          this.reconnectAttempts = 0;
+          if (message.payload.reconnectTicket && this.authPayload) {
+            this.authPayload = { ...this.authPayload, reconnectTicket: message.payload.reconnectTicket };
+          }
           this.dispatchMessage(message);
           this.flushQueue();
+          return;
+        }
+
+        if (message.type === 'ERROR' && message.payload.code === 'AUTH_FAILED') {
+          this.markAuthenticationRequired();
+          this.dispatchMessage(message);
           return;
         }
 
@@ -287,6 +299,16 @@ export class MultiplayerService {
       this.ws = null;
       this.authenticatingGeneration = null;
       this.authenticatedGeneration = null;
+
+      if (_event.code === 1008) {
+        this.markAuthenticationRequired();
+        return;
+      }
+
+      if (this.authTerminalFailure) {
+        this.setConnectionState('AUTH_REQUIRED');
+        return;
+      }
 
       if (this.isIntentionalClose) {
         this.setConnectionState('DISCONNECTED');
@@ -333,6 +355,7 @@ export class MultiplayerService {
     const requestId = this.generateRequestId();
 
     if (type === 'AUTH') {
+      this.authTerminalFailure = false;
       this.authPayload = payload as AuthPayload;
       this.pendingAuthRequestId = requestId;
       this.isIntentionalClose = false;
@@ -655,10 +678,29 @@ export class MultiplayerService {
     }
   }
 
+  private markAuthenticationRequired(): void {
+    this.authTerminalFailure = true;
+    this.clearReconnectTimer();
+    this.stopHeartbeat();
+    this.authenticatingGeneration = null;
+    this.authenticatedGeneration = null;
+    const rejectedSocket = this.ws;
+    this.ws = null;
+    if (rejectedSocket) {
+      this.socketGeneration++;
+      try {
+        rejectedSocket.close(1008, 'Authentication required');
+      } catch {
+        // The failed-auth state remains terminal even if closing the socket throws.
+      }
+    }
+    this.setConnectionState('AUTH_REQUIRED');
+  }
+
   // --- EXPONENTIAL BACKOFF WITH JITTER ---
 
   private scheduleReconnect() {
-    if (this.reconnectTimer || this.isIntentionalClose || !this.isOnline) return;
+    if (this.reconnectTimer || this.isIntentionalClose || !this.isOnline || this.authTerminalFailure) return;
 
     this.reconnectAttempts++;
 

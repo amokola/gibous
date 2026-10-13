@@ -13,7 +13,6 @@ import { sessionManager } from './sessionManager';
 import { runMigrations } from './db/migrate';
 import { StorageService } from './storage';
 import { TelegramAuth } from './auth';
-import { MatchmakingQueue, QueuedPlayer } from './matchmaking';
 import { MAX_STAKE, MIN_STAKE } from '../shared/constants/economics';
 import { DepositVerificationService } from './tonVerifier';
 import { validateMainnetTonConfig } from './tonConfig';
@@ -25,13 +24,21 @@ import { roomCommandQueue } from './roomCommandQueue';
 import { SettlementWorker } from './settlementWorker';
 import { validateStake } from './authGuards';
 import { createMainnetTonWithdrawalClient, loadWithdrawalWorkerConfig, TonWithdrawalPayoutClient, WithdrawalPayoutWorker } from './withdrawalPayout';
+import { getWsReconnectSecret, issueReconnectTicket, verifyReconnectTicket } from './wsReconnectTicket';
+import { completeAuthAfterStorage } from './wsAuthLifecycle';
+import { readWebSocketLimits, getTrustedProxyIps, getWebSocketProductionConfigErrors } from './wsConfig';
+import { resolveWebSocketClientIp } from './websocketAdmission';
+import { sendWebSocketMessage } from './wsTransport';
+import { BoundedInboundQueue } from './wsInboundQueue';
 
 export const app = express();
 const PORT = process.env.PORT || 3001;
 const CORS_ORIGIN = process.env.CORS_ORIGIN || (process.env.NODE_ENV === 'production' ? '' : 'http://localhost:5173');
 const ALLOWED_WS_ORIGINS = new Set(CORS_ORIGIN.split(',').map((origin) => origin.trim()).filter(Boolean));
 const ALLOW_ANY_WS_ORIGIN = ALLOWED_WS_ORIGINS.has('*') && process.env.NODE_ENV !== 'production';
-const WS_AUTH_TIMEOUT_MS = 10_000;
+const WS_LIMITS = readWebSocketLimits();
+const WS_AUTH_TIMEOUT_MS = WS_LIMITS.authTimeoutMs;
+const TRUSTED_PROXY_IPS = getTrustedProxyIps();
 
 function isAllowedWebSocketOrigin(origin?: string): boolean {
   if (!origin) return true;
@@ -101,53 +108,6 @@ connectionManager.setLifecycleListener({
   },
 });
 
-export const matchmakingQueue = new MatchmakingQueue(async (reservation) => {
-  const { p1, p2, gameType, stake, matchId } = reservation;
-
-  const createRes = await roomManager.createRoom(
-    undefined,
-    gameType,
-    stake,
-    p1.telegramId,
-    p1.name,
-    p1.avatarUrl
-  );
-
-  if (!createRes.room) {
-    throw new Error(createRes.error || 'Failed to create room during matchmaking');
-  }
-
-  const roomCode = createRes.room.code;
-  logEvent('info', 'matchmaking.room.creating', {
-    matchId,
-    roomCode,
-    p1ActorKey: actorKeyForLog(p1.telegramId),
-    p2ActorKey: actorKeyForLog(p2.telegramId),
-    stake,
-  });
-
-  const joinRes = await roomManager.joinRoom(
-    roomCode,
-    p2.telegramId,
-    p2.name,
-    p2.avatarUrl
-  );
-
-  if (!joinRes.room) {
-    // Rollback created room and refund Player 1
-    await roomManager.deleteRoom(roomCode, p1.telegramId);
-    throw new Error(joinRes.error || 'Failed to join room during matchmaking');
-  }
-
-  if (p1.ws && p1.ws.readyState === WebSocket.OPEN) sessionManager.attachRoom(p1.ws, roomCode, 'p1');
-  if (p2.ws && p2.ws.readyState === WebSocket.OPEN) sessionManager.attachRoom(p2.ws, roomCode, 'p2');
-  const snapshot = roomManager.getRoomSnapshot(joinRes.room);
-  connectionManager.broadcast(joinRes.room, {
-    type: 'GAME_START',
-    payload: snapshot,
-  });
-});
-
 let shutdownPromise: Promise<void> | null = null;
 
 export function shutdown(signal = 'shutdown'): Promise<void> {
@@ -157,7 +117,6 @@ export function shutdown(signal = 'shutdown'): Promise<void> {
     logEvent('info', 'process.shutdown.started', { signal });
     depositVerificationService.stop();
     await withdrawalPayoutWorker?.stop();
-    matchmakingQueue.close();
     await settlementWorker.drain();
     roomManager.close();
     connectionManager.closeAll();
@@ -210,17 +169,11 @@ if (process.env.NODE_ENV !== 'test' && !process.env.VITEST) {
 }
 
 export function safeSend(ws: WebSocket, message: object | string): boolean {
-  if (!ws || ws.readyState !== WebSocket.OPEN) return false;
-  try {
-    const data = typeof message === 'string' ? message : JSON.stringify(message);
-    ws.send(data);
-    return true;
-  } catch (err) {
-    logEvent('warn', 'websocket.send.failed', {
-      error: err instanceof Error ? err.message : String(err),
-    });
-    return false;
-  }
+  return sendWebSocketMessage(ws, message, {
+    maxBufferedBytes: WS_LIMITS.maxBufferedBytes,
+    onBufferLimit: () => connectionManager.handleSocketBufferLimit(ws),
+    onSendError: () => connectionManager.handleSocketSendFailure(ws),
+  });
 }
 
 // Broadcast open rooms list to all connected clients
@@ -619,11 +572,12 @@ export const server = createServer(app);
 export const wss = new WebSocketServer({
   noServer: true,
   maxPayload: 64 * 1024,
+  perMessageDeflate: false,
 });
 
 server.on('upgrade', (req, socket, head) => {
   const origin = req.headers.origin;
-  const clientIp = req.socket.remoteAddress || 'unknown';
+  const clientIp = resolveWebSocketClientIp(req.socket.remoteAddress, req.headers['x-forwarded-for'], TRUSTED_PROXY_IPS);
   const url = new URL(req.url || '', `http://${req.headers.host || 'localhost'}`);
 
   if (url.pathname !== '/ws') {
@@ -658,10 +612,23 @@ function sendError(ws: WebSocket, code: string, message: string, requestId?: str
   });
 }
 
+function rawDataByteLength(data: Buffer | ArrayBuffer | Buffer[]): number {
+  if (Buffer.isBuffer(data)) return data.byteLength;
+  if (Array.isArray(data)) return data.reduce((total, chunk) => total + chunk.byteLength, 0);
+  return data.byteLength;
+}
+
+function rawDataToString(data: Buffer | ArrayBuffer | Buffer[]): string {
+  if (Buffer.isBuffer(data)) return data.toString('utf8');
+  if (Array.isArray(data)) return Buffer.concat(data).toString('utf8');
+  return Buffer.from(data).toString('utf8');
+}
+
 // WebSocket Connection Handling
 wss.on('connection', (ws: WebSocket, req) => {
-  const clientIp = req.socket.remoteAddress || 'unknown';
+  const clientIp = resolveWebSocketClientIp(req.socket.remoteAddress, req.headers['x-forwarded-for'], TRUSTED_PROXY_IPS);
   connectionManager.trackSocketIp(ws, clientIp);
+  let authTimedOut = false;
 
   ws.on('pong', () => {
     connectionManager.markHeartbeatAlive(ws);
@@ -669,6 +636,9 @@ wss.on('connection', (ws: WebSocket, req) => {
 
   const authTimeout = setTimeout(() => {
     if (!sessionManager.getSession(ws) && ws.readyState === WebSocket.OPEN) {
+      authTimedOut = true;
+      logEvent('warn', 'ws.auth.completed', { outcome: 'timeout' });
+      metrics.incrementCounter('ws_auth_timeouts_total');
       sendError(ws, 'AUTH_TIMEOUT', 'Authentication timeout. Please reconnect.');
       ws.close(1008, 'Authentication timeout');
     }
@@ -679,11 +649,6 @@ wss.on('connection', (ws: WebSocket, req) => {
 
   const processMessage = async (data: string) => {
     connectionManager.touchConnection(ws);
-
-    if (!connectionManager.checkTransportRateLimit(ws)) {
-      sendError(ws, 'RATE_LIMIT_EXCEEDED', "You're moving too quickly. Please wait a moment.");
-      return;
-    }
 
     let rawJson: unknown;
     try {
@@ -722,139 +687,130 @@ wss.on('connection', (ws: WebSocket, req) => {
       switch (message.type) {
         // --- 1. HEARTBEAT ---
         case 'PING': {
-          ws.send(
-            JSON.stringify({
-              type: 'PONG',
-              requestId,
-              payload: {
-                timestamp: Date.now(),
-                clientTimestamp: message.payload.timestamp,
-              },
-            })
-          );
+          safeSend(ws, {
+            type: 'PONG',
+            requestId,
+            payload: { timestamp: Date.now(), clientTimestamp: message.payload.timestamp },
+          });
           break;
         }
 
         // --- 2. AUTHENTICATION ---
         case 'AUTH': {
-          const { telegramId, playerName, avatarUrl, initData } = message.payload;
+          const { telegramId, playerName, avatarUrl, initData, reconnectTicket } = message.payload;
+          let verifiedId: number | undefined;
+          let verifiedName = playerName;
+          let verifiedUsername: string | undefined;
+          let verifiedPhoto = avatarUrl;
+          let authenticationMethod: 'reconnect_ticket' | 'telegram_init_data' | 'development' = 'development';
+          const reconnectSecret = getWsReconnectSecret();
 
-          if (initData) {
-            const verification = auth.verifyInitData(initData, { consumeReplay: false });
-            let verifiedId = telegramId;
-            let verifiedName = playerName;
-            let verifiedUsername: string | undefined;
-            let verifiedPhoto = avatarUrl;
+          const rejectAuthentication = (reason: string) => {
+            logEvent('warn', 'ws.auth.completed', { requestId, outcome: 'rejected', reason });
+            metrics.incrementCounter('ws_auth_rejected_total');
+            clearTimeout(authTimeout);
+            sendError(ws, 'AUTH_FAILED', "We couldn't verify your Telegram session. Reopen the app from Telegram to sign in again.", requestId);
+            if (ws.readyState === WebSocket.OPEN) ws.close(1008, 'Authentication failed');
+          };
 
-            if (!verification.valid) {
-              if (
-                process.env.NODE_ENV !== 'test' &&
-                process.env.ALLOW_UNSIGNED_AUTH === 'true' &&
-                process.env.NODE_ENV !== 'production'
-              ) {
-                console.warn('⚠️ [AUTH] InitData verification failed, but allowing dev access (ALLOW_UNSIGNED_AUTH=true):', {
-                  telegramId,
-                  playerName,
-                  error: verification.error,
-                });
-                try {
-                  const candidateParams = new URLSearchParams(initData.trim().replace(/^[?#]/, ''));
-                  const rawUserStr = candidateParams.get('user');
-                  if (rawUserStr) {
-                    const parsed = JSON.parse(rawUserStr);
-                    if (parsed?.id) verifiedId = parsed.id;
-                    if (parsed?.first_name) verifiedName = parsed.first_name;
-                    if (parsed?.username) verifiedUsername = parsed.username;
-                    if (parsed?.photo_url) verifiedPhoto = parsed.photo_url;
-                  }
-                } catch {
-                  // Fallback to payload fields
-                }
-              } else {
-                console.warn('❌ Auth verification failed:', {
-                  telegramId,
-                  playerName,
-                  error: verification.error,
-                  initDataPrefix: initData.slice(0, 100),
-                });
-                clearTimeout(authTimeout);
-                sendError(ws, 'AUTH_FAILED', verification.error || "We couldn't verify your Telegram account. Please try again.", requestId);
-                ws.close(1008, verification.error || 'Authentication failed');
-                break;
-              }
+          if (reconnectTicket && reconnectSecret) {
+            const ticketResult = verifyReconnectTicket(reconnectTicket, reconnectSecret);
+            if (ticketResult.valid) {
+              verifiedId = ticketResult.telegramId;
+              authenticationMethod = 'reconnect_ticket';
             } else {
+              logEvent('info', 'ws.auth.ticket_fallback', { requestId, reason: ticketResult.reason });
+            }
+          }
+
+          if (verifiedId === undefined && initData) {
+            const verification = auth.verifyInitData(initData, { consumeReplay: false });
+            if (verification.valid) {
               verifiedId = verification.user?.id ?? telegramId;
               verifiedName = verification.user?.first_name || playerName;
               verifiedUsername = verification.user?.username;
               verifiedPhoto = verification.user?.photo_url || avatarUrl;
-            }
-
-            await storage.getOrCreateUser({ id: verifiedId, first_name: verifiedName, username: verifiedUsername, photo_url: verifiedPhoto });
-            const user = await storage.getAccountSnapshot(verifiedId);
-            const connectionId = connectionManager.registerConnection(verifiedId, ws);
-            sessionManager.register(ws, verifiedId, verifiedName, verifiedPhoto, connectionId);
-            clearTimeout(authTimeout);
-
-            const activeRoom = roomManager.getActiveRoomForPlayer(verifiedId);
-            let activeRoomSnapshot: RoomStatePayload | undefined = undefined;
-            if (activeRoom) {
-              await roomCommandQueue.withRoomLock(activeRoom.code, async () => {
-                const { room: reconnectedRoom, role } = await roomManager.reconnectPlayer(activeRoom.code, verifiedId);
-                const targetRoom = reconnectedRoom || activeRoom;
-                if (role) {
-                  sessionManager.attachRoom(ws, activeRoom.code, role);
+              authenticationMethod = 'telegram_init_data';
+            } else if (
+              process.env.NODE_ENV !== 'test' &&
+              process.env.NODE_ENV !== 'production' &&
+              process.env.ALLOW_UNSIGNED_AUTH === 'true'
+            ) {
+              logEvent('warn', 'ws.auth.completed', { requestId, outcome: 'development_fallback' });
+              try {
+                const candidateParams = new URLSearchParams(initData.trim().replace(/^[?#]/, ''));
+                const rawUser = candidateParams.get('user');
+                if (rawUser) {
+                  const parsed = JSON.parse(rawUser);
+                  if (Number.isSafeInteger(parsed?.id) && parsed.id > 0) verifiedId = parsed.id;
+                  if (typeof parsed?.first_name === 'string' && parsed.first_name) verifiedName = parsed.first_name;
+                  if (typeof parsed?.username === 'string') verifiedUsername = parsed.username;
+                  if (typeof parsed?.photo_url === 'string') verifiedPhoto = parsed.photo_url;
                 }
-                activeRoomSnapshot = roomManager.getRoomSnapshot(targetRoom);
-              });
+              } catch {
+                // Development fallback uses the payload identity when no valid embedded user is present.
+              }
+            } else {
+              rejectAuthentication(verification.error || 'invalid_init_data');
+              break;
             }
-
-            safeSend(ws, {
-              type: 'AUTH_OK',
-              requestId,
-              payload: {
-                telegramId: verifiedId,
-                user,
-                ...(activeRoomSnapshot ? { activeRoom: activeRoomSnapshot } : {}),
-              },
-            });
-            break;
           }
 
-          // Standalone / demo fallback
-          if (
-            process.env.NODE_ENV === 'production' ||
-            process.env.ALLOW_UNSIGNED_AUTH !== 'true'
-          ) {
-            clearTimeout(authTimeout);
-            sendError(ws, 'AUTH_FAILED', 'Please open the app from Telegram.', requestId);
-            ws.close(1008, 'Please open the app from Telegram.');
-            break;
+          if (verifiedId === undefined) {
+            if (
+              reconnectTicket || initData ||
+              process.env.NODE_ENV === 'production' ||
+              process.env.ALLOW_UNSIGNED_AUTH !== 'true'
+            ) {
+              rejectAuthentication(reconnectTicket ? 'invalid_reconnect_ticket' : 'missing_credentials');
+              break;
+            }
+            verifiedId = telegramId;
           }
-          await storage.getOrCreateUser({ id: telegramId, first_name: playerName, photo_url: avatarUrl });
-          const user = await storage.getAccountSnapshot(telegramId);
-          const connectionId = connectionManager.registerConnection(telegramId, ws);
-          sessionManager.register(ws, telegramId, playerName, avatarUrl, connectionId);
+
+          let user: Awaited<ReturnType<typeof storage.getAccountSnapshot>> | undefined;
+          const registered = await completeAuthAfterStorage(
+            ws,
+            () => authTimedOut,
+            async () => {
+              await storage.getOrCreateUser({ id: verifiedId!, first_name: verifiedName, username: verifiedUsername, photo_url: verifiedPhoto });
+              return storage.getAccountSnapshot(verifiedId!);
+            },
+            (account) => {
+              user = account;
+              const connectionId = connectionManager.registerConnection(verifiedId!, ws);
+              sessionManager.register(ws, verifiedId!, verifiedName, verifiedPhoto, connectionId);
+            },
+          );
+          if (!registered || !user) break;
           clearTimeout(authTimeout);
+          logEvent('info', 'ws.auth.completed', {
+            requestId,
+            outcome: 'success',
+            method: authenticationMethod,
+            actorKey: actorKeyForLog(verifiedId),
+          });
+          metrics.incrementCounter('ws_auth_success_total');
 
-          const activeRoom = roomManager.getActiveRoomForPlayer(telegramId);
+          const activeRoom = roomManager.getActiveRoomForPlayer(verifiedId);
           let activeRoomSnapshot: RoomStatePayload | undefined = undefined;
           if (activeRoom) {
             await roomCommandQueue.withRoomLock(activeRoom.code, async () => {
-              const { room: reconnectedRoom, role } = await roomManager.reconnectPlayer(activeRoom.code, telegramId);
+              const { room: reconnectedRoom, role } = await roomManager.reconnectPlayer(activeRoom.code, verifiedId!);
               const targetRoom = reconnectedRoom || activeRoom;
-              if (role) {
-                sessionManager.attachRoom(ws, activeRoom.code, role);
-              }
+              if (role) sessionManager.attachRoom(ws, activeRoom.code, role);
               activeRoomSnapshot = roomManager.getRoomSnapshot(targetRoom);
             });
           }
 
+          const refreshedTicket = reconnectSecret ? issueReconnectTicket(verifiedId, reconnectSecret) : undefined;
           safeSend(ws, {
             type: 'AUTH_OK',
             requestId,
             payload: {
-              telegramId,
+              telegramId: verifiedId,
               user,
+              ...(refreshedTicket ? { reconnectTicket: refreshedTicket } : {}),
               ...(activeRoomSnapshot ? { activeRoom: activeRoomSnapshot } : {}),
             },
           });
@@ -898,20 +854,13 @@ wss.on('connection', (ws: WebSocket, req) => {
             break;
           }
 
-          matchmakingQueue.dequeueByPlayer(session.telegramId);
 
           const code = result.room.code;
           sessionManager.attachRoom(ws, code, 'p1');
           broadcastOpenRooms();
 
           const snapshot = roomManager.getRoomSnapshot(result.room);
-          ws.send(
-            JSON.stringify({
-              type: 'ROOM_CREATED',
-              requestId,
-              payload: snapshot,
-            })
-          );
+          safeSend(ws, { type: 'ROOM_CREATED', requestId, payload: snapshot });
           break;
         }
 
@@ -930,13 +879,7 @@ wss.on('connection', (ws: WebSocket, req) => {
             if (deleted) {
               sessionManager.detachRoom(ws);
               broadcastOpenRooms();
-              ws.send(
-                JSON.stringify({
-                  type: 'ROOM_CANCELLED',
-                  requestId,
-                  payload: { roomCode: code },
-                })
-              );
+              safeSend(ws, { type: 'ROOM_CANCELLED', requestId, payload: { roomCode: code } });
             } else {
               sendError(ws, 'CANCEL_FAILED', 'Cannot cancel room: already started or not found', requestId);
             }
@@ -973,7 +916,7 @@ wss.on('connection', (ws: WebSocket, req) => {
               actorKey: actorKeyForLog(session.telegramId),
             });
 
-            ws.send(JSON.stringify({
+            safeSend(ws, {
               type: 'DEPOSIT_INTENT_CREATED',
               requestId,
               payload: {
@@ -983,7 +926,7 @@ wss.on('connection', (ws: WebSocket, req) => {
                 amountNano: String(intent.amount_nano),
                 expiresAt: new Date(intent.expires_at).toISOString(),
               },
-            }));
+            });
           } catch (err: any) {
             logEvent('error', 'deposit.intent.failed', {
               requestId,
@@ -1014,11 +957,11 @@ wss.on('connection', (ws: WebSocket, req) => {
               actorKey: actorKeyForLog(session.telegramId),
             });
 
-            ws.send(JSON.stringify({
+            safeSend(ws, {
               type: 'DEPOSIT_INTENT_CANCELLED',
               requestId,
               payload: { intentId: message.payload.intentId },
-            }));
+            });
           } catch (err: any) {
             sendError(ws, 'CANCEL_DEPOSIT_INTENT_FAILED', err?.message || 'Failed to cancel deposit intent', requestId);
           }
@@ -1053,11 +996,11 @@ wss.on('connection', (ws: WebSocket, req) => {
             actorKey: actorKeyForLog(session.telegramId),
           });
 
-          ws.send(JSON.stringify({
+          safeSend(ws, {
             type: 'TRANSACTION_PENDING',
             requestId,
             payload: result.transaction,
-          }));
+          });
           break;
         }
 
@@ -1141,16 +1084,9 @@ wss.on('connection', (ws: WebSocket, req) => {
             // Check if rejoining an existing match
             const reconnectResult = await roomManager.reconnectPlayer(code, session.telegramId);
             if (reconnectResult.room && reconnectResult.role) {
-              matchmakingQueue.dequeueByPlayer(session.telegramId);
               sessionManager.attachRoom(ws, code, reconnectResult.role);
               const snapshot = roomManager.getRoomSnapshot(reconnectResult.room);
-              ws.send(
-                JSON.stringify({
-                  type: 'ROOM_STATE',
-                  requestId,
-                  payload: snapshot,
-                })
-              );
+              safeSend(ws, { type: 'ROOM_STATE', requestId, payload: snapshot });
               return;
             }
 
@@ -1161,7 +1097,6 @@ wss.on('connection', (ws: WebSocket, req) => {
               return;
             }
 
-            matchmakingQueue.dequeueByPlayer(session.telegramId);
             sessionManager.attachRoom(ws, code, 'p2');
             broadcastOpenRooms();
             const snapshot = roomManager.getRoomSnapshot(result.room);
@@ -1230,13 +1165,7 @@ wss.on('connection', (ws: WebSocket, req) => {
         }
 
         case 'GET_ROOMS': {
-          ws.send(
-            JSON.stringify({
-              type: 'ROOMS_LIST',
-              requestId,
-              payload: { rooms: roomManager.getOpenRooms() },
-            })
-          );
+          safeSend(ws, { type: 'ROOMS_LIST', requestId, payload: { rooms: roomManager.getOpenRooms() } });
           break;
         }
 
@@ -1380,75 +1309,6 @@ wss.on('connection', (ws: WebSocket, req) => {
           break;
         }
 
-        // --- 7. MATCHMAKING QUEUE ---
-        case 'JOIN_QUEUE': {
-          const { gameType, stake, telegramId, playerName } = message.payload;
-          const session = sessionManager.getSession(ws);
-          if (!session) {
-            sendError(ws, 'UNAUTHORIZED', 'Please log in to join matchmaking.', requestId);
-            break;
-          }
-          if (telegramId !== undefined && telegramId !== session.telegramId) {
-            sendError(ws, 'UNAUTHORIZED', "We couldn't verify your account. Please try again.", requestId);
-            break;
-          }
-
-          let validatedStake = 100;
-          try {
-            validatedStake = validateStake(stake ?? 100);
-          } catch {
-            sendError(ws, 'INVALID_STAKE', `Stake must be between ${MIN_STAKE} and ${MAX_STAKE} GRAM`, requestId);
-            break;
-          }
-
-          const activeRoom = roomManager.getActiveRoomForPlayer(session.telegramId);
-          if (activeRoom && activeRoom.status === 'playing') {
-            sendError(ws, 'ACTIVE_DUEL_EXISTS', 'You are already in an active duel.', requestId);
-            break;
-          }
-
-          try {
-            const queueResult = await matchmakingQueue.enqueue({
-              telegramId: session.telegramId,
-              name: playerName || session.name || 'Player',
-              avatarUrl: session.avatarUrl,
-              gameType: (gameType || 'snake') as GameType,
-              stake: validatedStake,
-              joinedAt: Date.now(),
-              ws,
-            });
-
-            ws.send(
-              JSON.stringify({
-                type: 'QUEUE_JOINED',
-                requestId,
-                payload: { status: queueResult.status },
-              })
-            );
-          } catch (error) {
-            console.error('Matchmaking enqueue failed:', error);
-            sendError(ws, 'MATCHMAKING_FAILED', 'Could not join matchmaking. Please try again.', requestId);
-          }
-          break;
-        }
-
-        case 'CANCEL_QUEUE': {
-          const session = sessionManager.getSession(ws);
-          if (session) {
-            matchmakingQueue.dequeueByPlayer(session.telegramId);
-          } else {
-            matchmakingQueue.dequeue(ws);
-          }
-          ws.send(
-            JSON.stringify({
-              type: 'QUEUE_CANCELLED',
-              requestId,
-              payload: { status: 'cancelled' },
-            })
-          );
-          break;
-        }
-
         default:
           break;
       }
@@ -1458,26 +1318,53 @@ wss.on('connection', (ws: WebSocket, req) => {
     }
   };
 
-  let messageChain: Promise<void> = Promise.resolve();
+  const inboundQueue = new BoundedInboundQueue(WS_LIMITS.maxQueuedMessages, WS_LIMITS.maxQueuedBytes);
   ws.on('message', (data) => {
-    messageChain = messageChain
-      .then(() => processMessage(data.toString()))
-      .catch((error) => {
-        console.error('❌ WebSocket command queue error:', error);
+    if (!connectionManager.checkTransportRateLimit(ws)) {
+      metrics.incrementCounter('ws_transport_rate_limited_total');
+      sendError(ws, 'RATE_LIMIT_EXCEEDED', "You're moving too quickly. Please wait a moment.");
+      return;
+    }
+
+    const messageBytes = rawDataByteLength(data);
+    const enqueuedAt = performance.now();
+    const accepted = inboundQueue.enqueue(messageBytes, async (queueWaitMs) => {
+      try {
+        if (ws.readyState === WebSocket.OPEN) await processMessage(rawDataToString(data));
+      } catch (error) {
+        logEvent('error', 'ws.command.queue_failed', { errorName: error instanceof Error ? error.name : 'UnknownError' });
         sendError(ws, 'INTERNAL_SERVER_ERROR', 'Request could not be processed');
+      } finally {
+        metrics.recordHistogram('ws_command_queue_wait_ms', queueWaitMs);
+        metrics.recordHistogram('ws_command_latency_ms', performance.now() - enqueuedAt);
+      }
+    });
+
+    metrics.recordHistogram('ws_inbound_queue_messages', inboundQueue.queuedMessages);
+    metrics.recordHistogram('ws_inbound_queue_bytes', inboundQueue.queuedBytes);
+    if (!accepted) {
+      logEvent('warn', 'ws.inbound_queue_limit.closed', {
+        queuedMessages: inboundQueue.queuedMessages,
+        queuedBytes: inboundQueue.queuedBytes,
+        messageBytes,
       });
+      metrics.incrementCounter('ws_inbound_queue_limit_closes_total');
+      try {
+        ws.close(1013, 'Inbound message queue overloaded');
+      } catch {
+        ws.terminate();
+      }
+    }
   });
 
   ws.on('close', () => {
     clearTimeout(authTimeout);
     const session = sessionManager.getSession(ws);
     if (session) {
-      matchmakingQueue.dequeueByPlayer(session.telegramId);
       connectionManager.removeConnection(ws, session.connectionId, 'client_close');
       sessionManager.remove(ws);
       broadcastOpenRooms();
     } else {
-      matchmakingQueue.dequeue(ws);
       connectionManager.removeConnection(ws, undefined, 'client_close');
     }
   });
@@ -1494,7 +1381,9 @@ if (process.env.NODE_ENV !== 'test' && !process.env.VITEST) {
       ['DATABASE_URL', process.env.DATABASE_URL],
       ['TELEGRAM_BOT_TOKEN', process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_BOT_TOKEN !== 'DEMO_BOT_TOKEN' ? 'configured' : ''],
       ['CORS_ORIGIN', CORS_ORIGIN && CORS_ORIGIN !== '*' ? CORS_ORIGIN : ''],
+      ['WS_RECONNECT_SECRET', process.env.WS_RECONNECT_SECRET && process.env.WS_RECONNECT_SECRET.trim().length >= 32 ? 'configured' : ''],
     ].filter(([, value]) => !value).map(([name]) => name);
+    missingProductionConfig.push(...getWebSocketProductionConfigErrors());
     missingProductionConfig.push(...validateMainnetTonConfig());
     if (process.env.ALLOW_UNSIGNED_AUTH === 'true') missingProductionConfig.push('ALLOW_UNSIGNED_AUTH=false');
     if (process.env.E2E_TEST_MODE === 'true') missingProductionConfig.push('E2E_TEST_MODE=false');

@@ -1,8 +1,9 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { server, wss } from '../../../server/server';
 import { connectTestClient, sendAndAwaitResponse, waitForMessage } from '../../setup/test-helpers';
 import { generateValidInitData, TEST_BOT_TOKEN } from '../../setup/mock-data';
 import { WebSocket } from 'ws';
+import { metrics } from '../../../server/observability';
 
 describe('WebSocket Handshake & Auth Integration Tests', () => {
   let wsUrl: string;
@@ -61,6 +62,7 @@ describe('WebSocket Handshake & Auth Integration Tests', () => {
 
   it('should configure a bounded WebSocket frame size', () => {
     expect((wss as any).options.maxPayload).toBe(64 * 1024);
+    expect((wss as any).options.perMessageDeflate).toBe(false);
   });
 
   it('should authenticate successfully with valid Telegram initData', async () => {
@@ -85,6 +87,7 @@ describe('WebSocket Handshake & Auth Integration Tests', () => {
     expect(response.payload.telegramId).toBe(user.id);
     expect(response.payload.user).toBeDefined();
     expect(response.payload.user.telegram_id).toBe(user.id);
+    expect(metrics.getSnapshot().counters.ws_auth_success_total).toBeGreaterThan(0);
     clientWs.close();
   });
 
@@ -110,6 +113,63 @@ describe('WebSocket Handshake & Auth Integration Tests', () => {
     clientWs.close();
   });
 
+  it('issues and refreshes a reconnect ticket that can authenticate without initData', async () => {
+    const user = { id: 555004, first_name: 'TicketReconnectTester' };
+    const initData = generateValidInitData(user, TEST_BOT_TOKEN);
+
+    clientWs = await connectTestClient(wsUrl);
+    const firstAuth = await sendAndAwaitResponse(clientWs, {
+      type: 'AUTH',
+      payload: { telegramId: user.id, playerName: user.first_name, initData },
+    }, 'AUTH_OK');
+    const firstTicket = firstAuth.payload.reconnectTicket;
+    expect(firstTicket).toEqual(expect.any(String));
+    clientWs.close();
+
+    clientWs = await connectTestClient(wsUrl);
+    const reconnect = await sendAndAwaitResponse(clientWs, {
+      type: 'AUTH',
+      payload: { telegramId: user.id, playerName: user.first_name, reconnectTicket: firstTicket },
+    }, 'AUTH_OK');
+
+    expect(reconnect.payload.telegramId).toBe(user.id);
+    expect(reconnect.payload.reconnectTicket).toEqual(expect.any(String));
+    expect(reconnect.payload.reconnectTicket).not.toBe(firstTicket);
+    clientWs.close();
+  });
+
+  it('never writes Telegram initData or reconnect tickets to auth logs', async () => {
+    const user = { id: 555005, first_name: 'CredentialLogTester' };
+    const initData = generateValidInitData(user, TEST_BOT_TOKEN);
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    try {
+      clientWs = await connectTestClient(wsUrl);
+      const firstAuth = await sendAndAwaitResponse(clientWs, {
+        type: 'AUTH',
+        payload: { telegramId: user.id, playerName: user.first_name, initData },
+      }, 'AUTH_OK');
+      const reconnectTicket = firstAuth.payload.reconnectTicket;
+      expect(reconnectTicket).toEqual(expect.any(String));
+      clientWs.close();
+
+      clientWs = await connectTestClient(wsUrl);
+      await sendAndAwaitResponse(clientWs, {
+        type: 'AUTH',
+        payload: { telegramId: user.id, playerName: user.first_name, initData, reconnectTicket },
+      }, 'AUTH_OK');
+
+      const logText = [...logSpy.mock.calls, ...warnSpy.mock.calls].flat().join('\n');
+      expect(logText).not.toContain(initData);
+      expect(logText).not.toContain(reconnectTicket);
+    } finally {
+      logSpy.mockRestore();
+      warnSpy.mockRestore();
+      if (clientWs?.readyState === WebSocket.OPEN) clientWs.close();
+    }
+  });
+
   it('should reject authentication with tampered initData', async () => {
     clientWs = await connectTestClient(wsUrl);
     const user = { id: 555002, first_name: 'TamperTester' };
@@ -131,6 +191,7 @@ describe('WebSocket Handshake & Auth Integration Tests', () => {
 
     expect(response.type).toBe('ERROR');
     expect(response.payload.code).toBe('AUTH_FAILED');
+    expect(metrics.getSnapshot().counters.ws_auth_rejected_total).toBeGreaterThan(0);
     clientWs.close();
   });
 

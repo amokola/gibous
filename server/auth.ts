@@ -170,14 +170,7 @@ export class TelegramAuth {
       }
 
       if (!isSignatureValid && !isEd25519Valid) {
-        console.warn('❌ Telegram auth verification failed:', {
-          rawInitData: trimmed,
-          receivedHash: hash,
-          computedHash,
-          tokenPrefix: effectiveToken?.slice(0, 12),
-          dataCheckString,
-          hasSignature: Boolean(signature),
-        });
+        console.warn('Telegram auth verification failed: invalid signature');
         return { valid: false, error: 'Invalid HMAC signature' };
       }
 

@@ -474,96 +474,10 @@ describe('Tier 1: Feature Coverage E2E Test Suite', () => {
   });
 
   // ==========================================
-  // FEATURE 4: MATCHMAKING (>=5 Test Cases)
-  // ==========================================
-  describe('Matchmaking Feature Coverage', () => {
-    it('4.1 should enter matchmaking queue and receive QUEUE_JOINED', async () => {
-      const client = await createAuthClient(104001, 'MM_Player_1');
-      const res = await client.sendAndAwait(
-        { type: 'JOIN_QUEUE', payload: { gameType: 'connect4', stake: 100 } },
-        'QUEUE_JOINED'
-      );
-      expect(res.type).toBe('QUEUE_JOINED');
-      expect(res.payload.status).toBe('searching');
-
-      await client.sendAndAwait({ type: 'CANCEL_QUEUE' }, 'QUEUE_CANCELLED');
-      client.close();
-    });
-
-    it('4.2 should cancel matchmaking queue successfully', async () => {
-      const client = await createAuthClient(104002, 'MM_Player_2');
-      await client.sendAndAwait(
-        { type: 'JOIN_QUEUE', payload: { gameType: 'snake', stake: 100 } },
-        'QUEUE_JOINED'
-      );
-
-      const cancelRes = await client.sendAndAwait({ type: 'CANCEL_QUEUE' }, 'QUEUE_CANCELLED');
-      expect(cancelRes.payload.status).toBe('cancelled');
-
-      client.close();
-    });
-
-    it('4.3 should automatically match two players queueing with identical game and stake', async () => {
-      const p1 = await createAuthClient(104003, 'MM_P1_Match');
-      const p2 = await createAuthClient(104004, 'MM_P2_Match');
-
-      const startP1Promise = p1.waitForType('GAME_START');
-      const startP2Promise = p2.waitForType('GAME_START');
-
-      await p1.sendAndAwait({ type: 'JOIN_QUEUE', payload: { gameType: 'rps', stake: 100 } }, 'QUEUE_JOINED');
-      await p2.sendAndAwait({ type: 'JOIN_QUEUE', payload: { gameType: 'rps', stake: 100 } }, 'QUEUE_JOINED');
-
-      const [startP1, startP2] = await Promise.all([startP1Promise, startP2Promise]);
-      expect(startP1.payload.status).toBe('playing');
-      expect(startP2.payload.status).toBe('playing');
-      expect(startP1.payload.code).toBe(startP2.payload.code);
-
-      p1.close();
-      p2.close();
-    });
-
-    it('4.4 should not match players queueing for different game types', async () => {
-      const p1 = await createAuthClient(104005, 'MM_P1_MismatchGame');
-      const p2 = await createAuthClient(104006, 'MM_P2_MismatchGame');
-
-      await p1.sendAndAwait({ type: 'JOIN_QUEUE', payload: { gameType: 'snake', stake: 100 } }, 'QUEUE_JOINED');
-      await p2.sendAndAwait({ type: 'JOIN_QUEUE', payload: { gameType: 'connect4', stake: 100 } }, 'QUEUE_JOINED');
-
-      await new Promise((r) => setTimeout(r, 200));
-      const p1Matched = p1.messages.some((m) => m.type === 'GAME_START');
-      const p2Matched = p2.messages.some((m) => m.type === 'GAME_START');
-      expect(p1Matched).toBe(false);
-      expect(p2Matched).toBe(false);
-
-      await p1.sendAndAwait({ type: 'CANCEL_QUEUE' }, 'QUEUE_CANCELLED');
-      await p2.sendAndAwait({ type: 'CANCEL_QUEUE' }, 'QUEUE_CANCELLED');
-      p1.close();
-      p2.close();
-    });
-
-    it('4.5 should not match players queueing for different stakes', async () => {
-      const p1 = await createAuthClient(104007, 'MM_P1_MismatchStake');
-      const p2 = await createAuthClient(104008, 'MM_P2_MismatchStake');
-
-      await p1.sendAndAwait({ type: 'JOIN_QUEUE', payload: { gameType: 'rps', stake: 100 } }, 'QUEUE_JOINED');
-      await p2.sendAndAwait({ type: 'JOIN_QUEUE', payload: { gameType: 'rps', stake: 250 } }, 'QUEUE_JOINED');
-
-      await new Promise((r) => setTimeout(r, 200));
-      const p1Matched = p1.messages.some((m) => m.type === 'GAME_START');
-      expect(p1Matched).toBe(false);
-
-      await p1.sendAndAwait({ type: 'CANCEL_QUEUE' }, 'QUEUE_CANCELLED');
-      await p2.sendAndAwait({ type: 'CANCEL_QUEUE' }, 'QUEUE_CANCELLED');
-      p1.close();
-      p2.close();
-    });
-  });
-
-  // ==========================================
-  // FEATURE 5: DISCONNECT & RECONNECT (>=5 Test Cases)
+  // FEATURE 4: DISCONNECT & RECONNECT (>=5 Test Cases)
   // ==========================================
   describe('Disconnect & Reconnect Feature Coverage', () => {
-    it('5.1 should broadcast PLAYER_DISCONNECTED with 45000ms timeout on socket close', async () => {
+    it('4.1 should broadcast PLAYER_DISCONNECTED with 45000ms timeout on socket close', async () => {
       const p1 = await createAuthClient(105001, 'DC_P1_Drop');
       const p2 = await createAuthClient(105002, 'DC_P2_Wait');
       const roomCode = generateRoomCode('DCEVENT');
@@ -583,7 +497,7 @@ describe('Tier 1: Feature Coverage E2E Test Suite', () => {
       p2.close();
     });
 
-    it('5.2 should provide activeRoom in AUTH_OK when re-authenticating after disconnect', async () => {
+    it('4.2 should provide activeRoom in AUTH_OK when re-authenticating after disconnect', async () => {
       let p1 = await createAuthClient(105003, 'DC_P1_ReconAuth');
       const p2 = await createAuthClient(105004, 'DC_P2_ReconAuth');
       const roomCode = generateRoomCode('DCAUTH');
@@ -607,7 +521,7 @@ describe('Tier 1: Feature Coverage E2E Test Suite', () => {
       p2.close();
     });
 
-    it('5.3 should restore room state on SYNC_ROOM and broadcast PLAYER_RECONNECTED', async () => {
+    it('4.3 should restore room state on SYNC_ROOM and broadcast PLAYER_RECONNECTED', async () => {
       let p1 = await createAuthClient(105005, 'DC_P1_FullRecon');
       const p2 = await createAuthClient(105006, 'DC_P2_FullRecon');
       const roomCode = generateRoomCode('DCFULL');
@@ -638,7 +552,7 @@ describe('Tier 1: Feature Coverage E2E Test Suite', () => {
       p2.close();
     });
 
-    it('5.4 should trigger immediate forfeit and award victory to opponent on LEAVE_ROOM', async () => {
+    it('4.4 should trigger immediate forfeit and award victory to opponent on LEAVE_ROOM', async () => {
       const p1 = await createAuthClient(105007, 'DC_P1_Leave');
       const p2 = await createAuthClient(105008, 'DC_P2_Stay');
       const roomCode = generateRoomCode('DCFORFEIT');
@@ -659,7 +573,7 @@ describe('Tier 1: Feature Coverage E2E Test Suite', () => {
       p2.close();
     });
 
-    it('5.5 should allow host to cancel waiting room and broadcast ROOM_CANCELLED', async () => {
+    it('4.5 should allow host to cancel waiting room and broadcast ROOM_CANCELLED', async () => {
       const p1 = await createAuthClient(105009, 'DC_P1_CancelRoom');
       const roomCode = generateRoomCode('DCCANCEL');
 
