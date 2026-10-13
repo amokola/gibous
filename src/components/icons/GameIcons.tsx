@@ -203,7 +203,7 @@ export const GiftRewardIcon: React.FC<IconProps> = ({ size = 36, className = '' 
 
 // 11. Premium Steel Bank Vault Icon (Heavy Bolted Hinges, Combination Wheel)
 export const BankVaultIcon: React.FC<IconProps> = ({ size = 36, className = '' }) => (
-  <AssetIcon src="/images/icons/vault.svg" size={size} className={className} />
+  <AssetIcon src="/images/icons/vault.svg?v=2" size={size} className={className} />
 );
 
 export const WalletDepositIcon: React.FC<IconProps> = ({ size = 40, className = '' }) => (
