@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useTonAddress, useTonWallet, useTonConnectUI } from '@tonconnect/ui-react';
 import { beginCell } from '@ton/core';
-import { ArrowUpRight, ArrowDownLeft, Check, History, ShieldCheck, Zap, Wallet, Unlink, Loader2 } from 'lucide-react';
+import { Check, History, ShieldCheck, Zap, Wallet, Unlink, Loader2 } from 'lucide-react';
 import { GramIcon } from '../ui/GramIcon';
-import { BankVaultIcon } from '../icons/GameIcons';
+import { BankVaultIcon, WalletDepositIcon, WalletWithdrawIcon } from '../icons/GameIcons';
 import { toNanoGram, formatGram } from '../../utils/tonUnits';
 import { getTonConnectNetworkId, type TonNetwork } from '../../../shared';
 import { multiplayerService } from '../../services/multiplayerService';
@@ -467,7 +467,7 @@ export const BankScreen: React.FC<BankScreenProps> = ({
           }`}
         >
           <div className="w-12 h-12 bg-[#dcfce7] border-2 border-black flex items-center justify-center mb-2.5">
-            <ArrowDownLeft className="w-6 h-6 text-[#166534] stroke-[2.5]" />
+            <WalletDepositIcon size={28} className="w-7 h-7 text-[#166534]" />
           </div>
 
           <h3 className="font-sketch text-lg sm:text-xl font-black text-[#1a1a1a] tracking-wide">
@@ -497,7 +497,7 @@ export const BankScreen: React.FC<BankScreenProps> = ({
           }`}
         >
           <div className="w-12 h-12 bg-[#fee2e2] border-2 border-black flex items-center justify-center mb-2.5">
-            <ArrowUpRight className="w-6 h-6 text-[#9b2c2c] stroke-[2.5]" />
+            <WalletWithdrawIcon size={28} className="w-7 h-7 text-[#9b2c2c]" />
           </div>
 
           <h3 className="font-sketch text-lg sm:text-xl font-black text-[#1a1a1a] tracking-wide">
