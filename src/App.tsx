@@ -215,6 +215,7 @@ export const App: React.FC = () => {
           : transaction.status === 'failed' ? 'Refunded to your balance' : 'Completed on TON Mainnet'
         : transaction.status === 'pending' ? 'Confirming on TON...' : 'Completed',
       txHash: transaction.txHash || transaction.boc,
+      depositIntentId: transaction.depositIntentId,
     }));
   }, [authenticatedUser]);
 

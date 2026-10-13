@@ -297,7 +297,7 @@ export class DatabasePool {
       });
     }
     const result = await this.query<any>(
-      `SELECT t.id, t.type, t.amount, t.fee, t.balance_after, t.amount_nano, t.fee_nano,
+      `SELECT t.id, t.operation_key, t.type, t.amount, t.fee, t.balance_after, t.amount_nano, t.fee_nano,
               t.balance_after_nano, t.tx_hash, t.created_at, w.status AS withdrawal_status,
               w.wallet_address, w.amount_nano AS withdrawal_amount_nano,
               w.net_amount_nano, w.fee_nano AS withdrawal_fee_nano
@@ -2349,6 +2349,23 @@ export class DatabasePool {
     if (!this.usesPersistentDatabase()) return this.getPendingDepositIntents();
     const result = await this.query<any>("SELECT * FROM deposit_intents WHERE status = 'pending' ORDER BY created_at ASC");
     return result.rows;
+  }
+
+  async expireDepositIntentIfDue(id: string, now = new Date()) {
+    if (!this.usesPersistentDatabase()) {
+      const intent = this.getDepositIntentById(id);
+      if (!intent || intent.status !== 'pending' || !intent.expires_at || new Date(intent.expires_at) > now) {
+        return false;
+      }
+      this.updateDepositIntent(id, { status: 'expired' });
+      return true;
+    }
+
+    const result = await this.query(
+      "UPDATE deposit_intents SET status = 'expired', updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND status = 'pending' AND expires_at <= $2 RETURNING id",
+      [id, now]
+    );
+    return (result.rowCount || 0) > 0;
   }
 
   async loadDepositIntentById(id: string) {

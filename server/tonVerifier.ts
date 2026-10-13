@@ -127,6 +127,7 @@ export class DepositVerificationService {
 
       for (const intent of allPending) {
         if (intent.expires_at && new Date() > new Date(intent.expires_at)) {
+          await this.storage.expireDepositIntentIfDue(intent.id);
           continue;
         }
 

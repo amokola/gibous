@@ -159,4 +159,22 @@ describe('on-chain deposit intent boundary', () => {
       expect(confirmedSnapshot?.transactions[0].status).toBe('confirmed');
     });
   });
+
+  it('moves expired pending intents out of the verifier queue', async () => {
+    const telegramId = 991004;
+    await storage.getOrCreateUser({ id: telegramId, first_name: 'Expired Depositor' });
+    const intent = await storage.createDepositIntent({
+      telegramId,
+      amountNano: '500000000',
+      walletAddress: 'EQD48x9_ton_player_wallet_address_12345',
+      depositAddress: 'EQD48x9_gibous_vault_address_12345',
+      network: 'testnet',
+    });
+    const expiredAt = new Date(Date.now() - 1000);
+    DatabasePool.getInstance().updateDepositIntent(intent.id, { expires_at: expiredAt });
+
+    await expect(storage.expireDepositIntentIfDue(intent.id, new Date())).resolves.toBe(true);
+    expect(DatabasePool.getInstance().getDepositIntentById(intent.id)?.status).toBe('expired');
+    await expect(storage.expireDepositIntentIfDue(intent.id, new Date())).resolves.toBe(false);
+  });
 });

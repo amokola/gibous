@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useTonAddress, useTonWallet, useTonConnectUI } from '@tonconnect/ui-react';
 import { beginCell } from '@ton/core';
 import { Check, History, ShieldCheck, Zap, Wallet, Unlink, Loader2 } from 'lucide-react';
@@ -19,7 +19,7 @@ interface BankScreenProps {
     amountNano: string;
     boc: string;
     network: 'mainnet' | 'testnet';
-  }) => void;
+  }) => Promise<void> | void;
   onRequestWithdrawalQuote?: (payload: {
     walletAddress: string;
     amountNano: string;
@@ -32,6 +32,7 @@ interface BankScreenProps {
     amountNano: string;
     status: string;
     createdAt: string;
+    expiresAt?: string;
     boc?: string | null;
     memo?: string;
     depositAddress?: string;
@@ -46,6 +47,7 @@ export interface BankTransactionItem {
   description: string;
   subtext?: string;
   txHash?: string;
+  depositIntentId?: string;
   status?: 'pending' | 'processing' | 'completed' | 'failed' | 'confirmed';
 }
 
@@ -78,9 +80,9 @@ export const BankScreen: React.FC<BankScreenProps> = ({
     intentId: string;
     amount: number;
     boc: string;
-    status: 'confirming' | 'credited';
+    status: 'confirming' | 'credited' | 'expired';
+    expiresAt: string;
   } | null>(null);
-  const prevBalanceRef = useRef(balance);
 
   // TON Connect UI Hooks
   const userFriendlyAddress = useTonAddress();
@@ -107,17 +109,45 @@ export const BankScreen: React.FC<BankScreenProps> = ({
     }
   }, [userFriendlyAddress]);
 
-  // Track balance updates to mark in-flight deposits as credited
   useEffect(() => {
-    if (balance > prevBalanceRef.current) {
-      if (localInFlight) {
-        setLocalInFlight((prev) => (prev ? { ...prev, status: 'credited' } : null));
-        const timer = setTimeout(() => setLocalInFlight(null), 5000);
-        return () => clearTimeout(timer);
-      }
+    if (localInFlight || activeDeposit?.status !== 'pending' || !activeDeposit.expiresAt) return;
+    setLocalInFlight({
+      intentId: activeDeposit.id,
+      amount: activeDeposit.amountGram,
+      boc: activeDeposit.boc || '',
+      expiresAt: activeDeposit.expiresAt,
+      status: new Date(activeDeposit.expiresAt).getTime() <= Date.now() ? 'expired' : 'confirming',
+    });
+  }, [activeDeposit?.id, activeDeposit?.status, activeDeposit?.expiresAt, localInFlight]);
+
+  // A deposit is credited only when the server ledger reports this intent.
+  useEffect(() => {
+    if (!localInFlight || localInFlight.status === 'credited') return;
+    const confirmed = initialTransactions.some((transaction) =>
+      transaction.type === 'deposit' &&
+      transaction.status === 'confirmed' &&
+      transaction.depositIntentId === localInFlight.intentId
+    );
+    if (confirmed) {
+      setLocalInFlight((prev) => (prev ? { ...prev, status: 'credited' } : null));
     }
-    prevBalanceRef.current = balance;
-  }, [balance, localInFlight]);
+  }, [initialTransactions, localInFlight]);
+
+  useEffect(() => {
+    if (!localInFlight || localInFlight.status !== 'confirming') return;
+    const expiresAt = new Date(localInFlight.expiresAt).getTime();
+    if (!Number.isFinite(expiresAt)) return;
+    const timer = setTimeout(() => {
+      setLocalInFlight((prev) => prev?.status === 'confirming' ? { ...prev, status: 'expired' } : prev);
+    }, Math.max(0, expiresAt - Date.now()));
+    return () => clearTimeout(timer);
+  }, [localInFlight?.intentId, localInFlight?.status, localInFlight?.expiresAt]);
+
+  useEffect(() => {
+    if (localInFlight?.status !== 'credited') return;
+    const timer = setTimeout(() => setLocalInFlight(null), 5000);
+    return () => clearTimeout(timer);
+  }, [localInFlight?.status]);
 
   const handleConnectWallet = () => {
     if (tonConnectUI?.openModal) {
@@ -153,6 +183,7 @@ export const BankScreen: React.FC<BankScreenProps> = ({
 
     setIsProcessing(true);
     let intent: { intentId: string; memo: string; depositAddress: string; amountNano: string; expiresAt: string } | null = null;
+    let walletSigned = false;
 
     try {
       const nanoGramAmount = toNanoGram(depositAmount);
@@ -217,9 +248,11 @@ export const BankScreen: React.FC<BankScreenProps> = ({
         }
         throw new Error('Deposit was not signed. Please try again.');
       }
+      walletSigned = true;
 
       // 4. Submit signed BOC with intentId to backend
-      onSubmitDeposit?.({
+      if (!onSubmitDeposit) throw new Error('Deposit submission is unavailable.');
+      await onSubmitDeposit({
         intentId: intent.intentId,
         walletAddress: userFriendlyAddress,
         depositAddress: targetDepositAddress,
@@ -236,6 +269,7 @@ export const BankScreen: React.FC<BankScreenProps> = ({
         intentId: intent.intentId,
         amount: depositAmount,
         boc: result.boc,
+        expiresAt: intent.expiresAt,
         status: 'confirming',
       });
 
@@ -260,7 +294,12 @@ export const BankScreen: React.FC<BankScreenProps> = ({
       } else if (errorMsg.toLowerCase().includes('insufficient') || errorMsg.toLowerCase().includes('balance')) {
         setNotification({ text: 'Insufficient TON balance in wallet.', type: 'error' });
       } else {
-        setNotification({ text: errorMsg || 'Deposit failed. Please try again.', type: 'error' });
+        setNotification({
+          text: walletSigned
+            ? `Deposit signed, but submission was not confirmed${errorMsg ? `: ${errorMsg}` : '.'} Check your Vault before retrying.`
+            : errorMsg || 'Deposit failed. Please try again.',
+          type: 'error',
+        });
       }
       setTimeout(() => setNotification(null), 3500);
     }
@@ -413,15 +452,15 @@ export const BankScreen: React.FC<BankScreenProps> = ({
 
       {/* 2b. In-Flight Deposit Stepper (Pending Blockchain Verification) */}
       {(localInFlight || (activeDeposit && activeDeposit.status === 'pending')) && (
-        <div className="w-full bg-[#f0fdf4] border-2 border-[#166534] p-3.5 sketch-shadow rounded-none flex flex-col gap-2.5 animate-fade-in">
-          <div className="flex items-center justify-between border-b border-[#166534]/30 pb-2">
+        <div className={`w-full ${localInFlight?.status === 'expired' ? 'bg-[#fff1f2] border-[#9b2c2c]' : 'bg-[#f0fdf4] border-[#166534]'} border-2 p-3.5 sketch-shadow rounded-none flex flex-col gap-2.5 animate-fade-in`}>
+          <div className={`flex items-center justify-between border-b ${localInFlight?.status === 'expired' ? 'border-[#9b2c2c]/30' : 'border-[#166534]/30'} pb-2`}>
             <div className="flex items-center gap-2">
-              <span className={`w-2.5 h-2.5 rounded-full ${localInFlight?.status === 'credited' ? 'bg-[#166534]' : 'bg-green-500 animate-pulse'}`} />
-              <span className="font-sketch text-xs font-bold uppercase tracking-wider text-[#166534]">
-                {localInFlight?.status === 'credited' ? 'Deposit Credited' : 'Deposit In Progress'}
+              <span className={`w-2.5 h-2.5 rounded-full ${localInFlight?.status === 'expired' ? 'bg-[#9b2c2c]' : localInFlight?.status === 'credited' ? 'bg-[#166534]' : 'bg-green-500 animate-pulse'}`} />
+              <span className={`font-sketch text-xs font-bold uppercase tracking-wider ${localInFlight?.status === 'expired' ? 'text-[#9b2c2c]' : 'text-[#166534]'}`}>
+                {localInFlight?.status === 'credited' ? 'Deposit Credited' : localInFlight?.status === 'expired' ? 'Deposit Expired' : 'Deposit In Progress'}
               </span>
             </div>
-            <span className="font-sketch text-xs font-bold text-[#166534]">
+            <span className={`font-sketch text-xs font-bold ${localInFlight?.status === 'expired' ? 'text-[#9b2c2c]' : 'text-[#166534]'}`}>
               +{formatGram(localInFlight?.amount ?? activeDeposit?.amountGram ?? 0)} GRAM
             </span>
           </div>
@@ -434,27 +473,34 @@ export const BankScreen: React.FC<BankScreenProps> = ({
             </div>
 
             {/* Step 2: Confirming */}
-            <div className="flex items-center gap-2 text-[#166534]">
+            <div className={`flex items-center gap-2 ${localInFlight?.status === 'expired' ? 'text-[#9b2c2c]' : 'text-[#166534]'}`}>
               {localInFlight?.status === 'credited' ? (
                 <span className="w-4 h-4 rounded-full bg-[#166534] text-white flex items-center justify-center text-[10px]">✓</span>
+              ) : localInFlight?.status === 'expired' ? (
+                <span className="w-4 h-4 rounded-full bg-[#9b2c2c] text-white flex items-center justify-center text-[10px]">!</span>
               ) : (
                 <Loader2 className="w-4 h-4 animate-spin text-[#166534]" />
               )}
               <span>
-                {localInFlight?.status === 'credited' ? '2. Confirmed on TON blockchain' : '2. Confirming on TON blockchain...'}
+                {localInFlight?.status === 'credited' ? '2. Confirmed on TON blockchain' : localInFlight?.status === 'expired' ? '2. Confirmation window expired' : '2. Confirming on TON blockchain...'}
               </span>
             </div>
 
             {/* Step 3: Credited */}
-            <div className={`flex items-center gap-2 ${localInFlight?.status === 'credited' ? 'text-[#166534]' : 'text-[#1a1a1a]/40'}`}>
-              <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] ${localInFlight?.status === 'credited' ? 'bg-[#166534] text-white' : 'border border-black/30'}`}>
-                {localInFlight?.status === 'credited' ? '✓' : '3'}
+            <div className={`flex items-center gap-2 ${localInFlight?.status === 'credited' ? 'text-[#166534]' : localInFlight?.status === 'expired' ? 'text-[#9b2c2c]' : 'text-[#1a1a1a]/40'}`}>
+              <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] ${localInFlight?.status === 'credited' ? 'bg-[#166534] text-white' : localInFlight?.status === 'expired' ? 'bg-[#9b2c2c] text-white' : 'border border-black/30'}`}>
+                {localInFlight?.status === 'credited' ? '✓' : localInFlight?.status === 'expired' ? '!' : '3'}
               </span>
               <span>
-                {localInFlight?.status === 'credited' ? '3. Vault balance credited!' : '3. Crediting vault balance'}
+                {localInFlight?.status === 'credited' ? '3. Vault balance credited!' : localInFlight?.status === 'expired' ? '3. No funds were credited' : '3. Crediting vault balance'}
               </span>
             </div>
           </div>
+          {localInFlight?.status === 'expired' && (
+            <p className="border-t border-[#9b2c2c]/30 pt-2 font-sketch text-[11px] text-[#9b2c2c]">
+              This request expired without a confirmed Vault credit. Check your transaction history before starting another deposit.
+            </p>
+          )}
         </div>
       )}
 
@@ -554,12 +600,13 @@ export const BankScreen: React.FC<BankScreenProps> = ({
 
           {/* Custom Deposit Amount Input Field */}
           <div>
-            <label className="font-sketch text-xs font-bold text-[#1a1a1a]/70 block mb-1">
+            <label htmlFor="deposit-amount" className="font-sketch text-xs font-bold text-[#1a1a1a]/70 block mb-1">
               Deposit Amount:
             </label>
             <div className="flex items-center gap-2">
               <div className="relative flex-1">
                 <input
+                  id="deposit-amount"
                   type="number"
                   step="0.1"
                   min="0.01"
@@ -644,10 +691,11 @@ export const BankScreen: React.FC<BankScreenProps> = ({
 
           {/* Destination Wallet Input */}
           <div>
-            <span className="font-sketch text-xs font-bold text-[#1a1a1a]/70 block mb-1">
+            <label htmlFor="withdraw-recipient" className="font-sketch text-xs font-bold text-[#1a1a1a]/70 block mb-1">
               Recipient TON Address:
-            </span>
+            </label>
             <input
+              id="withdraw-recipient"
               type="text"
               value={customWallet}
               onChange={(e) => setCustomWallet(e.target.value)}
@@ -659,7 +707,7 @@ export const BankScreen: React.FC<BankScreenProps> = ({
           {/* Custom Withdraw Amount Input Field */}
           <div>
             <div className="flex justify-between items-center mb-1">
-              <label className="font-sketch text-xs font-bold text-[#1a1a1a]/70">
+              <label htmlFor="withdraw-amount" className="font-sketch text-xs font-bold text-[#1a1a1a]/70">
                 Withdraw Amount:
               </label>
               <span className="font-sketch text-[10px] text-[#1a1a1a]/60 font-bold">
@@ -669,6 +717,7 @@ export const BankScreen: React.FC<BankScreenProps> = ({
             <div className="flex items-center gap-2">
               <div className="relative flex-1">
                 <input
+                  id="withdraw-amount"
                   type="number"
                   step="0.1"
                   min="0.01"

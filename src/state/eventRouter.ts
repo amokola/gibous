@@ -290,9 +290,29 @@ export function sendRematch(roomCode: string) {
   multiplayerService.send('REMATCH_REQUEST', { roomCode });
 }
 
-export function submitDeposit(payload: any) {
-  if (!checkAuthAndConnection()) return;
-  multiplayerService.send('SUBMIT_DEPOSIT', payload);
+export function submitDeposit(payload: any): Promise<void> {
+  if (!checkAuthAndConnection()) {
+    return Promise.reject(new Error('Connect to your account before submitting a deposit.'));
+  }
+  return new Promise<void>((resolve, reject) => {
+    let timeout: ReturnType<typeof setTimeout>;
+    const cleanups: Array<() => void> = [];
+    const finish = (callback: () => void) => {
+      clearTimeout(timeout);
+      cleanups.forEach((cleanup) => cleanup());
+      callback();
+    };
+    const requestId = multiplayerService.send('SUBMIT_DEPOSIT', payload);
+    cleanups.push(multiplayerService.on<any>('TRANSACTION_PENDING', (_transaction, message: any) => {
+      if (message?.requestId === requestId) finish(resolve);
+    }));
+    cleanups.push(multiplayerService.on<any>('ERROR', (error, message: any) => {
+      if (message?.requestId === requestId || error?.requestId === requestId) {
+        finish(() => reject(new Error(error?.message || 'Deposit submission was rejected.')));
+      }
+    }));
+    timeout = setTimeout(() => finish(() => reject(new Error('Server timed out confirming the deposit submission.'))), 20_000);
+  });
 }
 
 export function cancelDepositIntent(intentId: string): Promise<void> {

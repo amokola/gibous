@@ -129,6 +129,74 @@ describe('BankScreen Component with TON Connect & Real GRAM', () => {
     })));
   });
 
+  it('does not mark a pending deposit credited after an unrelated balance increase', async () => {
+    mockAddress = 'EQD48x9_ton_player_wallet_address_12345';
+    mockWallet = { device: { appName: 'Telegram Wallet' }, account: { address: mockAddress } };
+    mockSendTransaction.mockResolvedValueOnce({ boc: 'test_boc_hash' });
+
+    const submitDeposit = vi.fn().mockResolvedValue(undefined);
+    const view = render(<BankScreen balance={2.45} onSubmitDeposit={submitDeposit} initialTransactions={[]} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Deposit' }));
+    fireEvent.click(screen.getByRole('button', { name: /Deposit .* GRAM/i }));
+
+    expect(await screen.findByText(/Deposit In Progress/i)).toBeInTheDocument();
+    view.rerender(<BankScreen balance={12.45} onSubmitDeposit={submitDeposit} initialTransactions={[]} />);
+
+    expect(screen.getByText(/Deposit In Progress/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Deposit Credited/i)).not.toBeInTheDocument();
+  });
+
+  it('marks a deposit credited only after its matching ledger entry arrives', async () => {
+    mockAddress = 'EQD48x9_ton_player_wallet_address_12345';
+    mockWallet = { device: { appName: 'Telegram Wallet' }, account: { address: mockAddress } };
+    mockSendTransaction.mockResolvedValueOnce({ boc: 'test_boc_hash' });
+
+    const submitDeposit = vi.fn().mockResolvedValue(undefined);
+    const view = render(<BankScreen balance={2.45} onSubmitDeposit={submitDeposit} initialTransactions={[]} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Deposit' }));
+    fireEvent.click(screen.getByRole('button', { name: /Deposit .* GRAM/i }));
+    expect(await screen.findByText(/Deposit In Progress/i)).toBeInTheDocument();
+
+    view.rerender(<BankScreen
+      balance={2.95}
+      onSubmitDeposit={submitDeposit}
+      initialTransactions={[{
+        id: 'ledger-deposit-1',
+        type: 'deposit',
+        amount: 0.5,
+        timestamp: new Date().toISOString(),
+        description: 'Gram deposit on TON',
+        status: 'confirmed',
+        depositIntentId: 'intent_123',
+      }]}
+    />);
+
+    expect(await screen.findByText(/Deposit Credited/i)).toBeInTheDocument();
+    expect(screen.getByText(/Vault balance credited/i)).toBeInTheDocument();
+  });
+
+  it('shows a recoverable error when the server rejects a signed deposit', async () => {
+    mockAddress = 'EQD48x9_ton_player_wallet_address_12345';
+    mockWallet = { device: { appName: 'Telegram Wallet' }, account: { address: mockAddress } };
+    mockSendTransaction.mockResolvedValueOnce({ boc: 'test_boc_hash' });
+
+    const submitDeposit = vi.fn().mockRejectedValue(new Error('DEPOSIT_INTENT_EXPIRED'));
+    render(<BankScreen balance={2.45} onSubmitDeposit={submitDeposit} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Deposit' }));
+    fireEvent.click(screen.getByRole('button', { name: /Deposit .* GRAM/i }));
+
+    expect(await screen.findByText(/submission was not confirmed: DEPOSIT_INTENT_EXPIRED/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Deposit In Progress/i)).not.toBeInTheDocument();
+    expect(multiplayerService.cancelDepositIntent).not.toHaveBeenCalled();
+  });
+
+  it('associates bank amount inputs with their visible labels', () => {
+    render(<BankScreen balance={5.0} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Deposit' }));
+
+    expect(screen.getByLabelText('Deposit Amount:')).toBeInTheDocument();
+  });
+
   it('handles user transaction rejection gracefully without deducting balance', async () => {
     mockAddress = 'EQD48x9_ton_player_wallet_address_12345';
     mockWallet = { device: { appName: 'Telegram Wallet' }, account: { address: mockAddress } };
@@ -195,6 +263,24 @@ describe('BankScreen Component with TON Connect & Real GRAM', () => {
     expect(screen.getByText(/\+2\.50 GRAM/i)).toBeInTheDocument();
     expect(screen.getByText(/Transaction signed in wallet/i)).toBeInTheDocument();
     expect(screen.getByText(/Confirming on TON blockchain/i)).toBeInTheDocument();
+  });
+
+  it('shows an expired outcome instead of an endless confirmation spinner', async () => {
+    const activeDeposit = {
+      id: 'expired_dep_1',
+      amountGram: 2.5,
+      amountNano: '2500000000',
+      status: 'pending',
+      createdAt: new Date(Date.now() - 700_000).toISOString(),
+      expiresAt: new Date(Date.now() - 1000).toISOString(),
+      boc: 'sample_boc_abc',
+    };
+
+    render(<BankScreen balance={10.0} activeDeposit={activeDeposit} />);
+
+    expect(await screen.findByText(/Deposit Expired/i)).toBeInTheDocument();
+    expect(screen.getByText(/No funds were credited/i)).toBeInTheDocument();
+    expect(screen.getByText(/Check your transaction history/i)).toBeInTheDocument();
   });
 
   it('shows the server fee quote before confirming a mainnet Gram withdrawal', async () => {

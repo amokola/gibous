@@ -236,6 +236,9 @@ export class StorageService {
           status: tx.withdrawal_status || 'confirmed',
           createdAt: new Date(tx.created_at || Date.now()).toISOString(),
           txHash: tx.withdrawal_tx_hash || tx.tx_hash,
+          depositIntentId: typeof tx.operation_key === 'string' && tx.operation_key.startsWith('deposit:')
+            ? tx.operation_key.slice('deposit:'.length)
+            : undefined,
           walletAddress: tx.wallet_address,
           grossAmountNano: tx.withdrawal_status ? String(tx.amount_nano || tx.withdrawal_amount_nano) : undefined,
           netAmountNano: tx.net_amount_nano ? String(tx.net_amount_nano) : undefined,
@@ -262,6 +265,7 @@ export class StorageService {
           amountNano: activeIntent.amount_nano,
           status: activeIntent.status,
           createdAt: new Date(activeIntent.created_at).toISOString(),
+          expiresAt: activeIntent.expires_at ? new Date(activeIntent.expires_at).toISOString() : undefined,
           boc: activeIntent.boc,
           memo: activeIntent.memo,
           depositAddress: activeIntent.deposit_address,
@@ -427,6 +431,10 @@ export class StorageService {
 
   async getPendingDepositIntents() {
     return await this.db.loadPendingDepositIntents() as PendingDepositIntent[];
+  }
+
+  async expireDepositIntentIfDue(intentId: string, now = new Date()) {
+    return this.db.expireDepositIntentIfDue(intentId, now);
   }
 
   async confirmDeposit(intentId: string, txHash: string) {
