@@ -14,62 +14,42 @@ describe('Server-Generated Deposit and Withdrawal Memos', () => {
   });
 
   describe('Memo format validation', () => {
-    const MEMO_REGEX = /^(dep|wit)_([1-9]\d*)_([a-f0-9]{8})$/;
+    const MEMO_REGEX = /^(dep|wit)_([a-f0-9]{32})$/;
 
-    it('generates valid deposit memo adhering to dep_<users.id>_<8hex>', () => {
-      const memo1 = generateDepositMemo(1);
-      const memo42 = generateDepositMemo(42);
-      const memo100 = generateDepositMemo(100);
+    it('generates opaque deposit memos with 128 bits of randomness', () => {
+      const memo1 = generateDepositMemo();
+      const memo2 = generateDepositMemo();
 
-      expect(memo1).toMatch(/^dep_1_[a-f0-9]{8}$/);
-      expect(memo42).toMatch(/^dep_42_[a-f0-9]{8}$/);
-      expect(memo100).toMatch(/^dep_100_[a-f0-9]{8}$/);
-
-      expect(MEMO_REGEX.test(memo1)).toBe(true);
-      expect(MEMO_REGEX.test(memo42)).toBe(true);
-      expect(MEMO_REGEX.test(memo100)).toBe(true);
-    });
-
-    it('generates valid withdrawal memo adhering to wit_<users.id>_<8hex>', () => {
-      const memo1 = generateWithdrawalMemo(1);
-      const memo42 = generateWithdrawalMemo(42);
-
-      expect(memo1).toMatch(/^wit_1_[a-f0-9]{8}$/);
-      expect(memo42).toMatch(/^wit_42_[a-f0-9]{8}$/);
+      expect(memo1).toMatch(/^dep_[a-f0-9]{32}$/);
+      expect(memo2).toMatch(/^dep_[a-f0-9]{32}$/);
+      expect(memo1).not.toBe(memo2);
 
       expect(MEMO_REGEX.test(memo1)).toBe(true);
-      expect(MEMO_REGEX.test(memo42)).toBe(true);
     });
 
-    it('rejects invalid memos that use Telegram ID or non-hex entropy', () => {
-      // Telegram IDs are typically large numbers (e.g. 6304557924)
-      const telegramIdMemo = 'dep_6304557924_a8c9e2f4';
-      const shortEntropyMemo = 'dep_42_123';
-      const nonNumericUserId = 'dep_x_a8c9e2f4';
-      const nonHexMemo = 'wit_42_not-hex!';
-      const extraCharsMemo = 'dep_42_a8c9e2f4_extra';
+    it('generates opaque withdrawal memos with 128 bits of randomness', () => {
+      const memo1 = generateWithdrawalMemo();
+      const memo2 = generateWithdrawalMemo();
 
-      // Verify that generateDepositMemo rejects non-positive or invalid internal IDs
-      expect(() => generateDepositMemo(-5)).toThrow();
-      expect(() => generateDepositMemo(0)).toThrow();
-      expect(() => generateDepositMemo(NaN)).toThrow();
-      expect(() => generateWithdrawalMemo(-1)).toThrow();
+      expect(memo1).toMatch(/^wit_[a-f0-9]{32}$/);
+      expect(memo2).toMatch(/^wit_[a-f0-9]{32}$/);
+      expect(memo1).not.toBe(memo2);
 
-      // Ensure regex flags invalid formats
-      expect(MEMO_REGEX.test(shortEntropyMemo)).toBe(false);
-      expect(MEMO_REGEX.test(nonNumericUserId)).toBe(false);
-      expect(MEMO_REGEX.test(nonHexMemo)).toBe(false);
-      expect(MEMO_REGEX.test(extraCharsMemo)).toBe(false);
+      expect(MEMO_REGEX.test(memo1)).toBe(true);
+    });
+
+    it('uses only an opaque token after the transaction type prefix', () => {
+      const memo = generateDepositMemo();
+
+      expect(MEMO_REGEX.test(memo)).toBe(true);
     });
   });
 
   describe('Uniqueness & Entropy', () => {
     it('generates 200 unique memos without collisions', () => {
       const memos = new Set<string>();
-      const internalUserId = 42;
-
       for (let i = 0; i < 200; i++) {
-        const memo = generateDepositMemo(internalUserId);
+        const memo = generateDepositMemo();
         expect(memos.has(memo)).toBe(false);
         memos.add(memo);
       }
@@ -78,7 +58,7 @@ describe('Server-Generated Deposit and Withdrawal Memos', () => {
   });
 
   describe('Pre-flight Deposit Intent Lifecycle', () => {
-    it('creates deposit intent using internal users.id, NOT telegram_id', async () => {
+    it('creates deposit intent with an opaque memo associated by the stored user relation', async () => {
       const telegramId = 6304557924; // Big Telegram ID
       const user = await storage.getOrCreateUser({ id: telegramId, first_name: 'Sten' });
 
@@ -97,9 +77,7 @@ describe('Server-Generated Deposit and Withdrawal Memos', () => {
 
       expect(intent.id).toBeDefined();
       expect(intent.memo).toBeDefined();
-      // Crucial: Memo MUST use internal user.id, NEVER telegramId!
-      expect(intent.memo.startsWith(`dep_${user.id}_`)).toBe(true);
-      expect(intent.memo.includes(String(telegramId))).toBe(false);
+      expect(intent.memo).toMatch(/^dep_[a-f0-9]{32}$/);
       expect(intent.status).toBe('pending');
       expect(intent.expires_at).toBeDefined();
       expect(new Date(intent.expires_at).getTime()).toBeGreaterThan(Date.now());
@@ -235,7 +213,7 @@ describe('Server-Generated Deposit and Withdrawal Memos', () => {
   });
 
   describe('Withdrawal Memo Generation and Storage', () => {
-    it('generates unique wit_<users.id>_<randomHex> for a confirmed server quote', async () => {
+    it('generates a unique opaque memo for a confirmed server quote', async () => {
       vi.stubEnv('PAYOUT_NETWORK', 'mainnet');
       vi.stubEnv('PAYOUT_MIN_WITHDRAWAL_NANO', '100000000');
       vi.stubEnv('PAYOUT_MAX_WITHDRAWAL_NANO', '5000000000');
@@ -271,10 +249,7 @@ describe('Server-Generated Deposit and Withdrawal Memos', () => {
       expect(result.withdrawal).toBeDefined();
       expect(result.withdrawal.memo).toBeDefined();
 
-      // Must start with wit_<user.id>_
-      expect(result.withdrawal.memo.startsWith(`wit_${user.id}_`)).toBe(true);
-      // Must NOT contain Telegram ID
-      expect(result.withdrawal.memo.includes(String(telegramId))).toBe(false);
+      expect(result.withdrawal.memo).toMatch(/^wit_[a-f0-9]{32}$/);
 
       // Section 19 requirement: client-facing transaction object must NOT expose withdrawal memo
       expect(result.transaction.memo).toBeUndefined();

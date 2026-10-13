@@ -1,6 +1,6 @@
 import { WebSocket } from 'ws';
 import { randomUUID } from 'crypto';
-import { logEvent } from './observability';
+import { actorKeyForLog, logEvent } from './observability';
 
 export type DisconnectReason =
   | 'client_close'
@@ -164,7 +164,7 @@ export class ConnectionManager {
       this.releaseSocketIp(existing.ws);
 
       logEvent('info', 'ws.connection.replaced', {
-        actorId: telegramId,
+        actorKey: actorKeyForLog(telegramId),
         previousConnectionId: existing.connectionId,
       });
 
@@ -276,7 +276,7 @@ export class ConnectionManager {
       if (conn.state === 'closing') continue;
 
       if (!conn.isAlive) {
-        logEvent('warn', 'ws.heartbeat.timeout', { actorId: tgId });
+        logEvent('warn', 'ws.heartbeat.timeout', { actorKey: actorKeyForLog(tgId) });
         this.removeConnectionInternal(conn, 'stale_heartbeat');
         try {
           conn.ws.terminate();
@@ -306,7 +306,7 @@ export class ConnectionManager {
       if (conn.state === 'closing') continue;
 
       if (now - conn.lastSeen > this.STALE_CONNECTION_TIMEOUT_MS) {
-        logEvent('warn', 'ws.stale.inactivity', { actorId: tgId });
+        logEvent('warn', 'ws.stale.inactivity', { actorKey: actorKeyForLog(tgId) });
         this.removeConnectionInternal(conn, 'stale_inactivity');
         try {
           conn.ws.terminate();
@@ -364,7 +364,7 @@ export class ConnectionManager {
 
     const allowed = conn.transportBucket.tryConsume(1);
     if (!allowed) {
-      logEvent('warn', 'ws.rate_limited', { actorId: tgId, category: 'transport' });
+      logEvent('warn', 'ws.rate_limited', { actorKey: actorKeyForLog(tgId), category: 'transport' });
     }
     return allowed;
   }
@@ -378,7 +378,7 @@ export class ConnectionManager {
 
     const allowed = conn.actionBucket.tryConsume(1);
     if (!allowed) {
-      logEvent('warn', 'ws.rate_limited', { actorId: tgId, category: 'game_action' });
+      logEvent('warn', 'ws.rate_limited', { actorKey: actorKeyForLog(tgId), category: 'game_action' });
     }
     return allowed;
   }
@@ -392,7 +392,7 @@ export class ConnectionManager {
 
     const allowed = conn.emoteBucket.tryConsume(1);
     if (!allowed) {
-      logEvent('warn', 'ws.rate_limited', { actorId: tgId, category: 'emote' });
+      logEvent('warn', 'ws.rate_limited', { actorKey: actorKeyForLog(tgId), category: 'emote' });
     }
     return allowed;
   }
@@ -423,7 +423,7 @@ export class ConnectionManager {
     if (conn && conn.state === 'connected' && conn.ws.readyState === WebSocket.OPEN) {
       try {
         if (typeof conn.ws.bufferedAmount === 'number' && conn.ws.bufferedAmount > this.MAX_BUFFERED_BYTES) {
-          logEvent('warn', 'ws.buffer_overflow', { actorId: telegramId });
+          logEvent('warn', 'ws.buffer_overflow', { actorKey: actorKeyForLog(telegramId) });
           this.removeConnectionInternal(conn, 'buffer_overflow');
           try {
             conn.ws.close(1008, 'Buffer overflow');
@@ -436,7 +436,7 @@ export class ConnectionManager {
         return true;
       } catch (err) {
         logEvent('error', 'ws.send_failed', {
-          actorId: telegramId,
+          actorKey: actorKeyForLog(telegramId),
           error: err instanceof Error ? err.message : String(err),
         });
         return false;

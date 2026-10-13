@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { WebSocket } from 'ws';
 import { GameType } from '../shared';
 import { MAX_STAKE, MIN_STAKE } from '../shared/constants/economics';
-import { logEvent, metrics } from './observability';
+import { actorKeyForLog, logEvent, metrics } from './observability';
 
 export interface QueuedPlayer {
   telegramId: number;
@@ -93,7 +93,7 @@ export class MatchmakingQueue {
       metrics.setGauge('matchmaking_queue_size', this.queue.size);
 
       logEvent('info', 'matchmaking.player.queued', {
-        telegramId: player.telegramId,
+        actorKey: actorKeyForLog(player.telegramId),
         gameType: player.gameType,
         stake: player.stake,
       });
@@ -114,8 +114,8 @@ export class MatchmakingQueue {
 
     logEvent('info', 'matchmaking.match.reserved', {
       matchId: reservation.matchId,
-      p1: opponent.telegramId,
-      p2: player.telegramId,
+      p1ActorKey: actorKeyForLog(opponent.telegramId),
+      p2ActorKey: actorKeyForLog(player.telegramId),
       gameType: player.gameType,
       stake: player.stake,
     });
@@ -148,7 +148,7 @@ export class MatchmakingQueue {
     metrics.setGauge('matchmaking_queue_size', this.queue.size);
 
     if (emitLog) {
-      logEvent('info', 'matchmaking.player.dequeued', { telegramId });
+      logEvent('info', 'matchmaking.player.dequeued', { actorKey: actorKeyForLog(telegramId) });
     }
     return true;
   }
@@ -217,7 +217,7 @@ export class MatchmakingQueue {
     for (const id of candidatesToRemove) {
       this.dequeueByPlayer(id, false);
       logEvent('info', 'matchmaking.player.purged', {
-        telegramId: id,
+        actorKey: actorKeyForLog(id),
         reason: 'disconnected',
       });
     }
@@ -235,7 +235,7 @@ export class MatchmakingQueue {
       if (expired || disconnected) {
         this.dequeueByPlayer(telegramId, false);
         logEvent('info', 'matchmaking.player.purged', {
-          telegramId,
+          actorKey: actorKeyForLog(telegramId),
           reason: expired ? 'expired' : 'disconnected',
         });
       }

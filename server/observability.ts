@@ -1,4 +1,17 @@
+import { createHmac } from 'node:crypto';
+
 export type StructuredLogLevel = 'debug' | 'info' | 'warn' | 'error';
+
+/** Return a stable, non-reversible log identifier without writing a Telegram ID. */
+export function actorKeyForLog(telegramId: number | undefined): string | undefined {
+  if (telegramId === undefined) return undefined;
+  const secret = process.env.LOG_PSEUDONYM_SECRET || process.env.TELEGRAM_BOT_TOKEN;
+  if (!secret) return undefined;
+  return createHmac('sha256', secret)
+    .update(`telegram-user:${telegramId}`)
+    .digest('hex')
+    .slice(0, 16);
+}
 
 const LOG_LEVEL_PRIORITY: Record<StructuredLogLevel, number> = {
   debug: 0,

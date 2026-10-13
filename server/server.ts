@@ -20,7 +20,7 @@ import { validateMainnetTonConfig } from './tonConfig';
 import { renderBragCard } from './bragCardRenderer';
 import { createBragShareToken, dateFromBragShareKey, verifyBragShareToken } from './bragShareToken';
 import { TelegramBragService } from './telegramBrag';
-import { logEvent, metrics } from './observability';
+import { actorKeyForLog, logEvent, metrics } from './observability';
 import { roomCommandQueue } from './roomCommandQueue';
 import { SettlementWorker } from './settlementWorker';
 import { validateStake } from './authGuards';
@@ -118,7 +118,13 @@ export const matchmakingQueue = new MatchmakingQueue(async (reservation) => {
   }
 
   const roomCode = createRes.room.code;
-  logEvent('info', 'matchmaking.room.creating', { matchId, roomCode, p1: p1.telegramId, p2: p2.telegramId, stake });
+  logEvent('info', 'matchmaking.room.creating', {
+    matchId,
+    roomCode,
+    p1ActorKey: actorKeyForLog(p1.telegramId),
+    p2ActorKey: actorKeyForLog(p2.telegramId),
+    stake,
+  });
 
   const joinRes = await roomManager.joinRoom(
     roomCode,
@@ -703,7 +709,7 @@ wss.on('connection', (ws: WebSocket, req) => {
         requestId,
         command: message.type,
         roomCode: typeof roomCode === 'string' ? roomCode.toUpperCase() : undefined,
-        actorId: authenticatedSession?.telegramId,
+        actorKey: actorKeyForLog(authenticatedSession?.telegramId),
         authenticated,
       });
     }
@@ -961,7 +967,11 @@ wss.on('connection', (ws: WebSocket, req) => {
               network: configuredNetwork,
             });
 
-            console.log(`[DEPOSIT_INTENT] Created intent ${intent.id} with memo ${intent.memo} for user tg:${session.telegramId}`);
+            logEvent('info', 'deposit.intent.created', {
+              requestId,
+              intentId: intent.id,
+              actorKey: actorKeyForLog(session.telegramId),
+            });
 
             ws.send(JSON.stringify({
               type: 'DEPOSIT_INTENT_CREATED',
@@ -975,7 +985,11 @@ wss.on('connection', (ws: WebSocket, req) => {
               },
             }));
           } catch (err: any) {
-            sendError(ws, 'DEPOSIT_INTENT_FAILED', err?.message || 'Failed to create deposit intent', requestId);
+            logEvent('error', 'deposit.intent.failed', {
+              requestId,
+              actorKey: actorKeyForLog(session.telegramId),
+            }, err);
+            sendError(ws, 'DEPOSIT_INTENT_FAILED', 'Could not create a deposit request. Please try again.', requestId);
           }
           break;
         }
@@ -994,7 +1008,11 @@ wss.on('connection', (ws: WebSocket, req) => {
               break;
             }
 
-            console.log(`[DEPOSIT_INTENT] Cancelled intent ${message.payload.intentId} for user tg:${session.telegramId}`);
+            logEvent('info', 'deposit.intent.cancelled', {
+              requestId,
+              intentId: message.payload.intentId,
+              actorKey: actorKeyForLog(session.telegramId),
+            });
 
             ws.send(JSON.stringify({
               type: 'DEPOSIT_INTENT_CANCELLED',
@@ -1029,7 +1047,11 @@ wss.on('connection', (ws: WebSocket, req) => {
             break;
           }
 
-          console.log(`[DEPOSIT_BOC] Submitted BOC for intent ${result.transaction.id} by tg:${session.telegramId}`);
+          logEvent('info', 'deposit.boc.submitted', {
+            requestId,
+            transactionId: result.transaction.id,
+            actorKey: actorKeyForLog(session.telegramId),
+          });
 
           ws.send(JSON.stringify({
             type: 'TRANSACTION_PENDING',

@@ -46,20 +46,12 @@ export function isRetryablePgError(error: any): boolean {
   return false;
 }
 
-export function generateDepositMemo(internalUserId: number): string {
-  if (!Number.isInteger(internalUserId) || internalUserId <= 0) {
-    throw new Error(`Invalid internal user ID for deposit memo: ${internalUserId}`);
-  }
-  const randomHex = crypto.randomBytes(4).toString('hex');
-  return `dep_${internalUserId}_${randomHex}`;
+export function generateDepositMemo(): string {
+  return `dep_${crypto.randomBytes(16).toString('hex')}`;
 }
 
-export function generateWithdrawalMemo(internalUserId: number): string {
-  if (!Number.isInteger(internalUserId) || internalUserId <= 0) {
-    throw new Error(`Invalid internal user ID for withdrawal memo: ${internalUserId}`);
-  }
-  const randomHex = crypto.randomBytes(4).toString('hex');
-  return `wit_${internalUserId}_${randomHex}`;
+export function generateWithdrawalMemo(): string {
+  return `wit_${crypto.randomBytes(16).toString('hex')}`;
 }
 
 export async function executeWithRetry<T>(
@@ -1171,7 +1163,7 @@ export class DatabasePool {
       const amountNano = quoteGrossNano.toString();
       const newBalanceNano = (userNano - quoteGrossNano).toString();
       const id = crypto.randomUUID();
-      const memo = generateWithdrawalMemo(user.id);
+      const memo = generateWithdrawalMemo();
       const withdrawal = {
         id,
         telegram_id: params.telegramId,
@@ -1293,7 +1285,7 @@ export class DatabasePool {
          WHERE id = $2 RETURNING *`,
         [newBalanceNano, userRow.id]
       );
-      const memo = generateWithdrawalMemo(Number(userRow.id));
+      const memo = generateWithdrawalMemo();
       const withdrawalRes = await client.query(
         `INSERT INTO withdrawals
           (telegram_id, wallet_address, amount_nano, amount_gram, fee_nano, net_amount_nano, network,
@@ -1626,7 +1618,7 @@ export class DatabasePool {
       this.saveUser(user);
 
       const withdrawalId = crypto.randomUUID();
-      const memo = generateWithdrawalMemo(user.id);
+      const memo = generateWithdrawalMemo();
       const withdrawal = {
         id: withdrawalId,
         telegram_id: telegramId,
@@ -1731,7 +1723,7 @@ export class DatabasePool {
       const updatedUser = this.normalizeUser(updatedUserRes.rows[0]);
 
       // 4. Insert into withdrawals table
-      const memo = generateWithdrawalMemo(userRow.id);
+      const memo = generateWithdrawalMemo();
       const withdrawalRes = await client.query(
         `INSERT INTO withdrawals
           (telegram_id, wallet_address, amount_nano, amount_gram, fee_nano, status, operation_key, memo)
@@ -2408,7 +2400,7 @@ export class DatabasePool {
       let memo = '';
       const intents = this.inMemoryDb.get('deposit_intents') || [];
       for (let attempt = 0; attempt < 5; attempt++) {
-        const candidate = generateDepositMemo(user.id);
+        const candidate = generateDepositMemo();
         if (!intents.some((it: any) => it.memo === candidate)) {
           memo = candidate;
           break;
@@ -2436,14 +2428,13 @@ export class DatabasePool {
       return record;
     }
 
-    const userRes = await this.query<{ id: number }>('SELECT id FROM users WHERE telegram_id = $1', [params.telegramId]);
+    const userRes = await this.query<{ exists: number }>('SELECT 1 AS exists FROM users WHERE telegram_id = $1', [params.telegramId]);
     if (!userRes.rows[0]) {
       throw new Error('Account not found');
     }
-    const internalUserId = userRes.rows[0].id;
 
     for (let attempt = 0; attempt < 5; attempt++) {
-      const memo = generateDepositMemo(internalUserId);
+      const memo = generateDepositMemo();
       try {
         const result = await this.query<any>(
           `INSERT INTO deposit_intents
