@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { 
-  PlayerRole, 
+  ActivePlayer,
   DiceRolledPayload, 
   DiscDroppedPayload, 
   RPSRoundResolvedPayload, 
@@ -12,7 +12,7 @@ import { useRoomStore } from './useRoomStore';
 
 interface GameState {
   gameState: Record<string, any>;
-  activePlayer: PlayerRole;
+  activePlayer: ActivePlayer;
   turnPhase: string;
   winner: string | null;
   gameVersion: number;
@@ -34,7 +34,7 @@ interface GameState {
 
 const initialState = {
   gameState: {},
-  activePlayer: 'p1' as PlayerRole,
+  activePlayer: 'p1' as ActivePlayer,
   turnPhase: 'WAITING_ROLL',
   winner: null,
   gameVersion: -1,

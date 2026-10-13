@@ -1,4 +1,5 @@
 import { multiplayerService } from '../services/multiplayerService';
+import { shouldApplyRoomSnapshot } from './roomSnapshotOrdering';
 import {
   useAuthStore,
   useRoomStore,
@@ -104,7 +105,7 @@ export function initEventRouter() {
 
   multiplayerService.on<RoomStatePayload>('ROOM_STATE', (payload) => {
     const currentRoom = useRoomStore.getState().currentRoom;
-    if (!currentRoom || payload.version >= currentRoom.version) {
+    if (shouldApplyRoomSnapshot(currentRoom, payload)) {
       useRoomStore.getState().setRoom(payload);
       if (myTelegramId) {
         useRoomStore.getState().resolveMyRole(myTelegramId);

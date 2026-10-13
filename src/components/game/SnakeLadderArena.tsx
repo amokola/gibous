@@ -388,7 +388,7 @@ export const SnakeLadderArena: React.FC<SnakeLadderArenaProps> = ({
         <BoardGrid
           p1Position={p1Pos}
           p2Position={p2Pos}
-          activePlayer={activePlayer || 'p1'}
+          activePlayer={activePlayer === 'p2' ? 'p2' : 'p1'}
           p1Hopping={p1Hopping}
           p2Hopping={p2Hopping}
           p1CustomPos={p1CustomPos}
@@ -404,7 +404,7 @@ export const SnakeLadderArena: React.FC<SnakeLadderArenaProps> = ({
         <Dice3D
           value={displayRoll}
           isRolling={isRolling}
-          activePlayer={activePlayer || 'p1'}
+          activePlayer={activePlayer === 'p2' ? 'p2' : 'p1'}
           canRoll={isMyTurn && !isAnimating && !isGameOver}
           statusText={
             isGameOver

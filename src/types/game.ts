@@ -9,6 +9,7 @@ export * from '../../shared/constants/economics';
 
 import type {
   PlayerRole,
+  ActivePlayer,
   GameType,
   RoomStatePayload,
   DiceRolledPayload,
@@ -105,7 +106,7 @@ export interface NormalizedDuelState {
     p2: RoomStatePayload['p2'];
   };
   myRole: PlayerRole | null;
-  activePlayer: PlayerRole;
+  activePlayer: ActivePlayer;
   turnPhase: string;
   potAmount: number;
   stakeAmount: number;

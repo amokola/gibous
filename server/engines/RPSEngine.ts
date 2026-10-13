@@ -1,4 +1,4 @@
-import { GameType, PlayerRole, MatchWinner, RPSChoice } from '../../shared';
+import { ActivePlayer, GameType, PlayerRole, MatchWinner, RPSChoice } from '../../shared';
 import { IServerGameEngine, GameActionResult } from './IServerGameEngine';
 
 export interface RPSState {
@@ -12,7 +12,7 @@ export interface RPSState {
   matchWinner: MatchWinner;
   roundNumber: number;
   maxPoints: number;
-  activePlayer?: PlayerRole | 'all';
+  activePlayer?: ActivePlayer;
 }
 
 export class ServerRPSEngine implements IServerGameEngine {
@@ -93,10 +93,10 @@ export class ServerRPSEngine implements IServerGameEngine {
     };
   }
 
-  getActivePlayer(): PlayerRole {
+  getActivePlayer(): ActivePlayer {
     if (this.state.p1HasChosen && !this.state.p2HasChosen) return 'p2';
     if (this.state.p2HasChosen && !this.state.p1HasChosen) return 'p1';
-    return 'all' as unknown as PlayerRole;
+    return 'all';
   }
 
   isGameOver(): boolean {

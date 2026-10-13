@@ -11,6 +11,7 @@
     --color-paper-soft: #fbfaf7;
     --color-paper-rule: #d1d5db;
     --color-ink-black: #1a1a1a;
+    --color-telegram-shell: #e8e0d0;
     --color-ink-blue: #1a365d;
     --color-ink-red: #9b2c2c;
     --gibous-telegram-safe-area-top: 0px;
@@ -72,6 +73,7 @@
 .app-viewport {
   min-height: 0;
   height: 100%;
+  background-color: var(--color-paper-soft);
 }
 
 /* Telegram's fixed header and gesture chrome are outside the webview's layout flow. */

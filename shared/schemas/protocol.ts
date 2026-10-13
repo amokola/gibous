@@ -4,6 +4,7 @@ import { MIN_STAKE, MAX_STAKE } from '../constants/economics';
 // Base Enums & Primitives
 export const GameTypeSchema = z.enum(['snake', 'connect4', 'rps']);
 export const PlayerRoleSchema = z.enum(['p1', 'p2']);
+export const ActivePlayerSchema = z.union([PlayerRoleSchema, z.literal('all')]);
 export const MatchWinnerSchema = z.enum(['p1', 'p2', 'draw']).nullable();
 export const ConnectionStateSchema = z.enum(['DISCONNECTED', 'CONNECTING', 'CONNECTED', 'RECONNECTING', 'AUTH_REQUIRED']);
 
@@ -149,7 +150,7 @@ export const RoomStatePayloadSchema = z.object({
   potAmount: z.number(),
   p1: RoomPlayerStateSchema.nullable(),
   p2: RoomPlayerStateSchema.nullable(),
-  activePlayer: PlayerRoleSchema.nullable().optional(),
+  activePlayer: ActivePlayerSchema.nullable().optional(),
   turnPhase: z.string().optional(),
   winner: MatchWinnerSchema.nullable().optional(),
   settlementStatus: z.enum(['pending', 'committed', 'failed']).optional(),

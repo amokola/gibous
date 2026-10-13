@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { ServerRPSEngine } from '../../../server/engines/RPSEngine';
+import { RoomStatePayloadSchema } from '../../../shared';
 
 describe('ServerRPSEngine Unit Tests', () => {
   let engine: ServerRPSEngine;
@@ -17,6 +18,28 @@ describe('ServerRPSEngine Unit Tests', () => {
     expect(state.p2HasChosen).toBe(false);
     expect(engine.isGameOver()).toBe(false);
     expect(engine.getWinner()).toBeNull();
+  });
+
+  it('exposes simultaneous choice in the room protocol without casting it to a player role', () => {
+    expect(engine.getActivePlayer()).toBe('all');
+    const state = engine.getState();
+    expect(RoomStatePayloadSchema.parse({
+      code: 'RPS123',
+      gameType: 'rps',
+      status: 'playing',
+      stakeAmount: 1,
+      potAmount: 2,
+      p1: { id: 'p1', telegramId: 1, name: 'Player 1', isReady: true, isConnected: true },
+      p2: { id: 'p2', telegramId: 2, name: 'Player 2', isReady: true, isConnected: true },
+      activePlayer: 'all',
+      version: 1,
+      gameState: state,
+    }).activePlayer).toBe('all');
+
+    engine.handleAction('p1', 'CHOOSE_RPS', { choice: 'rock' });
+    expect(engine.getActivePlayer()).toBe('p2');
+    engine.handleAction('p2', 'CHOOSE_RPS', { choice: 'scissors' });
+    expect(engine.getActivePlayer()).toBe('all');
   });
 
   it('should keep first choice secret and unrevealed until opponent commits', () => {

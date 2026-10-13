@@ -5,6 +5,8 @@ import { ConnectionBanner } from './components/ui/ConnectionBanner';
 import { Toast } from './components/ui/Toast';
 import { Player } from './types/game';
 import { subscribeTelegramSafeArea } from './utils/telegramSafeArea';
+import { MIN_STAKE } from '../shared/constants/economics';
+import { getGameOverTransition } from './state/screenTransitions';
 
 // Zustand stores
 import { useAuthStore, selectBalance } from './state/useAuthStore';
@@ -82,6 +84,8 @@ export const App: React.FC = () => {
     tg,
     showBackButton,
     hideBackButton,
+    impactOccurred,
+    notificationOccurred,
     enableClosingConfirmation,
     disableClosingConfirmation,
   } = useTelegram();
@@ -103,6 +107,7 @@ export const App: React.FC = () => {
 
   // Auto-join duel from deep link (startapp or start_param)
   const hasHandledStartParam = useRef(false);
+  const lastHapticGameOverRef = useRef<string | null>(null);
   useEffect(() => {
     if (!startParam || hasHandledStartParam.current) return;
     if (connectionState === 'CONNECTED' && authenticatedUser) {
@@ -136,18 +141,29 @@ export const App: React.FC = () => {
         setScreen('vs-intro');
       }
     } else if (currentRoom.status === 'gameover' && currentScreen !== 'gameover') {
-      // Delay transition to gameover screen when in active gameplay
-      // so players can clearly watch final move animations, clash reveals, and board outcome
-      if (currentScreen === 'game') {
+      const transition = getGameOverTransition(currentScreen);
+      if (transition === 'delayed') {
+        // Let the final move animation finish while the player is watching the duel.
         const timer = setTimeout(() => {
           setScreen('gameover');
         }, 3200);
         return () => clearTimeout(timer);
-      } else {
+      } else if (transition === 'immediate') {
         setScreen('gameover');
       }
     }
   }, [currentRoom?.status, currentScreen, setScreen]);
+
+  useEffect(() => {
+    if (!lastGameOverEvent || !myRole) return;
+    const eventKey = `${lastGameOverEvent.roomCode}:${lastGameOverEvent.version}`;
+    if (lastHapticGameOverRef.current === eventKey) return;
+    lastHapticGameOverRef.current = eventKey;
+
+    if (lastGameOverEvent.winner === 'draw') notificationOccurred('warning');
+    else if (lastGameOverEvent.winner === myRole) notificationOccurred('success');
+    else notificationOccurred('error');
+  }, [lastGameOverEvent, myRole, notificationOccurred]);
 
   // Transaction mapping for HomeScreen recent activity feed
   const accountTransactions = useMemo(() => {
@@ -327,8 +343,8 @@ export const App: React.FC = () => {
   };
 
   return (
-    <div className="telegram-app-shell w-full bg-[#e8e0d0] flex items-center justify-center p-0 sm:p-3 text-[#1a1a1a] overflow-hidden">
-      <div className="app-viewport w-full max-w-[420px] bg-[#fbfaf7] sm:h-[860px] sm:max-h-[96dvh] sm:rounded-[36px] sm:border-[4px] sm:border-[#1a1a1a] shadow-[0_8px_30px_rgba(0,0,0,0.12)] overflow-hidden relative flex flex-col scrollbar-none">
+    <div className="telegram-app-shell w-full bg-[var(--color-telegram-shell)] flex items-center justify-center p-0 sm:p-3 text-[var(--color-ink-black)] overflow-hidden">
+      <div className="app-viewport w-full max-w-[420px] bg-[var(--color-paper-soft)] sm:h-[860px] sm:max-h-[96dvh] sm:rounded-[36px] sm:border-[4px] sm:border-[#1a1a1a] shadow-[0_8px_30px_rgba(0,0,0,0.12)] overflow-hidden relative flex flex-col scrollbar-none">
         <ConnectionBanner
           connectionState={connectionState}
           onReconnect={() => multiplayerService.connect()}
@@ -374,7 +390,7 @@ export const App: React.FC = () => {
               <LobbyScreen
                 selectedGame={selectedGame}
                 onSelectGame={setSelectedGame}
-                initialStake={duelState.stakeAmount || 100}
+                initialStake={duelState.stakeAmount ?? MIN_STAKE}
                 onCreateDuel={(game, stake) => handleCreateRoom(stake, game)}
                 onJoinDuel={(code) => handleJoinRoom(code)}
                 onBack={() => setScreen('home')}
@@ -386,7 +402,7 @@ export const App: React.FC = () => {
             <WaitingRoomScreen
               roomCode={currentRoom.code}
               gameType={currentRoom.gameType}
-              stake={currentRoom.stakeAmount || 100}
+              stake={currentRoom.stakeAmount ?? MIN_STAKE}
               hostName={tgUser.first_name || 'Player 1'}
               hostAvatar={tgUser.photo_url}
               onCancel={handleCancelWaitingRoom}
@@ -396,8 +412,8 @@ export const App: React.FC = () => {
           {currentScreen === 'vs-intro' && currentRoom && (
             <VSIntroOverlay
               gameType={currentRoom.gameType}
-              stake={currentRoom.stakeAmount || 100}
-              pot={currentRoom.potAmount || 200}
+              stake={currentRoom.stakeAmount ?? MIN_STAKE}
+              pot={currentRoom.potAmount ?? MIN_STAKE * 2}
               p1Name={duelState.players.p1?.name || 'Player 1'}
               p1Avatar={duelState.players.p1?.avatarUrl}
               p2Name={duelState.players.p2?.name || 'Player 2'}
@@ -419,21 +435,21 @@ export const App: React.FC = () => {
               {currentRoom.gameType === 'snake' && (
                 <SnakeLadderArena
                   duelState={duelState}
-                  onRoll={() => sendSnakeRoll(currentRoom.code)}
+                  onRoll={() => { impactOccurred('light'); sendSnakeRoll(currentRoom.code); }}
                 />
               )}
 
               {currentRoom.gameType === 'connect4' && (
                 <Connect4Arena
                   duelState={duelState}
-                  onDropDisc={(col) => sendConnect4Drop(currentRoom.code, col)}
+                  onDropDisc={(col) => { impactOccurred('medium'); sendConnect4Drop(currentRoom.code, col); }}
                 />
               )}
 
               {currentRoom.gameType === 'rps' && (
                 <RPSArena
                   duelState={duelState}
-                  onChooseRPS={(choice) => sendRPSChoice(currentRoom.code, choice)}
+                  onChooseRPS={(choice) => { impactOccurred('light'); sendRPSChoice(currentRoom.code, choice); }}
                 />
               )}
             </DuelShell>
@@ -459,7 +475,7 @@ export const App: React.FC = () => {
                 myRole={myRole}
                 p1={p1Player}
                 p2={p2Player}
-                potAmount={duelState.potAmount || 200}
+                potAmount={duelState.potAmount ?? MIN_STAKE * 2}
                 onPlayAgain={handleRematch}
                 onBackToLobby={() => {
                   if (currentRoom?.code) leaveDuel(currentRoom.code);

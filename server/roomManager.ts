@@ -1,5 +1,5 @@
 import { randomBytes } from 'crypto';
-import { GameType, PlayerRole, MatchWinner, RoomStatePayload } from '../shared';
+import { ActivePlayer, GameType, PlayerRole, MatchWinner, RoomStatePayload } from '../shared';
 import { IServerGameEngine, GameActionResult } from './engines/IServerGameEngine';
 import { ServerSnakeLadderEngine } from './engines/SnakeLadderEngine';
 import { ServerConnect4Engine } from './engines/Connect4Engine';
@@ -1088,6 +1088,10 @@ export class RoomManager {
       }
 
       const activePlayer = room.engine.getActivePlayer();
+      if (activePlayer === 'all') {
+        await this.settleMutualDraw(code, 'mutual_timeout');
+        return;
+      }
       await this.settleForfeit(code, activePlayer, 'disconnect_timeout');
     });
   }
@@ -1441,7 +1445,7 @@ export class RoomManager {
           }
         : null,
       status: room.status,
-      activePlayer: state?.activePlayer || (room.engine as any).getActivePlayer?.() || 'p1',
+      activePlayer: (state?.activePlayer as ActivePlayer | undefined) ?? room.engine.getActivePlayer(),
       turnPhase: state?.turnPhase || 'waiting_roll',
       gameState: state,
       winner: room.winner,

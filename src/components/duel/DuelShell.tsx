@@ -3,6 +3,7 @@ import { ChevronLeft, AlertTriangle, WifiOff, RefreshCw } from 'lucide-react';
 import { NormalizedDuelState, FloatingEmote } from '../../types/game';
 import { PotBreakdownModal } from './PotBreakdownModal';
 import { GramIcon } from '../ui/GramIcon';
+import { MIN_STAKE } from '../../../shared/constants/economics';
 
 interface DuelShellProps {
   duelState: NormalizedDuelState;
@@ -398,8 +399,8 @@ export const DuelShell: React.FC<DuelShellProps> = ({
       {/* 8. Pot Breakdown Modal */}
       {showPotModal && (
         <PotBreakdownModal
-          stake={stakeAmount || 100}
-          pot={potAmount || 200}
+          stake={stakeAmount ?? MIN_STAKE}
+          pot={potAmount ?? MIN_STAKE * 2}
           p1Name={p1Name}
           p2Name={p2Name}
           onClose={() => setShowPotModal(false)}
@@ -418,7 +419,7 @@ export const DuelShell: React.FC<DuelShellProps> = ({
             </h3>
             <p className="font-body text-xs text-neutral-600 mb-4">
               Leaving the match will forfeit your stake of{' '}
-              <span className="font-bold text-[#1a1a1a]">{stakeAmount || 100} GRAM</span> to
+              <span className="font-bold text-[#1a1a1a]">{stakeAmount ?? MIN_STAKE} GRAM</span> to
               your opponent.
             </p>
             <div className="flex gap-2 font-sketch text-base">
@@ -435,7 +436,7 @@ export const DuelShell: React.FC<DuelShellProps> = ({
                 }}
                 className="flex-1 py-2.5 bg-[#9b2c2c] hover:bg-[#b91c1c] text-white border-2 border-black rounded-none sketch-shadow sketch-btn-press cursor-pointer"
               >
-                FORFEIT (-{stakeAmount || 100})
+                FORFEIT (-{stakeAmount ?? MIN_STAKE})
               </button>
             </div>
           </div>

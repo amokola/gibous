@@ -1,4 +1,4 @@
-import { GameType, PlayerRole } from './game';
+import { ActivePlayer, GameType, PlayerRole } from './game';
 
 /** Connection state for peer visibility */
 export type PeerConnectionState = 'CONNECTED' | 'DISCONNECTED' | 'RECONNECTING';
@@ -49,7 +49,7 @@ export interface RoomSnapshot {
     opponent: PeerConnectionState;
   };
   game: {
-    activePlayer: PlayerRole;
+    activePlayer: ActivePlayer;
     phase: GamePhase;
     state: Record<string, unknown>;
     result: MatchResult | null;

@@ -2,6 +2,13 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { BRAND } from '../config/brand';
 import type { TelegramSafeAreaInset } from '../utils/telegramSafeArea';
 import { requestPreparedBragShare } from '../services/telegramBragService';
+import { resolveTelegramTheme } from '../utils/telegramTheme';
+import {
+  triggerHapticImpact,
+  triggerHapticNotification,
+  type HapticImpactStyle,
+  type HapticNotificationType,
+} from '../utils/telegramHaptics';
 
 // Telegram WebApp Type Declarations
 export interface TelegramUser {
@@ -39,6 +46,12 @@ declare global {
           button_color?: string;
           button_text_color?: string;
           secondary_bg_color?: string;
+          header_bg_color?: string;
+        };
+        HapticFeedback?: {
+          impactOccurred?: (style: HapticImpactStyle) => unknown;
+          notificationOccurred?: (type: HapticNotificationType) => unknown;
+          selectionChanged?: () => unknown;
         };
         isExpanded: boolean;
         viewportHeight: number;
@@ -99,23 +112,52 @@ export function useTelegram() {
     if (tg) {
       tg.ready();
       tg.expand();
-      try {
-        const versionAtLeast = (required: string) => {
-          if (typeof tg.isVersionAtLeast === 'function') {
-            return tg.isVersionAtLeast(required);
-          }
-          if (!tg.version) return false;
-          const current = tg.version.split('.').map(Number);
-          const target = required.split('.').map(Number);
-          return target.every((part, index) => (current[index] || 0) >= part || current.slice(0, index).some((value, i) => value > (target[i] || 0)));
-        };
+      const versionAtLeast = (required: string) => {
+        if (typeof tg.isVersionAtLeast === 'function') return tg.isVersionAtLeast(required);
+        if (!tg.version) return false;
+        const current = tg.version.split('.').map(Number);
+        const target = required.split('.').map(Number);
+        for (let index = 0; index < target.length; index++) {
+          const currentPart = current[index] || 0;
+          if (currentPart > target[index]) return true;
+          if (currentPart < target[index]) return false;
+        }
+        return true;
+      };
 
-        // Telegram 6.1 introduced headerColor / backgroundColor
-        if (versionAtLeast('6.1')) {
-          tg.setHeaderColor('#f2efe9');
-          tg.setBackgroundColor('#f2efe9');
+      const applyTheme = () => {
+        const theme = resolveTelegramTheme(tg.themeParams);
+        if (typeof document !== 'undefined') {
+          const style = document.documentElement.style;
+          style.setProperty('--tg-theme-bg-color', theme.background);
+          style.setProperty('--tg-theme-secondary-bg-color', theme.surface);
+          style.setProperty('--tg-theme-text-color', theme.text);
+          style.setProperty('--tg-theme-hint-color', theme.hint);
+          style.setProperty('--tg-theme-link-color', theme.link);
+          style.setProperty('--tg-theme-button-color', theme.button);
+          style.setProperty('--tg-theme-button-text-color', theme.buttonText);
+          style.setProperty('--tg-theme-header-bg-color', theme.header);
+          style.setProperty('--color-paper', theme.background);
+          style.setProperty('--color-paper-soft', theme.surface);
+          style.setProperty('--color-paper-rule', theme.hint);
+          style.setProperty('--color-ink-black', theme.text);
+          style.setProperty('--color-telegram-shell', theme.shell);
         }
 
+        if (versionAtLeast('6.1')) {
+          try {
+            const supportsCustomHeader = versionAtLeast('6.9');
+            tg.setHeaderColor(supportsCustomHeader ? theme.header : theme.background);
+            tg.setBackgroundColor(theme.background);
+          } catch {
+            // Theme chrome APIs are optional on older Telegram clients.
+          }
+        }
+      };
+
+      applyTheme();
+      tg.onEvent?.('themeChanged', applyTheme);
+      try {
         // Bot API 7.7 introduced disableVerticalSwipes to prevent accidental app pull-down while playing
         if (versionAtLeast('7.7') && typeof tg.disableVerticalSwipes === 'function') {
           tg.disableVerticalSwipes();
@@ -123,6 +165,8 @@ export function useTelegram() {
       } catch {
         // Fallback for older client versions
       }
+
+      return () => tg.offEvent?.('themeChanged', applyTheme);
     }
   }, [tg]);
 
@@ -226,6 +270,14 @@ export function useTelegram() {
     return requestPreparedBragShare(initData, tg || {});
   }, [initData, tg]);
 
+  const impactOccurred = useCallback((style: HapticImpactStyle = 'light') => {
+    triggerHapticImpact(tg?.HapticFeedback, style);
+  }, [tg]);
+
+  const notificationOccurred = useCallback((type: HapticNotificationType) => {
+    triggerHapticNotification(tg?.HapticFeedback, type);
+  }, [tg]);
+
   const shareRoomInvite = (roomCode: string, betAmount: number) => {
     const text = `⚔️ Duel me on Gibous!\n🎲 Room: ${roomCode}\n💎 Pot: ${betAmount * 2} GRAM\n\nTap to play!`;
     const botUrl = `https://t.me/share/url?url=${encodeURIComponent(`${BRAND.links.botAppUrl}?startapp=${roomCode}`)}&text=${encodeURIComponent(text)}`;
@@ -287,6 +339,8 @@ export function useTelegram() {
     startParam,
     sharePreparedBragCard,
     shareRoomInvite,
+    impactOccurred,
+    notificationOccurred,
     showBackButton,
     hideBackButton,
     enableClosingConfirmation,

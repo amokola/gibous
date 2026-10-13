@@ -1,4 +1,4 @@
-import { GameType, PlayerRole, MatchWinner } from '../../shared';
+import { GameType, ActivePlayer, PlayerRole, MatchWinner } from '../../shared';
 
 export interface GameActionResult {
   success: boolean;
@@ -15,7 +15,7 @@ export interface IServerGameEngine {
   getState(): Record<string, unknown>;
   getPersistenceState(): Record<string, unknown>;
   restorePersistenceState(state: Record<string, unknown>): void;
-  getActivePlayer(): PlayerRole;
+  getActivePlayer(): ActivePlayer;
   isGameOver(): boolean;
   getWinner(): MatchWinner;
   handleAction(player: PlayerRole, actionType: string, payload?: unknown): GameActionResult;
