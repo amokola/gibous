@@ -20,10 +20,11 @@ interface BankScreenProps {
     boc: string;
     network: 'mainnet' | 'testnet';
   }) => void;
-  onSubmitWithdrawal?: (payload: {
+  onRequestWithdrawalQuote?: (payload: {
     walletAddress: string;
     amountNano: string;
-  }) => void;
+  }) => Promise<any>;
+  onConfirmWithdrawal?: (quoteId: string) => Promise<any>;
   initialTransactions?: BankTransactionItem[];
   activeDeposit?: {
     id: string;
@@ -39,26 +40,36 @@ interface BankScreenProps {
 
 export interface BankTransactionItem {
   id: string;
-  type: 'win' | 'arena_fee' | 'draw_refund' | 'deposit' | 'withdraw';
+  type: 'win' | 'arena_fee' | 'draw_refund' | 'deposit' | 'withdraw' | 'withdrawal_refund';
   amount: number;
   timestamp: string;
   description: string;
   subtext?: string;
   txHash?: string;
+  status?: 'pending' | 'processing' | 'completed' | 'failed' | 'confirmed';
 }
 
 const EMPTY_TRANSACTIONS: BankTransactionItem[] = [];
 
+function formatNanoGram(value: string): string {
+  const nano = BigInt(value);
+  const whole = nano / 1_000_000_000n;
+  const fraction = (nano % 1_000_000_000n).toString().padStart(9, '0').replace(/0+$/, '');
+  return fraction ? `${whole}.${fraction}` : whole.toString();
+}
+
 export const BankScreen: React.FC<BankScreenProps> = ({
   balance,
   onSubmitDeposit,
-  onSubmitWithdrawal,
+  onRequestWithdrawalQuote,
+  onConfirmWithdrawal,
   initialTransactions = EMPTY_TRANSACTIONS,
   activeDeposit,
 }) => {
   const [activePanel, setActivePanel] = useState<'none' | 'deposit' | 'withdraw'>('none');
   const [depositAmount, setDepositAmount] = useState<number>(0.5);
   const [withdrawAmount, setWithdrawAmount] = useState<number>(1.0);
+  const [withdrawalQuote, setWithdrawalQuote] = useState<any>(null);
   const [customWallet, setCustomWallet] = useState<string>('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [notification, setNotification] = useState<{ text: string; type: 'success' | 'info' | 'error' } | null>(null);
@@ -179,7 +190,6 @@ export const BankScreen: React.FC<BankScreenProps> = ({
       const transactionPayload = {
         validUntil: Math.floor(Date.now() / 1000) + 360, // 6 min TTL
         network: TON_NETWORK_ID,
-        from: userFriendlyAddress,
         messages: [
           {
             address: targetDepositAddress,
@@ -237,7 +247,10 @@ export const BankScreen: React.FC<BankScreenProps> = ({
     } catch (err: any) {
       setIsProcessing(false);
       const errorMsg = err?.message || '';
+      const errorName = err?.name?.toLowerCase() || '';
       if (
+        errorName.includes('userreject') ||
+        errorName.includes('usercancel') ||
         errorMsg.toLowerCase().includes('reject') ||
         errorMsg.toLowerCase().includes('cancel') ||
         errorMsg.toLowerCase().includes('closed') ||
@@ -272,20 +285,36 @@ export const BankScreen: React.FC<BankScreenProps> = ({
     setIsProcessing(true);
     try {
       const nanoGramAmount = toNanoGram(withdrawAmount);
-      onSubmitWithdrawal?.({
+      if (!onRequestWithdrawalQuote) throw new Error('Withdrawals are not available right now.');
+      const quote = await onRequestWithdrawalQuote({
         walletAddress: targetAddress,
         amountNano: nanoGramAmount,
       });
+      setWithdrawalQuote(quote);
+      setNotification({ text: 'Review the quoted network fee and amount you will receive.', type: 'info' });
+    } catch (error) {
+      setNotification({ text: error instanceof Error ? error.message : 'Could not create a withdrawal quote.', type: 'error' });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
 
-      const shortAddr = targetAddress.length > 10 ? `${targetAddress.slice(0, 4)}...${targetAddress.slice(-4)}` : targetAddress;
-      setNotification({
-        text: `Withdrawal of ${withdrawAmount} GRAM submitted to ${shortAddr}!`,
-        type: 'success',
-      });
+  const handleConfirmWithdrawal = async () => {
+    if (!withdrawalQuote || !onConfirmWithdrawal) return;
+    if (new Date(withdrawalQuote.expiresAt).getTime() <= Date.now()) {
+      setWithdrawalQuote(null);
+      setNotification({ text: 'This fee quote expired. Request a new quote to continue.', type: 'error' });
+      return;
+    }
+    setIsProcessing(true);
+    try {
+      const accepted = await onConfirmWithdrawal(withdrawalQuote.quoteId);
+      setNotification({ text: `Withdrawal ${String(accepted.id).slice(0, 8)} is pending on TON Mainnet.`, type: 'info' });
+      setWithdrawalQuote(null);
       setWithdrawAmount(0);
       setActivePanel('none');
-    } catch {
-      setNotification({ text: 'Failed to submit withdrawal. Please try again.', type: 'error' });
+    } catch (error) {
+      setNotification({ text: error instanceof Error ? error.message : 'Withdrawal confirmation failed.', type: 'error' });
     } finally {
       setIsProcessing(false);
     }
@@ -695,15 +724,25 @@ export const BankScreen: React.FC<BankScreenProps> = ({
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={handleWithdrawAction}
-            disabled={isProcessing || withdrawAmount <= 0 || withdrawAmount > balance}
-            className="w-full py-2.5 bg-[#1a365d] hover:bg-[#122844] text-white border-2 border-black font-sketch text-sm font-bold sketch-shadow-xs active:scale-[0.98] transition-all flex items-center justify-center gap-2"
-          >
-            <ShieldCheck className="w-4 h-4" />
-            {isProcessing ? 'Processing withdrawal...' : `Withdraw ${withdrawAmount} GRAM`}
-          </button>
+          {withdrawalQuote ? (
+            <div className="p-3 bg-[#f2efe9] border-2 border-black space-y-2 font-sketch text-xs">
+              <div className="font-bold uppercase">Review your Gram withdrawal · TON Mainnet</div>
+              <div className="flex justify-between"><span>Gross amount</span><b>{formatNanoGram(withdrawalQuote.grossAmountNano)} GRAM</b></div>
+              <div className="flex justify-between"><span>Quoted network fee</span><b>{formatNanoGram(withdrawalQuote.feeNano)} GRAM</b></div>
+              <div className="flex justify-between"><span>You receive</span><b>{formatNanoGram(withdrawalQuote.netAmountNano)} GRAM</b></div>
+              <div className="break-all text-[10px] text-[#1a1a1a]/60">To {withdrawalQuote.walletAddress}</div>
+              <div className="text-[10px] text-[#1a1a1a]/60">Quote expires {new Date(withdrawalQuote.expiresAt).toLocaleTimeString()}</div>
+              <button type="button" onClick={handleConfirmWithdrawal} disabled={isProcessing} className="w-full py-2.5 bg-[#1a365d] text-white border-2 border-black font-bold">
+                {isProcessing ? 'Confirming…' : 'Confirm withdrawal'}
+              </button>
+              <button type="button" onClick={() => setWithdrawalQuote(null)} disabled={isProcessing} className="w-full py-1 border border-black">Edit details</button>
+            </div>
+          ) : (
+            <button type="button" onClick={handleWithdrawAction} disabled={isProcessing || withdrawAmount <= 0 || withdrawAmount > balance} className="w-full py-2.5 bg-[#1a365d] hover:bg-[#122844] text-white border-2 border-black font-sketch text-sm font-bold sketch-shadow-xs active:scale-[0.98] transition-all flex items-center justify-center gap-2">
+              <ShieldCheck className="w-4 h-4" />
+              {isProcessing ? 'Estimating fee...' : 'Get withdrawal quote'}
+            </button>
+          )}
         </div>
       )}
 

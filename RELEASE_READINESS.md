@@ -137,3 +137,18 @@ The browser fixture requires `NODE_ENV=development`, `ALLOW_UNSIGNED_AUTH=true`,
 **NOT READY.**
 
 The core application hardening is credible and several previously assumed guarantees are now demonstrated against real PostgreSQL and real browser/WebSocket boundaries. Real-money operation must remain disabled until the TON testnet-to-mainnet sequence, controlled mainnet canary, deployment supervision, backup/recovery operations, operator observability, and capacity limits are verified in the target environment.
+
+## 12. Automatic Gram withdrawal rollout (Mainnet only)
+
+The automatic withdrawal path added in October 2026 targets TON Mainnet only. It does not provide a testnet payout mode. Automated recovery checks use a deterministic fake TON client and must never send a real transfer.
+
+- Keep `PAYOUT_WORKER_ENABLED=false` until the deployment operator completes this section. The worker will refuse any enabled configuration unless `PAYOUT_NETWORK=mainnet`.
+- Supply `PAYOUT_SIGNER_MNEMONIC` and `PAYOUT_TRANSACTION_ENCRYPTION_KEY` through the deployment secret manager. The encryption key must decode to exactly 32 bytes. Never store either value in the repository or client configuration.
+- Configure the dedicated payout wallet in `PAYOUT_WALLET_ADDRESS`, the HTTPS Mainnet endpoint in `TONCENTER_API_URL`, and `TONCENTER_API_KEY` if required by the provider.
+- Set positive integer nano-unit limits: `PAYOUT_MIN_WITHDRAWAL_NANO`, `PAYOUT_MAX_WITHDRAWAL_NANO`, `PAYOUT_USER_DAILY_LIMIT_NANO`, `PAYOUT_GLOBAL_DAILY_LIMIT_NANO`, and `PAYOUT_WALLET_RESERVE_NANO`.
+- Fund the low-balance payout wallet for the maximum withdrawal plus the quoted fee and reserve. Confirm the derived signer address matches `PAYOUT_WALLET_ADDRESS` before enabling the worker.
+- Review the deterministic quote, duplicate-confirmation, fencing, encrypted-payload recovery, exact-finality, and one-time-refund checks. Perform a no-broadcast recovery walkthrough using persisted fixtures.
+- Reconcile legacy withdrawal rows manually before launch. Migration defaults keep all existing rows ineligible, so the worker will not replay historical withdrawals.
+- A withdrawal remains pending while chain evidence is ambiguous. The worker only marks completed after the expected Mainnet transfer is observed; definite failure refunding is guarded by the stored withdrawal lease and unique refund ledger row.
+
+No payout was broadcast as part of this code change. Enabling `PAYOUT_WORKER_ENABLED` is a separate deployment action and must follow the operational checks above.

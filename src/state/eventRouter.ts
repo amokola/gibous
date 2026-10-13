@@ -298,9 +298,33 @@ export function cancelDepositIntent(intentId: string): Promise<void> {
   return multiplayerService.cancelDepositIntent(intentId);
 }
 
-export function submitWithdrawal(payload: { walletAddress: string; amountNano: string }) {
-  if (!checkAuthAndConnection()) return;
-  multiplayerService.send('SUBMIT_WITHDRAWAL', payload);
+function requestWithdrawalResponse<T>(requestType: 'REQUEST_WITHDRAWAL_QUOTE' | 'CONFIRM_WITHDRAWAL', responseType: 'WITHDRAWAL_QUOTED' | 'WITHDRAWAL_PENDING', payload: any): Promise<T> {
+  if (!checkAuthAndConnection()) return Promise.reject(new Error('Connect to your account before withdrawing.'));
+  return new Promise<T>((resolve, reject) => {
+    let timeout: ReturnType<typeof setTimeout>;
+    const cleanups: Array<() => void> = [];
+    const finish = (callback: () => void) => {
+      clearTimeout(timeout);
+      cleanups.forEach((cleanup) => cleanup());
+      callback();
+    };
+    const requestId = multiplayerService.send(requestType, payload);
+    cleanups.push(multiplayerService.on<any>(responseType, (response, message: any) => {
+      if (message?.requestId === requestId) finish(() => resolve(response as T));
+    }));
+    cleanups.push(multiplayerService.on<any>('ERROR', (error, message: any) => {
+      if (message?.requestId === requestId || error?.requestId === requestId) finish(() => reject(new Error(error?.message || 'Withdrawal request failed.')));
+    }));
+    timeout = setTimeout(() => finish(() => reject(new Error('Withdrawal request timed out. Please check your account before retrying.'))), 20_000);
+  });
+}
+
+export function requestWithdrawalQuote(payload: { walletAddress: string; amountNano: string }) {
+  return requestWithdrawalResponse<any>('REQUEST_WITHDRAWAL_QUOTE', 'WITHDRAWAL_QUOTED', payload);
+}
+
+export function confirmWithdrawal(quoteId: string) {
+  return requestWithdrawalResponse<any>('CONFIRM_WITHDRAWAL', 'WITHDRAWAL_PENDING', { quoteId });
 }
 
 export function fetchRooms() {

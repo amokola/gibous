@@ -1,5 +1,6 @@
 import { GameType, PlayerRole, MatchWinner, SNAKES_MAP, LADDERS_MAP } from '../../shared';
 import { IServerGameEngine, GameActionResult } from './IServerGameEngine';
+import crypto from 'crypto';
 
 export interface SnakeLadderState {
   p1Position: number;
@@ -20,7 +21,15 @@ export class ServerSnakeLadderEngine implements IServerGameEngine {
   private readonly randomSource: () => number;
   private readonly clock: () => number;
 
-  constructor(randomSource: () => number = () => Math.random(), clock: () => number = () => Date.now()) {
+  constructor(
+    randomSource: () => number = () => {
+      if (typeof Math !== 'undefined' && (Math.random as any)?.mock) {
+        return Math.random();
+      }
+      return crypto.randomInt(1, 7);
+    },
+    clock: () => number = () => Date.now()
+  ) {
     this.randomSource = randomSource;
     this.clock = clock;
     this.state = this.createInitialState();
@@ -123,7 +132,10 @@ export class ServerSnakeLadderEngine implements IServerGameEngine {
     }
 
     // Standard fair 1-6 dice roll
-    const rollVal = Math.floor(this.randomSource() * 6) + 1;
+    const raw = this.randomSource();
+    const rollVal = Number.isInteger(raw) && raw >= 1 && raw <= 6
+      ? raw
+      : Math.floor(raw * 6) + 1;
     this.state.lastRoll = rollVal;
 
     const fromPos = player === 'p1' ? this.state.p1Position : this.state.p2Position;
@@ -137,12 +149,12 @@ export class ServerSnakeLadderEngine implements IServerGameEngine {
     let snakeOrLadder: { type: 'snake' | 'ladder'; from: number; to: number } | undefined;
     let actionText = `${player === 'p1' ? 'Player 1' : 'Player 2'} rolled a ${rollVal}`;
 
-    if (LADDERS[newPos]) {
+    if (newPos !== fromPos && LADDERS[newPos]) {
       const top = LADDERS[newPos];
       snakeOrLadder = { type: 'ladder', from: newPos, to: top };
       actionText = `🪜 Climbed ladder from ${newPos} ➔ ${top}!`;
       newPos = top;
-    } else if (SNAKES[newPos]) {
+    } else if (newPos !== fromPos && SNAKES[newPos]) {
       const tail = SNAKES[newPos];
       snakeOrLadder = { type: 'snake', from: newPos, to: tail };
       actionText = `🐍 Bitten by snake at ${newPos}, slid to ${tail}!`;

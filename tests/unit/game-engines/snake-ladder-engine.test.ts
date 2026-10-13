@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { ServerSnakeLadderEngine } from '../../../server/engines/SnakeLadderEngine';
 import { CANONICAL_SNAKES, CANONICAL_LADDERS } from '../../../shared/constants/board';
+import crypto from 'crypto';
 
 describe('ServerSnakeLadderEngine Unit Tests', () => {
   let engine: ServerSnakeLadderEngine;
@@ -36,8 +37,8 @@ describe('ServerSnakeLadderEngine Unit Tests', () => {
   });
 
   it('should advance player by rolled dice value (1-6) and alternate turn', () => {
-    // Mock Math.random to return 0.5 -> roll = Math.floor(0.5 * 6) + 1 = 4
-    vi.spyOn(Math, 'random').mockReturnValue(0.5);
+    // Mock crypto.randomInt to return 4
+    vi.spyOn(crypto, 'randomInt').mockReturnValue(4);
 
     const result = engine.handleAction('p1', 'ROLL_DICE');
     expect(result.success).toBe(true);
@@ -56,7 +57,7 @@ describe('ServerSnakeLadderEngine Unit Tests', () => {
   it('should correctly climb ladders when landing on ladder bottom', () => {
     // First ladder is ladder-6-27 (bottom: 6, top: 27)
     // From 1, rolling a 5 lands on 6
-    vi.spyOn(Math, 'random').mockReturnValue(4 / 6); // 5
+    vi.spyOn(crypto, 'randomInt').mockReturnValue(5);
 
     const result = engine.handleAction('p1', 'ROLL_DICE');
     expect(result.success).toBe(true);
@@ -80,7 +81,7 @@ describe('ServerSnakeLadderEngine Unit Tests', () => {
     stateAny.state.p1Position = 30;
 
     // Roll a 6 to land on 36
-    vi.spyOn(Math, 'random').mockReturnValue(0.99); // 6
+    vi.spyOn(crypto, 'randomInt').mockReturnValue(6);
 
     const result = engine.handleAction('p1', 'ROLL_DICE');
     expect(result.success).toBe(true);
@@ -102,7 +103,7 @@ describe('ServerSnakeLadderEngine Unit Tests', () => {
       stateAny.state.p1Position = ladder.bottom - 1;
 
       // Roll 1 to land exactly on ladder.bottom
-      vi.spyOn(Math, 'random').mockReturnValue(0.01); // 1
+      vi.spyOn(crypto, 'randomInt').mockReturnValue(1);
       const result = engine.handleAction('p1', 'ROLL_DICE');
 
       expect(result.success).toBe(true);
@@ -118,7 +119,7 @@ describe('ServerSnakeLadderEngine Unit Tests', () => {
       stateAny.state.p1Position = snake.head - 1;
 
       // Roll 1 to land exactly on snake.head
-      vi.spyOn(Math, 'random').mockReturnValue(0.01); // 1
+      vi.spyOn(crypto, 'randomInt').mockReturnValue(1);
       const result = engine.handleAction('p1', 'ROLL_DICE');
 
       expect(result.success).toBe(true);
@@ -132,7 +133,7 @@ describe('ServerSnakeLadderEngine Unit Tests', () => {
     stateAny.state.p1Position = 98;
 
     // Roll 5 -> 98 + 5 = 103 -> bounce back: 100 - (103 - 100) = 97
-    vi.spyOn(Math, 'random').mockReturnValue(4 / 6); // 5
+    vi.spyOn(crypto, 'randomInt').mockReturnValue(5);
 
     const result = engine.handleAction('p1', 'ROLL_DICE');
     expect(result.success).toBe(true);
@@ -146,7 +147,7 @@ describe('ServerSnakeLadderEngine Unit Tests', () => {
     stateAny.state.p1Position = 96;
 
     // Roll 4 -> 96 + 4 = 100
-    vi.spyOn(Math, 'random').mockReturnValue(3 / 6); // 4
+    vi.spyOn(crypto, 'randomInt').mockReturnValue(4);
 
     const result = engine.handleAction('p1', 'ROLL_DICE');
     expect(result.success).toBe(true);

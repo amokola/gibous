@@ -30,6 +30,14 @@ export const RPSArena: React.FC<RPSArenaProps> = ({ duelState, onChooseRPS }) =>
   const [history, setHistory] = useState<RoundHistoryEntry[]>([]);
   const processedRoundRef = useRef<number | null>(null);
   const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const choiceWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearChoiceWatchdog = () => {
+    if (choiceWatchdogRef.current) {
+      clearTimeout(choiceWatchdogRef.current);
+      choiceWatchdogRef.current = null;
+    }
+  };
 
   const p1Score = gameState?.p1Score || 0;
   const p2Score = gameState?.p2Score || 0;
@@ -60,12 +68,41 @@ export const RPSArena: React.FC<RPSArenaProps> = ({ duelState, onChooseRPS }) =>
   const handleSelect = (choice: RPSChoice) => {
     if (!myRole || isChoiceLocked || clashState || clashCountdown !== null) return;
     setMyLockedChoice(choice);
-    onChooseRPS(choice);
+
+    clearChoiceWatchdog();
+    choiceWatchdogRef.current = setTimeout(() => {
+      setMyLockedChoice(null);
+    }, 6000);
+
+    try {
+      onChooseRPS(choice);
+    } catch {
+      clearChoiceWatchdog();
+      setMyLockedChoice(null);
+    }
   };
+
+  useEffect(() => {
+    if (hasAlreadyChosen) {
+      clearChoiceWatchdog();
+    }
+  }, [hasAlreadyChosen]);
+
+  useEffect(() => {
+    clearChoiceWatchdog();
+    setMyLockedChoice(null);
+  }, [roundNumber]);
+
+  useEffect(() => {
+    return () => {
+      clearChoiceWatchdog();
+    };
+  }, []);
 
   // Authoritative clash resolution animation
   useEffect(() => {
     if (!lastRPSEvent) return;
+    clearChoiceWatchdog();
     if (processedRoundRef.current === lastRPSEvent.round) return;
     processedRoundRef.current = lastRPSEvent.round;
 

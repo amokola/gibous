@@ -23,10 +23,11 @@ interface HomeScreenProps {
     boc: string;
     network: 'mainnet' | 'testnet';
   }) => void;
-  onSubmitWithdrawal?: (payload: {
+  onRequestWithdrawalQuote?: (payload: {
     walletAddress: string;
     amountNano: string;
-  }) => void;
+  }) => Promise<any>;
+  onConfirmWithdrawal?: (quoteId: string) => Promise<any>;
   initialTransactions?: BankTransactionItem[];
   account?: Record<string, unknown> | null;
 }
@@ -37,7 +38,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   balance,
   onSelectAndPlayGame,
   onSubmitDeposit,
-  onSubmitWithdrawal,
+  onRequestWithdrawalQuote,
+  onConfirmWithdrawal,
   initialTransactions,
   account,
 }) => {
@@ -172,7 +174,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           <BankScreen
             balance={balance}
             onSubmitDeposit={onSubmitDeposit}
-            onSubmitWithdrawal={onSubmitWithdrawal}
+            onRequestWithdrawalQuote={onRequestWithdrawalQuote}
+            onConfirmWithdrawal={onConfirmWithdrawal}
             initialTransactions={initialTransactions}
             activeDeposit={(account as any)?.activeDeposit}
           />

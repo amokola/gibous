@@ -14,7 +14,11 @@ export const Connect4Arena: React.FC<Connect4ArenaProps> = ({ duelState, onDropD
 
   const rawBoard: (string | null)[][] =
     gameState?.board || Array(6).fill(null).map(() => Array(7).fill(null));
-  const winningCells: any[] = gameState?.winningCells || [];
+  const winningCells: any[] =
+    (gameState?.winningCells as any[]) ||
+    (gameState?.winningCoords as any[]) ||
+    (lastDropEvent?.winningCells as any[]) ||
+    [];
 
   const isWinningCoord = (cell: any, r: number, c: number): boolean => {
     if (!cell) return false;

@@ -21,7 +21,7 @@ export default defineConfig({
     ],
     setupFiles: ['./tests/setup/component.setup.ts'],
     include: ['tests/**/*.test.{ts,tsx}'],
-    exclude: ['tests/e2e/**/*', 'node_modules/**/*'],
+    exclude: ['tests/e2e/**/*.spec.ts', 'node_modules/**/*'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],

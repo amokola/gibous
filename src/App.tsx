@@ -27,7 +27,8 @@ import {
   sendEmote,
   sendRematch,
   submitDeposit,
-  submitWithdrawal,
+  requestWithdrawalQuote,
+  confirmWithdrawal,
   fetchRooms,
 } from './state/eventRouter';
 import { multiplayerService } from './services/multiplayerService';
@@ -161,12 +162,21 @@ export const App: React.FC = () => {
         ? 'deposit'
         : transaction.type === 'match_stake'
         ? 'arena_fee'
+        : transaction.type === 'withdrawal_refund'
+        ? 'withdrawal_refund'
         : transaction.type,
       amount: transaction.type === 'withdraw'
-        ? -Number(transaction.amountGram || 0)
+        ? -Math.abs(Number(transaction.amountGram || 0))
         : Number(transaction.amountGram || 0),
       timestamp: transaction.createdAt ? new Date(transaction.createdAt).toLocaleString() : 'Pending',
-      description: transaction.status === 'pending'
+      status: transaction.status,
+      description: transaction.type === 'withdraw' && (transaction.status === 'pending' || transaction.status === 'processing')
+        ? 'Gram withdrawal pending'
+        : transaction.type === 'withdraw' && transaction.status === 'failed'
+        ? 'Gram withdrawal failed · refunded'
+        : transaction.type === 'withdrawal_refund'
+        ? 'Gram withdrawal refund'
+        : transaction.status === 'pending'
         ? `Deposit pending (+${transaction.amountGram} GRAM)`
         : transaction.type === 'match_win'
         ? 'Duel Victory'
@@ -177,11 +187,17 @@ export const App: React.FC = () => {
         : transaction.type === 'match_stake'
         ? 'Duel Entry Stake'
         : transaction.type === 'deposit'
-        ? 'TON Deposit'
+        ? 'Gram deposit on TON'
         : transaction.type === 'withdraw'
-        ? 'TON Withdrawal'
+        ? 'Gram withdrawal on TON'
         : `${String(transaction.type).replace(/_/g, ' ')}`,
-      subtext: transaction.status === 'pending' ? 'Confirming on TON...' : 'Completed',
+      subtext: transaction.type === 'withdrawal_refund'
+        ? 'Refunded to your balance'
+        : transaction.type === 'withdraw'
+        ? transaction.status === 'pending' || transaction.status === 'processing'
+          ? 'Processing on TON Mainnet…'
+          : transaction.status === 'failed' ? 'Refunded to your balance' : 'Completed on TON Mainnet'
+        : transaction.status === 'pending' ? 'Confirming on TON...' : 'Completed',
       txHash: transaction.txHash || transaction.boc,
     }));
   }, [authenticatedUser]);
@@ -346,7 +362,8 @@ export const App: React.FC = () => {
               balance={userBalance}
               onSelectAndPlayGame={handleSelectAndPlayGame}
               onSubmitDeposit={submitDeposit}
-              onSubmitWithdrawal={submitWithdrawal}
+              onRequestWithdrawalQuote={requestWithdrawalQuote}
+              onConfirmWithdrawal={confirmWithdrawal}
               initialTransactions={accountTransactions}
               account={authenticatedUser}
             />

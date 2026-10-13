@@ -42,6 +42,9 @@ export class ServerConnect4Engine implements IServerGameEngine {
       activePlayer: this.state.activePlayer,
       winner: this.state.winner,
       winningCoords: this.state.winningCoords ? [...this.state.winningCoords] : null,
+      winningCells: this.state.winningCoords
+        ? this.state.winningCoords.map(([r, c]) => ({ row: r, col: c }))
+        : null,
       lastMove: this.state.lastMove ? { ...this.state.lastMove } : null,
       turnTimeout: this.state.turnTimeout,
     };
@@ -61,11 +64,21 @@ export class ServerConnect4Engine implements IServerGameEngine {
     ) {
       throw new Error('Invalid persisted Connect 4 state');
     }
+
+    let winningCoords: [number, number][] | null = null;
+    if (candidate.winningCoords && Array.isArray(candidate.winningCoords)) {
+      winningCoords = candidate.winningCoords.map(([r, c]) => [r, c] as [number, number]);
+    } else if ((candidate as any).winningCells && Array.isArray((candidate as any).winningCells)) {
+      winningCoords = (candidate as any).winningCells.map((c: any) =>
+        Array.isArray(c) ? ([c[0], c[1]] as [number, number]) : ([c.row, c.col] as [number, number])
+      );
+    }
+
     this.state = {
       ...this.createInitialState(),
       ...candidate,
       board: board.map((row) => [...row]) as Connect4Cell[][],
-      winningCoords: candidate.winningCoords ? candidate.winningCoords.map(([r, c]) => [r, c] as [number, number]) : null,
+      winningCoords,
       lastMove: candidate.lastMove ? { ...candidate.lastMove } : null,
       winner: candidate.winner ?? null,
       turnTimeout: Number.isFinite(candidate.turnTimeout) ? Number(candidate.turnTimeout) : this.clock() + 15000,
@@ -123,7 +136,7 @@ export class ServerConnect4Engine implements IServerGameEngine {
     }
 
     const { column } = (payload as { column?: number }) || {};
-    if (typeof column !== 'number' || column < 0 || column >= COLS) {
+    if (typeof column !== 'number' || !Number.isInteger(column) || column < 0 || column >= COLS) {
       return {
         success: false,
         error: `Invalid column: ${column}`,

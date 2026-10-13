@@ -6,7 +6,7 @@ import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import fs from 'node:fs';
 import { WebSocketServer, WebSocket } from 'ws';
-import { ClientMessageSchema, GameType } from '../shared';
+import { ClientMessageSchema, GameType, RoomStatePayload } from '../shared';
 import { RoomManager } from './roomManager';
 import { connectionManager } from './connectionManager';
 import { sessionManager } from './sessionManager';
@@ -24,6 +24,7 @@ import { logEvent, metrics } from './observability';
 import { roomCommandQueue } from './roomCommandQueue';
 import { SettlementWorker } from './settlementWorker';
 import { validateStake } from './authGuards';
+import { createMainnetTonWithdrawalClient, loadWithdrawalWorkerConfig, TonWithdrawalPayoutClient, WithdrawalPayoutWorker } from './withdrawalPayout';
 
 export const app = express();
 const PORT = process.env.PORT || 3001;
@@ -84,6 +85,10 @@ export const roomManager = new RoomManager();
 export const storage = new StorageService();
 export const settlementWorker = new SettlementWorker(roomManager, storage);
 export const depositVerificationService = new DepositVerificationService(storage);
+let withdrawalPayoutClient: TonWithdrawalPayoutClient | null = null;
+let withdrawalPayoutWorker: WithdrawalPayoutWorker | null = null;
+let withdrawalPayoutReady = false;
+const areAutomaticWithdrawalsReady = () => withdrawalPayoutReady && Boolean(withdrawalPayoutWorker?.getHealth().ready);
 export const auth = new TelegramAuth();
 export const telegramBragService = new TelegramBragService();
 
@@ -145,7 +150,10 @@ export function shutdown(signal = 'shutdown'): Promise<void> {
   shutdownPromise = (async () => {
     logEvent('info', 'process.shutdown.started', { signal });
     depositVerificationService.stop();
+    await withdrawalPayoutWorker?.stop();
+    matchmakingQueue.close();
     await settlementWorker.drain();
+    roomManager.close();
     connectionManager.closeAll();
 
     for (const client of wss.clients) {
@@ -178,6 +186,7 @@ export function shutdown(signal = 'shutdown'): Promise<void> {
       });
     });
 
+    roomManager.close();
     await storage.close();
     logEvent('info', 'process.shutdown.completed', { signal });
   })();
@@ -247,10 +256,13 @@ app.get('/api/health', (_req, res) => {
 
 app.get('/api/ready', async (_req, res) => {
   const databaseReady = await storage.isReady();
-  if (!databaseReady) {
-    return res.status(503).json({ status: 'not_ready', checks: { database: 'failed' } });
+  const payoutsReady = process.env.PAYOUT_WORKER_ENABLED !== 'true' || areAutomaticWithdrawalsReady();
+  if (!databaseReady || !payoutsReady) {
+    return res.status(503).json({ status: 'not_ready', checks: {
+      database: databaseReady ? 'ok' : 'failed', withdrawals: payoutsReady ? 'disabled' : 'failed',
+    } });
   }
-  return res.json({ status: 'ready', checks: { database: 'ok' } });
+  return res.json({ status: 'ready', checks: { database: 'ok', withdrawals: process.env.PAYOUT_WORKER_ENABLED === 'true' ? 'ready' : 'disabled' } });
 });
 
 app.get('/api/metrics', (_req, res) => {
@@ -778,10 +790,16 @@ wss.on('connection', (ws: WebSocket, req) => {
             clearTimeout(authTimeout);
 
             const activeRoom = roomManager.getActiveRoomForPlayer(verifiedId);
-            const activeRoomSnapshot = activeRoom ? roomManager.getRoomSnapshot(activeRoom) : undefined;
+            let activeRoomSnapshot: RoomStatePayload | undefined = undefined;
             if (activeRoom) {
-              const role = activeRoom.p1?.telegramId === verifiedId ? 'p1' : 'p2';
-              sessionManager.attachRoom(ws, activeRoom.code, role);
+              await roomCommandQueue.withRoomLock(activeRoom.code, async () => {
+                const { room: reconnectedRoom, role } = await roomManager.reconnectPlayer(activeRoom.code, verifiedId);
+                const targetRoom = reconnectedRoom || activeRoom;
+                if (role) {
+                  sessionManager.attachRoom(ws, activeRoom.code, role);
+                }
+                activeRoomSnapshot = roomManager.getRoomSnapshot(targetRoom);
+              });
             }
 
             safeSend(ws, {
@@ -813,10 +831,16 @@ wss.on('connection', (ws: WebSocket, req) => {
           clearTimeout(authTimeout);
 
           const activeRoom = roomManager.getActiveRoomForPlayer(telegramId);
-          const activeRoomSnapshot = activeRoom ? roomManager.getRoomSnapshot(activeRoom) : undefined;
+          let activeRoomSnapshot: RoomStatePayload | undefined = undefined;
           if (activeRoom) {
-            const role = activeRoom.p1?.telegramId === telegramId ? 'p1' : 'p2';
-            sessionManager.attachRoom(ws, activeRoom.code, role);
+            await roomCommandQueue.withRoomLock(activeRoom.code, async () => {
+              const { room: reconnectedRoom, role } = await roomManager.reconnectPlayer(activeRoom.code, telegramId);
+              const targetRoom = reconnectedRoom || activeRoom;
+              if (role) {
+                sessionManager.attachRoom(ws, activeRoom.code, role);
+              }
+              activeRoomSnapshot = roomManager.getRoomSnapshot(targetRoom);
+            });
           }
 
           safeSend(ws, {
@@ -867,6 +891,8 @@ wss.on('connection', (ws: WebSocket, req) => {
             sendError(ws, 'CREATE_FAILED', result.error || 'Failed to create room', requestId);
             break;
           }
+
+          matchmakingQueue.dequeueByPlayer(session.telegramId);
 
           const code = result.room.code;
           sessionManager.attachRoom(ws, code, 'p1');
@@ -1013,39 +1039,65 @@ wss.on('connection', (ws: WebSocket, req) => {
           break;
         }
 
-        case 'SUBMIT_WITHDRAWAL': {
+        case 'REQUEST_WITHDRAWAL_QUOTE': {
           const session = sessionManager.getSession(ws);
           if (!session) {
-            sendError(ws, 'UNAUTHORIZED', 'Please log in before requesting a withdrawal.', requestId);
+            sendError(ws, 'UNAUTHORIZED', 'Please log in to request a withdrawal.', requestId);
             break;
           }
-
-          const result = await storage.requestWithdrawal({
+          if (!withdrawalPayoutClient || !areAutomaticWithdrawalsReady()) {
+            sendError(ws, 'WITHDRAWAL_UNAVAILABLE', 'Automatic mainnet withdrawals are temporarily unavailable.', requestId);
+            break;
+          }
+          const feeNano = await withdrawalPayoutClient.estimateFee({
+            destination: message.payload.walletAddress,
+            amountNano: message.payload.amountNano,
+            memo: '',
+          });
+          if (feeNano <= 0n) {
+            sendError(ws, 'WITHDRAWAL_UNAVAILABLE', 'A safe mainnet fee quote is not available right now.', requestId);
+            break;
+          }
+          const result = await storage.createWithdrawalQuote({
             telegramId: session.telegramId,
             walletAddress: message.payload.walletAddress,
-            amountNano: message.payload.amountNano,
-            operationKey: requestId,
+            grossAmountNano: message.payload.amountNano,
+            feeNano: feeNano.toString(),
+            network: 'mainnet',
           });
-
           if (!result.success) {
             sendError(ws, 'WITHDRAWAL_REJECTED', result.error, requestId);
             break;
           }
+          safeSend(ws, { type: 'WITHDRAWAL_QUOTED', requestId, payload: result.quote });
+          break;
+        }
 
-          connectionManager.sendToPlayer(session.telegramId, {
-            type: 'ACCOUNT_UPDATED',
-            payload: {
-              balanceGram: result.user.balance_gram,
-              balanceNano: result.user.balance_nano,
-              user: result.user,
-            },
-          });
-
-          safeSend(ws, {
-            type: 'TRANSACTION_CONFIRMED',
-            requestId,
-            payload: result.transaction,
-          });
+        case 'CONFIRM_WITHDRAWAL': {
+          const session = sessionManager.getSession(ws);
+          if (!session) {
+            sendError(ws, 'UNAUTHORIZED', 'Please log in to confirm a withdrawal.', requestId);
+            break;
+          }
+          if (!withdrawalPayoutClient || !areAutomaticWithdrawalsReady()) {
+            sendError(ws, 'WITHDRAWAL_UNAVAILABLE', 'Automatic mainnet withdrawals are temporarily unavailable.', requestId);
+            break;
+          }
+          const result = await storage.confirmWithdrawalQuote({ telegramId: session.telegramId, quoteId: message.payload.quoteId, operationKey: requestId });
+          if (!result.success) {
+            sendError(ws, 'WITHDRAWAL_REJECTED', result.error || 'Withdrawal confirmation rejected', requestId);
+            break;
+          }
+          const withdrawal = result.withdrawal;
+          const statusPayload = {
+            id: String(withdrawal.id), status: withdrawal.status,
+            grossAmountNano: String(withdrawal.amount_nano), feeNano: String(withdrawal.fee_nano),
+            netAmountNano: String(withdrawal.net_amount_nano), amountGram: Number(withdrawal.amount_gram),
+            walletAddress: withdrawal.wallet_address, createdAt: new Date(withdrawal.created_at).toISOString(),
+          };
+          safeSend(ws, { type: 'WITHDRAWAL_PENDING', requestId, payload: statusPayload });
+          const user = await storage.getAccountSnapshot(session.telegramId);
+          if (user) connectionManager.sendToPlayer(session.telegramId, { type: 'ACCOUNT_UPDATED', payload: { user } });
           break;
         }
 
@@ -1067,6 +1119,7 @@ wss.on('connection', (ws: WebSocket, req) => {
             // Check if rejoining an existing match
             const reconnectResult = await roomManager.reconnectPlayer(code, session.telegramId);
             if (reconnectResult.room && reconnectResult.role) {
+              matchmakingQueue.dequeueByPlayer(session.telegramId);
               sessionManager.attachRoom(ws, code, reconnectResult.role);
               const snapshot = roomManager.getRoomSnapshot(reconnectResult.room);
               ws.send(
@@ -1086,6 +1139,7 @@ wss.on('connection', (ws: WebSocket, req) => {
               return;
             }
 
+            matchmakingQueue.dequeueByPlayer(session.telegramId);
             sessionManager.attachRoom(ws, code, 'p2');
             broadcastOpenRooms();
             const snapshot = roomManager.getRoomSnapshot(result.room);
@@ -1325,6 +1379,12 @@ wss.on('connection', (ws: WebSocket, req) => {
             break;
           }
 
+          const activeRoom = roomManager.getActiveRoomForPlayer(session.telegramId);
+          if (activeRoom && activeRoom.status === 'playing') {
+            sendError(ws, 'ACTIVE_DUEL_EXISTS', 'You are already in an active duel.', requestId);
+            break;
+          }
+
           try {
             const queueResult = await matchmakingQueue.enqueue({
               telegramId: session.telegramId,
@@ -1432,6 +1492,31 @@ if (process.env.NODE_ENV !== 'test' && !process.env.VITEST) {
     }
     await roomManager.restorePersistedRooms();
     await settlementWorker.reconcileInterruptedSettlements();
+    const payoutConfig = loadWithdrawalWorkerConfig();
+    if (payoutConfig) {
+      withdrawalPayoutClient = await createMainnetTonWithdrawalClient();
+      await withdrawalPayoutClient.getBalance();
+      await withdrawalPayoutClient.getSeqno();
+      withdrawalPayoutWorker = new WithdrawalPayoutWorker({
+        storage,
+        client: withdrawalPayoutClient,
+        config: payoutConfig,
+        onStatus: async (withdrawal) => {
+          const status = {
+            id: String(withdrawal.id), status: withdrawal.status,
+            grossAmountNano: String(withdrawal.amount_nano), feeNano: String(withdrawal.fee_nano),
+            netAmountNano: String(withdrawal.net_amount_nano), amountGram: Number(withdrawal.amount_gram),
+            walletAddress: withdrawal.wallet_address, createdAt: new Date(withdrawal.created_at).toISOString(),
+            txHash: withdrawal.tx_hash || undefined,
+          };
+          connectionManager.sendToPlayer(Number(withdrawal.telegram_id), { type: 'WITHDRAWAL_UPDATED', payload: status });
+          const snapshot = await storage.getAccountSnapshot(Number(withdrawal.telegram_id));
+          if (snapshot) connectionManager.sendToPlayer(Number(withdrawal.telegram_id), { type: 'ACCOUNT_UPDATED', payload: { user: snapshot } });
+        },
+      });
+      await withdrawalPayoutWorker.start();
+      withdrawalPayoutReady = true;
+    }
     server.listen(PORT, () => {
       console.log(`
   🎲 GIBOUS DUEL ARENA MULTIPLAYER SERVER

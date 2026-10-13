@@ -1,6 +1,35 @@
 import { DatabasePool } from './db/index';
 import { MAX_STAKE, MIN_STAKE } from '../shared/constants/economics';
 import { buildDailyBragStats } from './bragStats';
+import { Address } from '@ton/core';
+
+interface WithdrawalLimits {
+  minimumNano: string;
+  maximumNano: string;
+  userDailyNano: string;
+  globalDailyNano: string;
+}
+
+function readWithdrawalLimits(): WithdrawalLimits | null {
+  const readPositive = (name: string): bigint | null => {
+    const value = process.env[name];
+    if (!value || !/^\d+$/.test(value)) return null;
+    const parsed = BigInt(value);
+    return parsed > 0n ? parsed : null;
+  };
+
+  const minimum = readPositive('PAYOUT_MIN_WITHDRAWAL_NANO');
+  const maximum = readPositive('PAYOUT_MAX_WITHDRAWAL_NANO');
+  const userDaily = readPositive('PAYOUT_USER_DAILY_LIMIT_NANO');
+  const globalDaily = readPositive('PAYOUT_GLOBAL_DAILY_LIMIT_NANO');
+  if (!minimum || !maximum || !userDaily || !globalDaily || maximum < minimum) return null;
+  return {
+    minimumNano: minimum.toString(),
+    maximumNano: maximum.toString(),
+    userDailyNano: userDaily.toString(),
+    globalDailyNano: globalDaily.toString(),
+  };
+}
 
 export interface UserEntity {
   id: number;
@@ -194,14 +223,25 @@ export class StorageService {
     if (!user) return null;
 
     const transactions = (await this.db.loadTransactionsForUser(user.id))
-      .map((tx: any) => ({
-        id: String(tx.id),
-        type: tx.type,
-        amountGram: Number(tx.amount || 0),
-        status: 'confirmed' as const,
-        createdAt: new Date(tx.created_at || Date.now()).toISOString(),
-        txHash: tx.tx_hash,
-      }))
+      .map((tx: any) => {
+        const amountGram = tx.withdrawal_status
+          ? Number(BigInt(String(tx.amount_nano || tx.withdrawal_amount_nano || '0')) < 0n
+            ? -BigInt(String(tx.amount_nano || tx.withdrawal_amount_nano || '0'))
+            : BigInt(String(tx.amount_nano || tx.withdrawal_amount_nano || '0'))) / 1_000_000_000
+          : Number(tx.amount || 0);
+        return {
+          id: String(tx.withdrawal_id || tx.id),
+          type: tx.type,
+          amountGram,
+          status: tx.withdrawal_status || 'confirmed',
+          createdAt: new Date(tx.created_at || Date.now()).toISOString(),
+          txHash: tx.withdrawal_tx_hash || tx.tx_hash,
+          walletAddress: tx.wallet_address,
+          grossAmountNano: tx.withdrawal_status ? String(tx.amount_nano || tx.withdrawal_amount_nano) : undefined,
+          netAmountNano: tx.net_amount_nano ? String(tx.net_amount_nano) : undefined,
+          feeNano: tx.fee_nano ? String(tx.fee_nano) : undefined,
+        };
+      })
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
     // Isolate financial ledger from ephemeral in-flight intents:
@@ -403,43 +443,97 @@ export class StorageService {
     walletAddress: string;
     amountNano: string;
     operationKey?: string;
+  }): Promise<{ success: boolean; error?: string; user?: any; transaction?: any }> {
+    void input;
+    return { success: false as const, error: 'A server-generated withdrawal quote is required' };
+  }
+
+  async createWithdrawalQuote(input: {
+    telegramId: number;
+    walletAddress: string;
+    grossAmountNano: string;
+    feeNano: string;
+    network: 'mainnet' | 'testnet';
   }) {
     const user = await this.db.loadUserByTelegramId(input.telegramId);
     if (!user) return { success: false as const, error: 'Account not found' };
-
-    const trimmedAddress = input.walletAddress.trim();
-    if (!trimmedAddress || trimmedAddress.length < 10 || trimmedAddress.length > 128) {
-      return { success: false as const, error: 'Invalid recipient wallet address' };
+    if (process.env.PAYOUT_NETWORK !== 'mainnet' || input.network !== 'mainnet') {
+      return { success: false as const, error: 'Only TON Mainnet withdrawals are supported' };
     }
 
-    let amountNano: bigint;
+    let address: Address;
+    let grossNano: bigint;
+    let feeNano: bigint;
     try {
-      amountNano = BigInt(input.amountNano);
+      address = Address.parse(input.walletAddress.trim());
+      grossNano = BigInt(input.grossAmountNano);
+      feeNano = BigInt(input.feeNano);
     } catch {
-      return { success: false as const, error: 'Invalid withdrawal amount' };
+      return { success: false as const, error: 'Invalid withdrawal address or amount' };
     }
-    if (amountNano <= 0n) {
-      return { success: false as const, error: 'Withdrawal amount must be greater than zero' };
-    }
-
-    const result = await this.db.requestWithdrawal(
-      input.telegramId,
-      trimmedAddress,
-      input.amountNano,
-      input.operationKey
-    );
-
-    if (!result.success) {
-      return { success: false as const, error: result.error || 'Withdrawal failed' };
+    if (grossNano <= 0n || feeNano < 0n || feeNano >= grossNano) {
+      return { success: false as const, error: 'The quoted fee must be less than the withdrawal amount' };
     }
 
+    const limits = readWithdrawalLimits();
+    if (!limits) return { success: false as const, error: 'Withdrawal limits are not configured safely' };
+    if (grossNano < BigInt(limits.minimumNano) || grossNano > BigInt(limits.maximumNano)) {
+      return { success: false as const, error: 'Withdrawal amount is outside configured limits' };
+    }
+    const canonicalAddress = address.toString({ urlSafe: true, bounceable: true, testOnly: false });
+    const quote = await this.db.createWithdrawalQuote({
+      telegramId: input.telegramId,
+      walletAddress: canonicalAddress,
+      grossAmountNano: grossNano.toString(),
+      feeNano: feeNano.toString(),
+      netAmountNano: (grossNano - feeNano).toString(),
+      network: 'mainnet',
+      expiresAt: new Date(Date.now() + 2 * 60_000),
+    });
+    return {
+      success: true as const,
+      quote: {
+        quoteId: String(quote.id),
+        walletAddress: quote.wallet_address,
+        grossAmountNano: String(quote.gross_amount_nano),
+        feeNano: String(quote.fee_nano),
+        netAmountNano: String(quote.net_amount_nano),
+        network: 'mainnet' as const,
+        expiresAt: new Date(quote.expires_at).toISOString(),
+      },
+    };
+  }
+
+  async confirmWithdrawalQuote(input: { telegramId: number; quoteId: string; operationKey: string }) {
+    const limits = readWithdrawalLimits();
+    if (process.env.PAYOUT_NETWORK !== 'mainnet' || !limits) {
+      return { success: false as const, error: 'Automatic mainnet withdrawals are not configured safely' };
+    }
+    const result = await this.db.confirmWithdrawalQuote({ ...input, limits });
+    if (!result.success) return { success: false as const, error: result.error || 'Withdrawal confirmation failed' };
     const snapshot = await this.getAccountSnapshot(input.telegramId);
     return {
       success: true as const,
-      transaction: result.transaction,
       withdrawal: result.withdrawal,
+      transaction: result.transaction,
       user: snapshot || result.user,
     };
+  }
+
+  async claimNextWithdrawalPayout(workerId: string, leaseMs: number) {
+    return this.db.claimNextWithdrawalPayout(workerId, leaseMs);
+  }
+
+  async persistSignedWithdrawalPayload(input: Parameters<DatabasePool['persistSignedWithdrawalPayload']>[0]) {
+    return this.db.persistSignedWithdrawalPayload(input);
+  }
+
+  async finalizeWithdrawalPayout(input: Parameters<DatabasePool['finalizeWithdrawalPayout']>[0]) {
+    return this.db.finalizeWithdrawalPayout(input);
+  }
+
+  async refundFailedWithdrawal(input: Parameters<DatabasePool['refundFailedWithdrawal']>[0]) {
+    return this.db.refundFailedWithdrawal(input);
   }
 
   private toPendingDeposit(intent: any) {

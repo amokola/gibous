@@ -64,9 +64,7 @@ export const SnakeLadderArena: React.FC<SnakeLadderArenaProps> = ({
   const isAnimating = animState !== 'idle';
   const isGameOver =
     Boolean(duelState.winner) ||
-    duelState.room?.status === 'gameover' ||
-    p1Pos === 100 ||
-    p2Pos === 100;
+    duelState.room?.status === 'gameover';
 
   const handleRollClick = () => {
     if (isMyTurn && !isAnimating && !isLocalRolling && !isGameOver) {
@@ -346,8 +344,8 @@ export const SnakeLadderArena: React.FC<SnakeLadderArenaProps> = ({
     displayRoll,
   ]);
 
-  const isP1Won = p1Pos === 100 || duelState.winner === 'p1';
-  const isP2Won = p2Pos === 100 || duelState.winner === 'p2';
+  const isP1Won = duelState.winner === 'p1';
+  const isP2Won = duelState.winner === 'p2';
   const isWinner = (isP1Won && myRole === 'p1') || (isP2Won && myRole === 'p2');
 
   return (
@@ -365,7 +363,7 @@ export const SnakeLadderArena: React.FC<SnakeLadderArenaProps> = ({
         >
           {jumpBanner.text}
         </div>
-      ) : (p1Pos === 100 || p2Pos === 100 || isGameOver) && (
+      ) : isGameOver && (
         <div
           className={`w-full py-1.5 px-3 rounded-none font-sketch font-bold text-center text-sm border-2 border-black sketch-shadow animate-bounce mb-1 ${
             isWinner
@@ -375,9 +373,9 @@ export const SnakeLadderArena: React.FC<SnakeLadderArenaProps> = ({
               : 'bg-[#fee2e2] text-[#991b1b]'
           }`}
         >
-          {p1Pos === 100
+          {duelState.winner === 'p1'
             ? `${myRole === 'p1' ? 'YOU' : 'PLAYER 1'} REACHED TILE 100! 👑`
-            : p2Pos === 100
+            : duelState.winner === 'p2'
             ? `${myRole === 'p2' ? 'YOU' : 'PLAYER 2'} REACHED TILE 100! 👑`
             : isWinner
             ? 'MATCH WON'
@@ -433,7 +431,7 @@ export const SnakeLadderArena: React.FC<SnakeLadderArenaProps> = ({
           <Dices className="w-5 h-5 stroke-[2.5]" />
           <span>
             {isGameOver
-              ? p1Pos === 100 || p2Pos === 100
+              ? duelState.winner === 'p1' || duelState.winner === 'p2'
                 ? 'TILE 100 REACHED — MATCH OVER'
                 : 'MATCH COMPLETED'
               : isRolling

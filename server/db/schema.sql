@@ -18,7 +18,7 @@ $$;
 
 -- 1. Users & Accounts Table (Authoritative Nano-Units with Generated Decimal Display)
 CREATE TABLE IF NOT EXISTS users (
-    id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     telegram_id BIGINT UNIQUE NOT NULL,
     username VARCHAR(64),
     first_name VARCHAR(128) NOT NULL,
@@ -45,8 +45,7 @@ CREATE TABLE IF NOT EXISTS users (
     CONSTRAINT users_balance_units_consistent CHECK (balance_nano = ROUND(balance_gram * 1000000000))
 );
 
--- Indexes for Telegram ID lookups and Leaderboards
-CREATE INDEX IF NOT EXISTS idx_users_telegram_id ON users (telegram_id);
+-- Indexes for Leaderboards (telegram_id already has a unique index from UNIQUE constraint)
 CREATE INDEX IF NOT EXISTS idx_users_winnings ON users (total_winnings DESC);
 CREATE INDEX IF NOT EXISTS idx_users_wins ON users (wins DESC);
 
@@ -64,12 +63,12 @@ CREATE TABLE IF NOT EXISTS matches (
     stake_amount NUMERIC(30,9) NOT NULL,
     pot_amount NUMERIC(30,9) NOT NULL,
     dev_rake NUMERIC(30,9) NOT NULL DEFAULT 0, -- 10% arena fee on win pot, 5% fee per player on draw
-    p1_id INTEGER REFERENCES users(id),
-    p2_id INTEGER REFERENCES users(id),
+    p1_id BIGINT REFERENCES users(id),
+    p2_id BIGINT REFERENCES users(id),
     p1_telegram_id BIGINT,
     p2_telegram_id BIGINT,
     version INTEGER NOT NULL DEFAULT 1,
-    winner_id INTEGER REFERENCES users(id), -- NULL if draw
+    winner_id BIGINT REFERENCES users(id), -- NULL if draw
     is_draw BOOLEAN NOT NULL DEFAULT FALSE,
     turns_count INTEGER DEFAULT 0,
     duration_seconds INTEGER DEFAULT 0,
@@ -124,19 +123,19 @@ EXECUTE FUNCTION set_updated_at();
 -- 3. Financial Transaction Ledger (Immutable Single-Representation Audit)
 CREATE TABLE IF NOT EXISTS transactions (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    user_id INTEGER NOT NULL REFERENCES users(id),
+    user_id BIGINT NOT NULL REFERENCES users(id),
     match_code VARCHAR(32),
     operation_key VARCHAR(160),
     type VARCHAR(32) NOT NULL,
     amount_nano NUMERIC(39,0) NOT NULL,
     fee_nano NUMERIC(39,0) NOT NULL DEFAULT 0,
     balance_after_nano NUMERIC(39,0) NOT NULL,
-    amount NUMERIC(30,9) GENERATED ALWAYS AS (amount_nano / 1000000000.0) STORED,
-    fee NUMERIC(30,9) GENERATED ALWAYS AS (fee_nano / 1000000000.0) STORED,
-    balance_after NUMERIC(30,9) GENERATED ALWAYS AS (balance_after_nano / 1000000000.0) STORED,
+    amount NUMERIC(30,9) GENERATED ALWAYS AS (ROUND(amount_nano / 1000000000.0, 9)) STORED,
+    fee NUMERIC(30,9) GENERATED ALWAYS AS (ROUND(fee_nano / 1000000000.0, 9)) STORED,
+    balance_after NUMERIC(30,9) GENERATED ALWAYS AS (ROUND(balance_after_nano / 1000000000.0, 9)) STORED,
     tx_hash VARCHAR(128),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT transactions_type_valid CHECK (type IN ('deposit', 'withdraw', 'match_stake', 'match_win', 'match_draw_refund', 'match_cancelled_refund'))
+    CONSTRAINT transactions_type_valid CHECK (type IN ('deposit', 'withdraw', 'withdrawal_refund', 'match_stake', 'match_win', 'match_draw_refund', 'match_cancelled_refund'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_transactions_user_id ON transactions (user_id);
@@ -151,7 +150,7 @@ CREATE TABLE IF NOT EXISTS deposit_intents (
     wallet_address VARCHAR(128) NOT NULL,
     deposit_address VARCHAR(128) NOT NULL,
     amount_nano NUMERIC(30,0) NOT NULL,
-    amount_gram NUMERIC(30,9) GENERATED ALWAYS AS (amount_nano / 1000000000.0) STORED,
+    amount_gram NUMERIC(30,9) GENERATED ALWAYS AS (ROUND(amount_nano / 1000000000.0, 9)) STORED,
     memo VARCHAR(64) UNIQUE,
     boc TEXT UNIQUE,
     network VARCHAR(16) NOT NULL,
@@ -205,10 +204,10 @@ CREATE TABLE IF NOT EXISTS treasury (
     win_rake_nano NUMERIC(39,0) NOT NULL DEFAULT 0,
     draw_fees_nano NUMERIC(39,0) NOT NULL DEFAULT 0,
     total_volume_nano NUMERIC(39,0) NOT NULL DEFAULT 0,
-    total_rake_collected NUMERIC(30,9) GENERATED ALWAYS AS (total_rake_nano / 1000000000.0) STORED,
-    win_rake_collected NUMERIC(30,9) GENERATED ALWAYS AS (win_rake_nano / 1000000000.0) STORED,
-    draw_fees_collected NUMERIC(30,9) GENERATED ALWAYS AS (draw_fees_nano / 1000000000.0) STORED,
-    total_volume_processed NUMERIC(30,9) GENERATED ALWAYS AS (total_volume_nano / 1000000000.0) STORED,
+    total_rake_collected NUMERIC(30,9) GENERATED ALWAYS AS (ROUND(total_rake_nano / 1000000000.0, 9)) STORED,
+    win_rake_collected NUMERIC(30,9) GENERATED ALWAYS AS (ROUND(win_rake_nano / 1000000000.0, 9)) STORED,
+    draw_fees_collected NUMERIC(30,9) GENERATED ALWAYS AS (ROUND(draw_fees_nano / 1000000000.0, 9)) STORED,
+    total_volume_processed NUMERIC(30,9) GENERATED ALWAYS AS (ROUND(total_volume_nano / 1000000000.0, 9)) STORED,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT treasury_singleton CHECK (id = 1)
 );
@@ -234,10 +233,6 @@ CREATE TABLE IF NOT EXISTS game_actions (
 CREATE INDEX IF NOT EXISTS idx_game_actions_match ON game_actions (match_code, created_at ASC);
 
 
-ALTER TABLE treasury ADD COLUMN IF NOT EXISTS total_rake_nano NUMERIC(39,0) NOT NULL DEFAULT 0;
-ALTER TABLE treasury ADD COLUMN IF NOT EXISTS win_rake_nano NUMERIC(39,0) NOT NULL DEFAULT 0;
-ALTER TABLE treasury ADD COLUMN IF NOT EXISTS draw_fees_nano NUMERIC(39,0) NOT NULL DEFAULT 0;
-ALTER TABLE treasury ADD COLUMN IF NOT EXISTS total_volume_nano NUMERIC(39,0) NOT NULL DEFAULT 0;
 
 -- Initialize Treasury Singleton Row if empty
 INSERT INTO treasury (id, total_rake_nano, win_rake_nano, draw_fees_nano, total_volume_nano)
@@ -252,6 +247,24 @@ CREATE TABLE IF NOT EXISTS withdrawals (
     amount_nano NUMERIC(39,0) NOT NULL,
     amount_gram NUMERIC(30,9) NOT NULL,
     fee_nano NUMERIC(39,0) NOT NULL DEFAULT 0,
+    net_amount_nano NUMERIC(39,0) NOT NULL DEFAULT 0,
+    network VARCHAR(16) NOT NULL DEFAULT 'mainnet',
+    payout_eligible BOOLEAN NOT NULL DEFAULT FALSE,
+    quote_id UUID,
+    signed_payload_ciphertext BYTEA,
+    signed_payload_iv BYTEA,
+    signed_payload_tag BYTEA,
+    payout_seqno BIGINT,
+    payout_valid_until BIGINT,
+    payout_message_hash VARCHAR(128),
+    payout_lease_owner VARCHAR(128),
+    payout_lease_expires_at TIMESTAMP WITH TIME ZONE,
+    payout_fencing_token BIGINT NOT NULL DEFAULT 0,
+    payout_attempt_count INTEGER NOT NULL DEFAULT 0,
+    payout_last_attempt_at TIMESTAMP WITH TIME ZONE,
+    payout_reconciled_at TIMESTAMP WITH TIME ZONE,
+    payout_actual_fee_nano NUMERIC(39,0),
+      payout_failure_evidence_hash VARCHAR(128),
     status VARCHAR(16) NOT NULL DEFAULT 'completed',
     tx_hash VARCHAR(128),
     operation_key VARCHAR(160) UNIQUE,
@@ -259,6 +272,10 @@ CREATE TABLE IF NOT EXISTS withdrawals (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT withdrawals_amount_nano_positive CHECK (amount_nano > 0),
+    CONSTRAINT withdrawals_net_amount_nonnegative CHECK (net_amount_nano >= 0),
+    CONSTRAINT withdrawals_network_mainnet CHECK (network = 'mainnet'),
+    CONSTRAINT withdrawals_payout_attempt_count_nonnegative CHECK (payout_attempt_count >= 0),
+    CONSTRAINT withdrawals_payout_fencing_token_nonnegative CHECK (payout_fencing_token >= 0),
     CONSTRAINT withdrawals_status_valid CHECK (status IN ('pending', 'processing', 'completed', 'failed', 'rejected'))
 );
 
@@ -270,4 +287,73 @@ CREATE TRIGGER trg_withdrawals_updated_at
 BEFORE UPDATE ON withdrawals
 FOR EACH ROW
 EXECUTE FUNCTION set_updated_at();
+
+-- Mainnet-only native Gram withdrawal quotes. Existing withdrawal rows remain ineligible by default.
+CREATE TABLE IF NOT EXISTS withdrawal_quotes (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    telegram_id BIGINT NOT NULL REFERENCES users(telegram_id),
+    wallet_address VARCHAR(128) NOT NULL,
+    gross_amount_nano NUMERIC(39,0) NOT NULL,
+    fee_nano NUMERIC(39,0) NOT NULL,
+    net_amount_nano NUMERIC(39,0) NOT NULL,
+    network VARCHAR(16) NOT NULL DEFAULT 'mainnet',
+    status VARCHAR(16) NOT NULL DEFAULT 'quoted',
+    expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    consumed_withdrawal_id UUID UNIQUE REFERENCES withdrawals(id),
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT withdrawal_quotes_amounts_valid CHECK (
+      gross_amount_nano > 0 AND fee_nano >= 0 AND net_amount_nano > 0
+      AND gross_amount_nano = fee_nano + net_amount_nano
+    ),
+    CONSTRAINT withdrawal_quotes_network_mainnet CHECK (network = 'mainnet'),
+    CONSTRAINT withdrawal_quotes_status_valid CHECK (status IN ('quoted', 'consumed', 'expired')),
+    CONSTRAINT withdrawal_quotes_consumed_link_valid CHECK (
+      (status = 'consumed') = (consumed_withdrawal_id IS NOT NULL)
+    )
+);
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'withdrawals_quote_id_fkey'
+      AND conrelid = 'withdrawals'::regclass
+  ) THEN
+    ALTER TABLE withdrawals
+      ADD CONSTRAINT withdrawals_quote_id_fkey FOREIGN KEY (quote_id) REFERENCES withdrawal_quotes(id);
+  END IF;
+END $$;
+
+ALTER TABLE transactions
+  ADD COLUMN IF NOT EXISTS withdrawal_id UUID REFERENCES withdrawals(id);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_withdrawals_quote_id
+  ON withdrawals (quote_id)
+  WHERE quote_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_withdrawal_quotes_owner_expiry
+  ON withdrawal_quotes (telegram_id, expires_at DESC)
+  WHERE status = 'quoted';
+
+CREATE INDEX IF NOT EXISTS idx_withdrawals_payout_queue
+  ON withdrawals (created_at ASC)
+  WHERE payout_eligible = TRUE AND status IN ('pending', 'processing');
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_transactions_withdrawal_refund
+  ON transactions (withdrawal_id)
+  WHERE type = 'withdrawal_refund' AND withdrawal_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_withdrawal_quotes_expiry
+  ON withdrawal_quotes (expires_at)
+  WHERE status = 'quoted';
+
+CREATE TABLE IF NOT EXISTS payout_wallet_locks (
+    id SMALLINT PRIMARY KEY CHECK (id = 1),
+    lease_owner VARCHAR(128),
+    lease_expires_at TIMESTAMP WITH TIME ZONE,
+    fencing_token BIGINT NOT NULL DEFAULT 0 CHECK (fencing_token >= 0),
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+INSERT INTO payout_wallet_locks (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
 

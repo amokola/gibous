@@ -113,6 +113,13 @@ export class DatabasePool {
     this.inMemoryDb.set('matches', []);
     this.inMemoryDb.set('transactions', []);
     this.inMemoryDb.set('deposit_intents', []);
+    this.inMemoryDb.set('withdrawal_quotes', []);
+    this.inMemoryDb.set('withdrawals', []);
+    this.inMemoryDb.set('payout_wallet_lock', [{
+      lease_owner: null,
+      lease_expires_at: null,
+      fencing_token: 0,
+    }]);
     this.inMemoryDb.set('settlements', []);
     this.inMemoryDb.set('treasury', [
       {
@@ -127,6 +134,15 @@ export class DatabasePool {
         total_volume_processed: 0,
       },
     ]);
+  }
+
+  resetInMemoryWithdrawalStateForTests() {
+    if (process.env.NODE_ENV !== 'test' || this.usesPersistentDatabase()) {
+      throw new Error('Withdrawal fallback reset is available only in isolated tests');
+    }
+    this.inMemoryDb.set('withdrawal_quotes', []);
+    this.inMemoryDb.set('withdrawals', []);
+    this.inMemoryDb.set('payout_wallet_lock', [{ lease_owner: null, lease_expires_at: null, fencing_token: 0 }]);
   }
 
   /**
@@ -185,10 +201,16 @@ export class DatabasePool {
         max: maxConns,
         connectionTimeoutMillis: 10_000,
         idleTimeoutMillis: 30_000,
-        statement_timeout: 5_000,
-        query_timeout: 5_000,
-        lock_timeout: 3_000,
-        idle_in_transaction_session_timeout: 5_000,
+        // query_timeout is a valid client-side pool option (node-postgres).
+        // Set higher than statement_timeout so the server can send its 57014
+        // cancellation error before the client drops the connection.
+        query_timeout: 8_000,
+        // statement_timeout, lock_timeout, and idle_in_transaction_session_timeout
+        // are PostgreSQL server GUC parameters, not node-postgres Pool config keys.
+        // They must be passed via the 'options' connection startup parameter.
+        // See: https://node-postgres.com/apis/pool
+        // See: https://www.postgresql.org/docs/current/runtime-config-client.html
+        options: '-c statement_timeout=5000 -c lock_timeout=3000 -c idle_in_transaction_session_timeout=5000',
       });
 
       this.pgPool.on('error', (err: any) => {
@@ -273,12 +295,27 @@ export class DatabasePool {
   }
 
   async loadTransactionsForUser(userId: number) {
-    if (!this.usesPersistentDatabase()) return this.getTransactionsForUser(userId);
+    if (!this.usesPersistentDatabase()) {
+      const withdrawals = this.inMemoryDb.get('withdrawals') || [];
+      return this.getTransactionsForUser(userId).map((tx: any) => {
+        const withdrawal = tx.withdrawal_id ? withdrawals.find((item: any) => item.id === tx.withdrawal_id) : null;
+        return withdrawal ? { ...tx, withdrawal_status: withdrawal.status, wallet_address: withdrawal.wallet_address,
+          amount_nano: withdrawal.amount_nano, net_amount_nano: withdrawal.net_amount_nano, fee_nano: withdrawal.fee_nano,
+          withdrawal_tx_hash: withdrawal.tx_hash } : tx;
+      });
+    }
     const result = await this.query<any>(
-      'SELECT id, type, amount, fee, balance_after, tx_hash, created_at FROM transactions WHERE user_id = $1 ORDER BY created_at DESC',
+      `SELECT t.id, t.type, t.amount, t.fee, t.balance_after, t.amount_nano, t.fee_nano,
+              t.balance_after_nano, t.tx_hash, t.created_at, w.status AS withdrawal_status,
+              w.wallet_address, w.amount_nano AS withdrawal_amount_nano,
+              w.net_amount_nano, w.fee_nano AS withdrawal_fee_nano
+         FROM transactions t LEFT JOIN withdrawals w ON w.id = t.withdrawal_id
+        WHERE t.user_id = $1 ORDER BY t.created_at DESC`,
       [userId]
     );
-    return result.rows;
+    return result.rows.map((row: any) => row.withdrawal_status ? {
+      ...row, amount_nano: row.withdrawal_amount_nano, fee_nano: row.withdrawal_fee_nano,
+    } : row);
   }
 
   async loadTransactionsForUserSince(userId: number, since: Date) {
@@ -506,7 +543,7 @@ export class DatabasePool {
       const updatedUserRes = await client.query(
         `UPDATE users
             SET balance_nano = balance_nano - $1::numeric,
-                balance_gram = (balance_nano - $1::numeric) / 1000000000.0,
+                balance_gram = ROUND((balance_nano - $1::numeric) / 1000000000.0, 9),
                 updated_at = CURRENT_TIMESTAMP
           WHERE id = $2 AND balance_nano >= $1::numeric
         RETURNING *`,
@@ -639,7 +676,7 @@ export class DatabasePool {
       const updatedUserRes = await client.query(
         `UPDATE users
             SET balance_nano = balance_nano - $1::numeric,
-                balance_gram = (balance_nano - $1::numeric) / 1000000000.0,
+                balance_gram = ROUND((balance_nano - $1::numeric) / 1000000000.0, 9),
                 updated_at = CURRENT_TIMESTAMP
           WHERE id = $2 AND balance_nano >= $1::numeric
         RETURNING *`,
@@ -779,11 +816,11 @@ export class DatabasePool {
       }
 
       const up1 = await client.query(
-        'UPDATE users SET balance_nano = balance_nano - $1::numeric, balance_gram = (balance_nano - $1::numeric) / 1000000000.0, updated_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING *',
+        'UPDATE users SET balance_nano = balance_nano - $1::numeric, balance_gram = ROUND((balance_nano - $1::numeric) / 1000000000.0, 9), updated_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING *',
         [stakeNano, u1Row.id]
       );
       const up2 = await client.query(
-        'UPDATE users SET balance_nano = balance_nano - $1::numeric, balance_gram = (balance_nano - $1::numeric) / 1000000000.0, updated_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING *',
+        'UPDATE users SET balance_nano = balance_nano - $1::numeric, balance_gram = ROUND((balance_nano - $1::numeric) / 1000000000.0, 9), updated_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING *',
         [stakeNano, u2Row.id]
       );
 
@@ -913,7 +950,7 @@ export class DatabasePool {
       const updated = await client.query(
         `UPDATE users
             SET balance_nano = balance_nano - $1::numeric,
-                balance_gram = (balance_nano - $1::numeric) / 1000000000.0,
+                balance_gram = ROUND((balance_nano - $1::numeric) / 1000000000.0, 9),
                 updated_at = CURRENT_TIMESTAMP
           WHERE telegram_id = $2
             AND balance_nano >= $1::numeric
@@ -1003,7 +1040,7 @@ export class DatabasePool {
       const updated = await client.query(
         `UPDATE users
             SET balance_nano = balance_nano + $1::numeric,
-                balance_gram = (balance_nano + $1::numeric) / 1000000000.0,
+                balance_gram = ROUND((balance_nano + $1::numeric) / 1000000000.0, 9),
                 updated_at = CURRENT_TIMESTAMP
           WHERE telegram_id = $2
         RETURNING *`,
@@ -1025,6 +1062,503 @@ export class DatabasePool {
       );
       return { success: true as const, user: this.normalizeUser(updated.rows[0]) };
     });
+  }
+
+  async createWithdrawalQuote(params: {
+    telegramId: number;
+    walletAddress: string;
+    grossAmountNano: string;
+    feeNano: string;
+    netAmountNano: string;
+    network: 'mainnet';
+    expiresAt: Date;
+  }) {
+    if (!this.usesPersistentDatabase()) {
+      const quotes = this.inMemoryDb.get('withdrawal_quotes') || [];
+      const quote = {
+        id: crypto.randomUUID(),
+        telegram_id: params.telegramId,
+        wallet_address: params.walletAddress,
+        gross_amount_nano: params.grossAmountNano,
+        fee_nano: params.feeNano,
+        net_amount_nano: params.netAmountNano,
+        network: params.network,
+        status: 'quoted',
+        expires_at: params.expiresAt,
+        consumed_withdrawal_id: null,
+        created_at: new Date(),
+      };
+      quotes.push(quote);
+      this.inMemoryDb.set('withdrawal_quotes', quotes);
+      return quote;
+    }
+
+    const result = await this.query<any>(
+      `INSERT INTO withdrawal_quotes
+        (telegram_id, wallet_address, gross_amount_nano, fee_nano, net_amount_nano, network, expires_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING *`,
+      [params.telegramId, params.walletAddress, params.grossAmountNano, params.feeNano,
+        params.netAmountNano, params.network, params.expiresAt]
+    );
+    return result.rows[0];
+  }
+
+  async confirmWithdrawalQuote(params: {
+    telegramId: number;
+    quoteId: string;
+    operationKey: string;
+    limits: {
+      minimumNano: string;
+      maximumNano: string;
+      userDailyNano: string;
+      globalDailyNano: string;
+    };
+  }): Promise<{ success: boolean; error?: string; withdrawal?: any; transaction?: any; user?: any }> {
+    const grossNano = BigInt(params.limits.minimumNano);
+    const maxNano = BigInt(params.limits.maximumNano);
+    const userDailyNano = BigInt(params.limits.userDailyNano);
+    const globalDailyNano = BigInt(params.limits.globalDailyNano);
+
+    if (!this.usesPersistentDatabase()) {
+      const quotes = this.inMemoryDb.get('withdrawal_quotes') || [];
+      const quote = quotes.find((item: any) => item.id === params.quoteId);
+      if (!quote) return { success: false, error: 'Withdrawal quote not found' };
+      if (Number(quote.telegram_id) !== params.telegramId) return { success: false, error: 'Withdrawal quote ownership mismatch' };
+
+      const withdrawals = this.inMemoryDb.get('withdrawals') || [];
+      const existingForQuote = withdrawals.find((item: any) => item.quote_id === params.quoteId);
+      const existingForKey = withdrawals.find((item: any) => item.operation_key === params.operationKey);
+      if (existingForKey && existingForKey.quote_id !== params.quoteId) {
+        return { success: false, error: 'Idempotency key is already linked to another withdrawal' };
+      }
+      const user = this.getUserByTelegramId(params.telegramId);
+      if (!user) return { success: false, error: 'Account not found' };
+      if (existingForQuote) {
+        return {
+          success: true,
+          withdrawal: existingForQuote,
+          transaction: this.toWithdrawalTransaction(existingForQuote),
+          user: this.normalizeUser(user),
+        };
+      }
+      if (quote.status !== 'quoted') return { success: false, error: 'Withdrawal quote is no longer available' };
+      if (new Date(quote.expires_at).getTime() <= Date.now()) {
+        quote.status = 'expired';
+        return { success: false, error: 'Withdrawal quote expired' };
+      }
+
+      const quoteGrossNano = BigInt(String(quote.gross_amount_nano));
+      if (quote.network !== 'mainnet') return { success: false, error: 'Only mainnet withdrawals are supported' };
+      if (quoteGrossNano < grossNano || quoteGrossNano > maxNano) {
+        return { success: false, error: 'Withdrawal amount is outside configured limits' };
+      }
+      const userNano = BigInt(String(user.balance_nano ?? gramsToNano(user.balance_gram)));
+      if (userNano < quoteGrossNano) return { success: false, error: 'Insufficient balance' };
+
+      const now = new Date();
+      const startOfUtcDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+      const eligibleToday = withdrawals.filter((item: any) =>
+        item.payout_eligible && new Date(item.created_at).getTime() >= startOfUtcDay.getTime()
+      );
+      const userTotal = eligibleToday
+        .filter((item: any) => Number(item.telegram_id) === params.telegramId)
+        .reduce((sum: bigint, item: any) => sum + BigInt(String(item.amount_nano)), 0n);
+      const globalTotal = eligibleToday.reduce((sum: bigint, item: any) => sum + BigInt(String(item.amount_nano)), 0n);
+      if (userTotal + quoteGrossNano > userDailyNano) return { success: false, error: 'User daily withdrawal limit exceeded' };
+      if (globalTotal + quoteGrossNano > globalDailyNano) return { success: false, error: 'Global daily withdrawal limit exceeded' };
+
+      const amountNano = quoteGrossNano.toString();
+      const newBalanceNano = (userNano - quoteGrossNano).toString();
+      const id = crypto.randomUUID();
+      const memo = generateWithdrawalMemo(user.id);
+      const withdrawal = {
+        id,
+        telegram_id: params.telegramId,
+        wallet_address: quote.wallet_address,
+        amount_nano: amountNano,
+        amount_gram: nanoToGrams(amountNano),
+        fee_nano: String(quote.fee_nano),
+        net_amount_nano: String(quote.net_amount_nano),
+        network: quote.network,
+        payout_eligible: true,
+        quote_id: quote.id,
+        status: 'pending',
+        operation_key: params.operationKey,
+        memo,
+        created_at: now,
+      };
+      user.balance_nano = newBalanceNano;
+      user.balance_gram = nanoToGrams(newBalanceNano);
+      this.saveUser(user);
+      withdrawals.push(withdrawal);
+      this.inMemoryDb.set('withdrawals', withdrawals);
+      quote.status = 'consumed';
+      quote.consumed_withdrawal_id = id;
+      this.recordTransaction({
+        user_id: user.id,
+        operation_key: params.operationKey,
+        withdrawal_id: id,
+        type: 'withdraw',
+        amount: -nanoToGrams(amountNano),
+        amount_nano: `-${amountNano}`,
+        fee_nano: '0',
+        balance_after: user.balance_gram,
+        balance_after_nano: newBalanceNano,
+      });
+      return {
+        success: true,
+        withdrawal,
+        transaction: this.toWithdrawalTransaction(withdrawal),
+        user: this.normalizeUser(user),
+      };
+    }
+
+    return this.withTransaction(async (client) => {
+      // One global lock serializes service-wide daily-limit checks across all server instances.
+      await client.query("SELECT pg_advisory_xact_lock(hashtext('withdrawal-global-daily-limit'))");
+      const quoteRes = await client.query('SELECT * FROM withdrawal_quotes WHERE id = $1 FOR UPDATE', [params.quoteId]);
+      const quote = quoteRes.rows[0];
+      if (!quote) return { success: false, error: 'Withdrawal quote not found' };
+      if (Number(quote.telegram_id) !== params.telegramId) return { success: false, error: 'Withdrawal quote ownership mismatch' };
+
+      const existingForKey = await client.query('SELECT * FROM withdrawals WHERE operation_key = $1', [params.operationKey]);
+      if (existingForKey.rowCount) {
+        const existing = existingForKey.rows[0];
+        if (String(existing.quote_id) !== params.quoteId) {
+          return { success: false, error: 'Idempotency key is already linked to another withdrawal' };
+        }
+        const userRes = await client.query('SELECT * FROM users WHERE telegram_id = $1', [params.telegramId]);
+        return {
+          success: true,
+          withdrawal: existing,
+          transaction: this.toWithdrawalTransaction(existing),
+          user: userRes.rows[0] ? this.normalizeUser(userRes.rows[0]) : undefined,
+        };
+      }
+      if (quote.status === 'consumed' && quote.consumed_withdrawal_id) {
+        const existingRes = await client.query('SELECT * FROM withdrawals WHERE id = $1', [quote.consumed_withdrawal_id]);
+        const userRes = await client.query('SELECT * FROM users WHERE telegram_id = $1', [params.telegramId]);
+        if (!existingRes.rowCount) return { success: false, error: 'Withdrawal quote has no linked withdrawal' };
+        return {
+          success: true,
+          withdrawal: existingRes.rows[0],
+          transaction: this.toWithdrawalTransaction(existingRes.rows[0]),
+          user: userRes.rows[0] ? this.normalizeUser(userRes.rows[0]) : undefined,
+        };
+      }
+      if (quote.status !== 'quoted') return { success: false, error: 'Withdrawal quote is no longer available' };
+      if (new Date(quote.expires_at).getTime() <= Date.now()) {
+        await client.query("UPDATE withdrawal_quotes SET status = 'expired' WHERE id = $1 AND status = 'quoted'", [params.quoteId]);
+        return { success: false, error: 'Withdrawal quote expired' };
+      }
+      if (quote.network !== 'mainnet') return { success: false, error: 'Only mainnet withdrawals are supported' };
+
+      const userRes = await client.query('SELECT * FROM users WHERE telegram_id = $1 FOR UPDATE', [params.telegramId]);
+      if (!userRes.rowCount) return { success: false, error: 'Account not found' };
+      const userRow = userRes.rows[0];
+      const quoteGrossNano = BigInt(String(quote.gross_amount_nano));
+      if (quoteGrossNano < grossNano || quoteGrossNano > maxNano) {
+        return { success: false, error: 'Withdrawal amount is outside configured limits' };
+      }
+      const dailyStart = await client.query("SELECT date_trunc('day', CURRENT_TIMESTAMP AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' AS starts_at");
+      const startOfDay = dailyStart.rows[0].starts_at;
+      const [userDailyRes, globalDailyRes] = await Promise.all([
+        client.query(
+          `SELECT COALESCE(SUM(amount_nano), 0)::text AS total FROM withdrawals
+           WHERE payout_eligible = TRUE AND telegram_id = $1 AND created_at >= $2`,
+          [params.telegramId, startOfDay]
+        ),
+        client.query(
+          `SELECT COALESCE(SUM(amount_nano), 0)::text AS total FROM withdrawals
+           WHERE payout_eligible = TRUE AND created_at >= $1`,
+          [startOfDay]
+        ),
+      ]);
+      if (BigInt(userDailyRes.rows[0].total) + quoteGrossNano > userDailyNano) {
+        return { success: false, error: 'User daily withdrawal limit exceeded' };
+      }
+      if (BigInt(globalDailyRes.rows[0].total) + quoteGrossNano > globalDailyNano) {
+        return { success: false, error: 'Global daily withdrawal limit exceeded' };
+      }
+
+      const currentNano = BigInt(String(userRow.balance_nano));
+      if (currentNano < quoteGrossNano) return { success: false, error: 'Insufficient balance' };
+      const amountNano = quoteGrossNano.toString();
+      const amountGram = nanoToGrams(amountNano);
+      const newBalanceNano = (currentNano - quoteGrossNano).toString();
+      const updatedUserRes = await client.query(
+        `UPDATE users SET balance_nano = $1::numeric,
+          balance_gram = ROUND($1::numeric / 1000000000.0, 9), updated_at = CURRENT_TIMESTAMP
+         WHERE id = $2 RETURNING *`,
+        [newBalanceNano, userRow.id]
+      );
+      const memo = generateWithdrawalMemo(Number(userRow.id));
+      const withdrawalRes = await client.query(
+        `INSERT INTO withdrawals
+          (telegram_id, wallet_address, amount_nano, amount_gram, fee_nano, net_amount_nano, network,
+           payout_eligible, quote_id, status, operation_key, memo)
+         VALUES ($1, $2, $3, $4, $5, $6, 'mainnet', TRUE, $7, 'pending', $8, $9)
+         RETURNING *`,
+        [params.telegramId, quote.wallet_address, amountNano, amountGram, String(quote.fee_nano),
+          String(quote.net_amount_nano), params.quoteId, params.operationKey, memo]
+      );
+      const withdrawal = withdrawalRes.rows[0];
+      await client.query(
+        `INSERT INTO transactions
+          (user_id, operation_key, withdrawal_id, type, amount_nano, fee_nano, balance_after_nano)
+         VALUES ($1, $2, $3, 'withdraw', $4, 0, $5)`,
+        [userRow.id, params.operationKey, withdrawal.id, `-${amountNano}`, newBalanceNano]
+      );
+      await client.query(
+        `UPDATE withdrawal_quotes SET status = 'consumed', consumed_withdrawal_id = $2 WHERE id = $1`,
+        [params.quoteId, withdrawal.id]
+      );
+      return {
+        success: true,
+        withdrawal,
+        transaction: this.toWithdrawalTransaction(withdrawal),
+        user: this.normalizeUser(updatedUserRes.rows[0]),
+      };
+    });
+  }
+
+  private toWithdrawalTransaction(withdrawal: any) {
+    const amountNano = String(withdrawal.amount_nano);
+    return {
+      id: String(withdrawal.id),
+      type: 'withdraw',
+      amountGram: nanoToGrams(amountNano),
+      grossAmountNano: amountNano,
+      feeNano: String(withdrawal.fee_nano),
+      netAmountNano: String(withdrawal.net_amount_nano),
+      status: withdrawal.status,
+      createdAt: new Date(withdrawal.created_at).toISOString(),
+      walletAddress: withdrawal.wallet_address,
+      txHash: withdrawal.tx_hash || undefined,
+    };
+  }
+
+  /** Claim one eligible payout while holding the single signer lease. */
+  async claimNextWithdrawalPayout(workerId: string, leaseMs: number): Promise<any | null> {
+    if (!workerId || workerId.length > 128 || !Number.isSafeInteger(leaseMs) || leaseMs <= 0) return null;
+    if (!this.usesPersistentDatabase()) {
+      const lock = this.inMemoryDb.get('payout_wallet_lock')?.[0];
+      const now = Date.now();
+      if (lock.lease_owner && new Date(lock.lease_expires_at).getTime() > now) return null;
+      const withdrawals = this.inMemoryDb.get('withdrawals') || [];
+      const withdrawal = withdrawals
+        .filter((item: any) => item.payout_eligible &&
+          (item.status === 'pending' || (item.status === 'processing' && new Date(item.payout_lease_expires_at || 0).getTime() <= now)))
+        .sort((a: any, b: any) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())[0];
+      if (!withdrawal) {
+        lock.lease_owner = null;
+        lock.lease_expires_at = null;
+        return null;
+      }
+      lock.fencing_token += 1;
+      lock.lease_owner = workerId;
+      lock.lease_expires_at = new Date(now + leaseMs);
+      withdrawal.status = 'processing';
+      withdrawal.payout_lease_owner = workerId;
+      withdrawal.payout_lease_expires_at = lock.lease_expires_at;
+      withdrawal.payout_fencing_token = lock.fencing_token;
+      withdrawal.payout_attempt_count = Number(withdrawal.payout_attempt_count || 0) + 1;
+      withdrawal.payout_last_attempt_at = new Date(now);
+      return {
+        withdrawal: { ...withdrawal },
+        fencingToken: lock.fencing_token,
+        needsReconciliation: Boolean(withdrawal.signed_payload_ciphertext),
+      };
+    }
+
+    return this.withTransaction(async (client) => {
+      const lockRes = await client.query('SELECT * FROM payout_wallet_locks WHERE id = 1 FOR UPDATE');
+      if (!lockRes.rowCount) throw new Error('Payout wallet lock is not initialized');
+      const lock = lockRes.rows[0];
+      if (lock.lease_owner && new Date(lock.lease_expires_at).getTime() > Date.now()) return null;
+      const selected = await client.query(
+        `SELECT * FROM withdrawals
+          WHERE payout_eligible = TRUE AND network = 'mainnet'
+            AND (status = 'pending' OR (status = 'processing' AND payout_lease_expires_at <= CURRENT_TIMESTAMP))
+          ORDER BY created_at ASC FOR UPDATE SKIP LOCKED LIMIT 1`
+      );
+      if (!selected.rowCount) {
+        await client.query('UPDATE payout_wallet_locks SET lease_owner = NULL, lease_expires_at = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = 1');
+        return null;
+      }
+      const tokenRes = await client.query(
+        `UPDATE payout_wallet_locks SET lease_owner = $1, lease_expires_at = CURRENT_TIMESTAMP + ($2 * INTERVAL '1 millisecond'),
+             fencing_token = fencing_token + 1, updated_at = CURRENT_TIMESTAMP
+          WHERE id = 1 RETURNING fencing_token, lease_expires_at`, [workerId, leaseMs]
+      );
+      const lockUpdate = tokenRes.rows[0];
+      const withdrawalRes = await client.query(
+        `UPDATE withdrawals SET status = 'processing', payout_lease_owner = $1, payout_lease_expires_at = $2,
+             payout_fencing_token = $3, payout_attempt_count = payout_attempt_count + 1,
+             payout_last_attempt_at = CURRENT_TIMESTAMP
+          WHERE id = $4 RETURNING *`,
+        [workerId, lockUpdate.lease_expires_at, lockUpdate.fencing_token, selected.rows[0].id]
+      );
+      const withdrawal = withdrawalRes.rows[0];
+      return { withdrawal, fencingToken: Number(lockUpdate.fencing_token), needsReconciliation: Boolean(withdrawal.signed_payload_ciphertext) };
+    });
+  }
+
+  async persistSignedWithdrawalPayload(params: {
+    withdrawalId: string; workerId: string; fencingToken: number; ciphertext: string | Buffer;
+    iv: string | Buffer; tag: string | Buffer; seqno: number; validUntil: number; messageHash: string;
+  }): Promise<boolean> {
+    if (!this.usesPersistentDatabase()) {
+      const lock = this.inMemoryDb.get('payout_wallet_lock')?.[0];
+      const withdrawal = (this.inMemoryDb.get('withdrawals') || []).find((item: any) => item.id === params.withdrawalId);
+      if (!withdrawal || !this.hasPayoutFence(lock, withdrawal, params.workerId, params.fencingToken)) return false;
+      if (withdrawal.signed_payload_ciphertext) return false;
+      Object.assign(withdrawal, {
+        signed_payload_ciphertext: params.ciphertext, signed_payload_iv: params.iv, signed_payload_tag: params.tag,
+        payout_seqno: params.seqno, payout_valid_until: params.validUntil, payout_message_hash: params.messageHash,
+      });
+      return true;
+    }
+    return this.withTransaction(async (client) => {
+      const result = await client.query(
+        `UPDATE withdrawals w SET signed_payload_ciphertext = $1, signed_payload_iv = $2, signed_payload_tag = $3,
+             payout_seqno = $4, payout_valid_until = $5, payout_message_hash = $6
+          FROM payout_wallet_locks l
+          WHERE w.id = $7 AND w.status = 'processing' AND w.payout_lease_owner = $8
+            AND w.payout_fencing_token = $9 AND w.signed_payload_ciphertext IS NULL
+            AND l.id = 1 AND l.lease_owner = $8 AND l.fencing_token = $9 AND l.lease_expires_at > CURRENT_TIMESTAMP`,
+        [params.ciphertext, params.iv, params.tag, params.seqno, params.validUntil, params.messageHash,
+          params.withdrawalId, params.workerId, params.fencingToken]
+      );
+      return result.rowCount === 1;
+    });
+  }
+
+  async finalizeWithdrawalPayout(params: {
+    withdrawalId: string; workerId: string; fencingToken: number; finalized: boolean;
+    destination: string; amountNano: string; txHash: string; actualFeeNano: string;
+  }): Promise<{ success: boolean; status?: string; error?: string }> {
+    if (!params.finalized) return { success: false, error: 'Payout transfer is not finalized' };
+    let fee: bigint;
+    try { fee = BigInt(params.actualFeeNano); } catch { return { success: false, error: 'Invalid actual fee' }; }
+    if (fee < 0n || !params.txHash) return { success: false, error: 'Invalid finalized transaction evidence' };
+    if (!this.usesPersistentDatabase()) {
+      const lock = this.inMemoryDb.get('payout_wallet_lock')?.[0];
+      const withdrawal = (this.inMemoryDb.get('withdrawals') || []).find((item: any) => item.id === params.withdrawalId);
+      if (!withdrawal) return { success: false, error: 'Withdrawal not found' };
+      if (withdrawal.status === 'completed' && withdrawal.payout_tx_hash === params.txHash) return { success: true, status: 'completed' };
+      if (!this.hasPayoutFence(lock, withdrawal, params.workerId, params.fencingToken)) return { success: false, error: 'Payout lease is stale' };
+      if (params.destination !== withdrawal.wallet_address || BigInt(params.amountNano) !== BigInt(withdrawal.net_amount_nano)) {
+        return { success: false, error: 'Finalized transfer does not match the quoted payout' };
+      }
+      Object.assign(withdrawal, {
+        status: 'completed', payout_tx_hash: params.txHash, tx_hash: params.txHash,
+        payout_actual_fee_nano: fee.toString(), payout_reconciled_at: new Date(),
+        signed_payload_ciphertext: null, signed_payload_iv: null, signed_payload_tag: null,
+        payout_lease_owner: null, payout_lease_expires_at: null,
+      });
+      lock.lease_owner = null; lock.lease_expires_at = null;
+      return { success: true, status: 'completed' };
+    }
+    return this.withTransaction(async (client) => {
+      const result = await client.query(
+        `UPDATE withdrawals w SET status = 'completed', tx_hash = $1, payout_actual_fee_nano = $2,
+             payout_reconciled_at = CURRENT_TIMESTAMP, signed_payload_ciphertext = NULL, signed_payload_iv = NULL,
+             signed_payload_tag = NULL, payout_lease_owner = NULL, payout_lease_expires_at = NULL
+          FROM payout_wallet_locks l
+          WHERE w.id = $3 AND w.status = 'processing' AND w.wallet_address = $4 AND w.net_amount_nano = $5::numeric
+            AND w.payout_lease_owner = $6 AND w.payout_fencing_token = $7
+            AND l.id = 1 AND l.lease_owner = $6 AND l.fencing_token = $7 AND l.lease_expires_at > CURRENT_TIMESTAMP
+          RETURNING w.id`,
+        [params.txHash, fee.toString(), params.withdrawalId, params.destination, params.amountNano, params.workerId, params.fencingToken]
+      );
+      if (result.rowCount !== 1) {
+        const existing = await client.query('SELECT status, tx_hash FROM withdrawals WHERE id = $1', [params.withdrawalId]);
+        if (existing.rows[0]?.status === 'completed' && existing.rows[0]?.tx_hash === params.txHash) {
+          return { success: true, status: 'completed' };
+        }
+        return { success: false, error: 'Finalized transfer or payout lease did not match' };
+      }
+      await client.query('UPDATE payout_wallet_locks SET lease_owner = NULL, lease_expires_at = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = 1 AND fencing_token = $1', [params.fencingToken]);
+      return { success: true, status: 'completed' };
+    });
+  }
+
+  async refundFailedWithdrawal(params: {
+    withdrawalId: string; workerId: string; fencingToken: number; finalizedFailure: boolean; evidenceHash: string;
+  }): Promise<{ success: boolean; refunded?: boolean; error?: string }> {
+    if (!params.finalizedFailure || !params.evidenceHash) return { success: false, error: 'A finalized failure proof is required' };
+    if (!this.usesPersistentDatabase()) {
+      const lock = this.inMemoryDb.get('payout_wallet_lock')?.[0];
+      const withdrawal = (this.inMemoryDb.get('withdrawals') || []).find((item: any) => item.id === params.withdrawalId);
+      if (!withdrawal) return { success: false, error: 'Withdrawal not found' };
+      const txs = this.inMemoryDb.get('transactions') || [];
+      if (withdrawal.status === 'failed' && txs.some((tx: any) => tx.withdrawal_id === withdrawal.id && tx.type === 'withdrawal_refund')) {
+        return { success: true, refunded: false };
+      }
+      if (!this.hasPayoutFence(lock, withdrawal, params.workerId, params.fencingToken)) return { success: false, error: 'Payout lease is stale' };
+      const user = this.getUserByTelegramId(Number(withdrawal.telegram_id));
+      if (!user) return { success: false, error: 'Account not found' };
+      const gross = BigInt(String(withdrawal.amount_nano));
+      const restored = (BigInt(String(user.balance_nano)) + gross).toString();
+      user.balance_nano = restored; user.balance_gram = nanoToGrams(restored); this.saveUser(user);
+      const refundKey = `withdrawal-refund:${withdrawal.id}`;
+      this.recordTransaction({
+        user_id: user.id, operation_key: refundKey, withdrawal_id: withdrawal.id,
+        type: 'withdrawal_refund', amount_nano: gross.toString(), fee_nano: '0', balance_after_nano: restored,
+        amount: nanoToGrams(gross.toString()), balance_after: user.balance_gram, evidence_hash: params.evidenceHash,
+      });
+      withdrawal.status = 'failed'; withdrawal.payout_failure_evidence_hash = params.evidenceHash;
+      withdrawal.signed_payload_ciphertext = null; withdrawal.signed_payload_iv = null; withdrawal.signed_payload_tag = null;
+      withdrawal.payout_lease_owner = null; withdrawal.payout_lease_expires_at = null;
+      lock.lease_owner = null; lock.lease_expires_at = null;
+      return { success: true, refunded: true };
+    }
+    return this.withTransaction(async (client) => {
+      const withdrawalRes = await client.query(
+        `SELECT w.*, l.lease_owner AS wallet_lease_owner, l.fencing_token AS wallet_fencing_token,
+                l.lease_expires_at AS wallet_lease_expires_at
+           FROM withdrawals w CROSS JOIN payout_wallet_locks l
+          WHERE w.id = $1 AND l.id = 1 FOR UPDATE OF w, l`, [params.withdrawalId]
+      );
+      if (!withdrawalRes.rowCount) return { success: false, error: 'Withdrawal not found' };
+      const withdrawal = withdrawalRes.rows[0];
+      if (withdrawal.status === 'failed') {
+        const prior = await client.query("SELECT id FROM transactions WHERE withdrawal_id = $1 AND type = 'withdrawal_refund'", [params.withdrawalId]);
+        return prior.rowCount ? { success: true, refunded: false } : { success: false, error: 'Failed withdrawal has no refund record' };
+      }
+      const validFence = withdrawal.status === 'processing' && withdrawal.payout_lease_owner === params.workerId &&
+        Number(withdrawal.payout_fencing_token) === params.fencingToken && withdrawal.wallet_lease_owner === params.workerId &&
+        Number(withdrawal.wallet_fencing_token) === params.fencingToken && new Date(withdrawal.wallet_lease_expires_at).getTime() > Date.now();
+      if (!validFence) return { success: false, error: 'Payout lease is stale' };
+      const userRes = await client.query('SELECT * FROM users WHERE telegram_id = $1 FOR UPDATE', [withdrawal.telegram_id]);
+      if (!userRes.rowCount) return { success: false, error: 'Account not found' };
+      const gross = String(withdrawal.amount_nano);
+      const updatedUser = await client.query(
+        `UPDATE users SET balance_nano = balance_nano + $1::numeric,
+             balance_gram = ROUND((balance_nano + $1::numeric) / 1000000000.0, 9), updated_at = CURRENT_TIMESTAMP
+          WHERE id = $2 RETURNING *`, [gross, userRes.rows[0].id]
+      );
+      await client.query(
+        `INSERT INTO transactions (user_id, operation_key, withdrawal_id, type, amount_nano, fee_nano, balance_after_nano)
+         VALUES ($1, $2, $3, 'withdrawal_refund', $4, 0, $5)`,
+        [userRes.rows[0].id, `withdrawal-refund:${withdrawal.id}`, withdrawal.id, gross, String(updatedUser.rows[0].balance_nano)]
+      );
+      await client.query(
+        `UPDATE withdrawals SET status = 'failed', payout_reconciled_at = CURRENT_TIMESTAMP, payout_failure_evidence_hash = $2,
+             payout_lease_owner = NULL, payout_lease_expires_at = NULL, signed_payload_ciphertext = NULL,
+             signed_payload_iv = NULL, signed_payload_tag = NULL WHERE id = $1`, [withdrawal.id, params.evidenceHash]
+      );
+      await client.query('UPDATE payout_wallet_locks SET lease_owner = NULL, lease_expires_at = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = 1 AND fencing_token = $1', [params.fencingToken]);
+      return { success: true, refunded: true };
+    });
+  }
+
+  private hasPayoutFence(lock: any, withdrawal: any, workerId: string, fencingToken: number): boolean {
+    return Boolean(lock && withdrawal && lock.lease_owner === workerId && withdrawal.payout_lease_owner === workerId &&
+      Number(lock.fencing_token) === fencingToken && Number(withdrawal.payout_fencing_token) === fencingToken &&
+      new Date(lock.lease_expires_at).getTime() > Date.now());
   }
 
   /**
@@ -1113,10 +1647,10 @@ export class DatabasePool {
         user_id: user.id,
         operation_key: opKey,
         type: 'withdraw',
-        amount: amountGram,
+        amount: -amountGram,
         fee: 0,
         balance_after: user.balance_gram,
-        amount_nano: amountNano,
+        amount_nano: `-${amountNano}`,
         fee_nano: '0',
         balance_after_nano: newBalanceNano,
       });
@@ -1188,7 +1722,7 @@ export class DatabasePool {
       const updatedUserRes = await client.query(
         `UPDATE users
             SET balance_nano = $1::numeric,
-                balance_gram = ($1::numeric / 1000000000.0),
+                balance_gram = ROUND($1::numeric / 1000000000.0, 9),
                 updated_at = CURRENT_TIMESTAMP
           WHERE id = $2
         RETURNING *`,
@@ -1206,12 +1740,12 @@ export class DatabasePool {
         [telegramId, walletAddress, amountNano, amountGram, opKey, memo]
       );
 
-      // 5. Insert into transactions ledger
+      // 5. Insert into transactions ledger (debit stored as negative nano per ledger invariants)
       await client.query(
         `INSERT INTO transactions
           (user_id, operation_key, type, amount_nano, fee_nano, balance_after_nano)
          VALUES ($1, $2, 'withdraw', $3, 0, $4)`,
-        [userRow.id, opKey, amountNano, newBalanceNano]
+        [userRow.id, opKey, `-${amountNano}`, newBalanceNano]
       );
 
       const withdrawal = withdrawalRes.rows[0];
@@ -1356,7 +1890,7 @@ export class DatabasePool {
       loser.level = Math.floor(loser.xp / 250) + 1;
 
       await client.query(
-        `UPDATE users SET balance_nano = $1, balance_gram = ($1::numeric / 1000000000.0), total_winnings = $2, total_volume = $3,
+        `UPDATE users SET balance_nano = $1, balance_gram = ROUND($1::numeric / 1000000000.0, 9), total_winnings = $2, total_volume = $3,
           total_matches = $4, wins = $5, current_streak = $6, best_streak = $7,
           xp = $8, level = $9, updated_at = CURRENT_TIMESTAMP WHERE id = $10`,
         [winnerNewBalanceNano, winner.total_winnings, winner.total_volume, winner.total_matches,
@@ -1527,7 +2061,7 @@ export class DatabasePool {
 
       for (const { player } of players) {
         await client.query(
-          `UPDATE users SET balance_nano = $1, balance_gram = ($1::numeric / 1000000000.0), total_volume = $2, total_matches = $3,
+          `UPDATE users SET balance_nano = $1, balance_gram = ROUND($1::numeric / 1000000000.0, 9), total_volume = $2, total_matches = $3,
             draws = $4, xp = $5, level = $6, updated_at = CURRENT_TIMESTAMP WHERE id = $7`,
           [player.balance_nano, player.total_volume, player.total_matches, player.draws, player.xp, player.level, player.id]
         );
@@ -1606,7 +2140,7 @@ export class DatabasePool {
       const updated = await client.query(
         `UPDATE users
             SET balance_nano = balance_nano + $1::numeric,
-                balance_gram = (balance_nano + $1::numeric) / 1000000000.0,
+                balance_gram = ROUND((balance_nano + $1::numeric) / 1000000000.0, 9),
                 updated_at = CURRENT_TIMESTAMP
           WHERE telegram_id = $2
         RETURNING *`,
@@ -1661,7 +2195,7 @@ export class DatabasePool {
       const playerIds = [match.p1_id, match.p2_id].filter(Boolean);
       if (playerIds.length > 0) {
         const users = await client.query(
-          'SELECT * FROM users WHERE id = ANY($1::int[]) ORDER BY id FOR UPDATE',
+          'SELECT * FROM users WHERE id = ANY($1::bigint[]) ORDER BY id FOR UPDATE',
           [playerIds]
         );
         const stakeNano = gramsToNano(Number(match.stake_amount));
@@ -1675,7 +2209,7 @@ export class DatabasePool {
           );
           if (res.rowCount && res.rowCount > 0) {
             const updated = await client.query(
-              `UPDATE users SET balance_nano = balance_nano + $1::numeric, balance_gram = (balance_nano + $1::numeric) / 1000000000.0, updated_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING *`,
+              `UPDATE users SET balance_nano = balance_nano + $1::numeric, balance_gram = ROUND((balance_nano + $1::numeric) / 1000000000.0, 9), updated_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING *`,
               [stakeNano, user.id]
             );
             await client.query(

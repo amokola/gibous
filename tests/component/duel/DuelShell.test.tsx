@@ -168,4 +168,61 @@ describe('DuelShell Component Tests', () => {
 
     expect(screen.getByText(/MATCH ENDED IN A DRAW!/i)).toBeInTheDocument();
   });
+
+  it('should display simultaneous waiting banner for spectators during RPS', () => {
+    const duelState = createMockDuelState({
+      room: { code: 'RPS1', gameType: 'rps', status: 'playing', version: 1 },
+      myRole: null, // Spectator
+      activePlayer: 'all' as any,
+      players: {
+        p1: { id: 'p1', name: 'Alice', color: 'green', isReady: true, isConnected: true },
+        p2: { id: 'p2', name: 'Bob', color: 'blue', isReady: true, isConnected: true },
+      },
+      gameState: {
+        p1HasChosen: false,
+        p2HasChosen: false,
+      },
+    });
+
+    const { rerender } = render(
+      <DuelShell
+        duelState={duelState}
+        onLeave={vi.fn()}
+        onSendEmote={vi.fn()}
+        opponentDisconnected={false}
+        opponentReconnected={false}
+        disconnectTimeoutMs={45000}
+        floatingEmotes={[]}
+      >
+        <div>Arena</div>
+      </DuelShell>
+    );
+
+    expect(screen.getByText(/WAITING FOR PLAYERS/i)).toBeInTheDocument();
+
+    // Now P1 chooses, still waiting for Bob
+    const p1ChosenState = createMockDuelState({
+      ...duelState,
+      gameState: {
+        p1HasChosen: true,
+        p2HasChosen: false,
+      },
+    });
+
+    rerender(
+      <DuelShell
+        duelState={p1ChosenState}
+        onLeave={vi.fn()}
+        onSendEmote={vi.fn()}
+        opponentDisconnected={false}
+        opponentReconnected={false}
+        disconnectTimeoutMs={45000}
+        floatingEmotes={[]}
+      >
+        <div>Arena</div>
+      </DuelShell>
+    );
+
+    expect(screen.getByText(/WAITING FOR BOB\.\.\./i)).toBeInTheDocument();
+  });
 });

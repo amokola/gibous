@@ -235,7 +235,12 @@ describe('Server-Generated Deposit and Withdrawal Memos', () => {
   });
 
   describe('Withdrawal Memo Generation and Storage', () => {
-    it('generates unique wit_<users.id>_<randomHex> and records in withdrawals', async () => {
+    it('generates unique wit_<users.id>_<randomHex> for a confirmed server quote', async () => {
+      vi.stubEnv('PAYOUT_NETWORK', 'mainnet');
+      vi.stubEnv('PAYOUT_MIN_WITHDRAWAL_NANO', '100000000');
+      vi.stubEnv('PAYOUT_MAX_WITHDRAWAL_NANO', '5000000000');
+      vi.stubEnv('PAYOUT_USER_DAILY_LIMIT_NANO', '6000000000');
+      vi.stubEnv('PAYOUT_GLOBAL_DAILY_LIMIT_NANO', '20000000000');
       const telegramId = 880099;
       const user = await storage.getOrCreateUser({ id: telegramId, first_name: 'WithdrawerMemo' });
 
@@ -245,13 +250,24 @@ describe('Server-Generated Deposit and Withdrawal Memos', () => {
       inMemUser.balance_gram = 10;
       db.saveUser(inMemUser);
 
-      const result = await storage.requestWithdrawal({
+      const quote = await storage.createWithdrawalQuote({
         telegramId,
         walletAddress: 'UQATZc4GlaIi1yqeAQ8RwG_JpJN27ZdgFrEtVM1UZkOnT8Cz',
-        amountNano: '2000000000', // 2 GRAM
+        grossAmountNano: '2000000000', // 2 GRAM gross
+        feeNano: '1000000',
+        network: 'mainnet',
+      });
+      expect(quote.success).toBe(true);
+      if (!quote.success) return;
+
+      const result = await storage.confirmWithdrawalQuote({
+        telegramId,
+        quoteId: quote.quote.quoteId,
+        operationKey: 'memo-test-confirmation',
       });
 
       expect(result.success).toBe(true);
+      if (!result.success) return;
       expect(result.withdrawal).toBeDefined();
       expect(result.withdrawal.memo).toBeDefined();
 

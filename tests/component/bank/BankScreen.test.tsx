@@ -116,7 +116,7 @@ describe('BankScreen Component with TON Connect & Real GRAM', () => {
             }),
           ],
           network: '-239',
-          from: mockAddress,
+          validUntil: expect.any(Number),
         })
       );
     });
@@ -197,29 +197,40 @@ describe('BankScreen Component with TON Connect & Real GRAM', () => {
     expect(screen.getByText(/Confirming on TON blockchain/i)).toBeInTheDocument();
   });
 
-  it('submits withdrawal when destination and amount are valid', async () => {
+  it('shows the server fee quote before confirming a mainnet Gram withdrawal', async () => {
     mockAddress = 'EQD48x9_ton_player_wallet_address_12345';
     mockWallet = { device: { appName: 'Telegram Wallet' }, account: { address: mockAddress } };
 
-    const submitWithdrawal = vi.fn();
-    render(<BankScreen balance={5.0} onSubmitWithdrawal={submitWithdrawal} />);
+    const requestQuote = vi.fn().mockResolvedValue({
+      quoteId: 'f4b12ac8-1c11-4c4a-af8e-11dd9ba0a712',
+      walletAddress: mockAddress,
+      grossAmountNano: '1000000000',
+      feeNano: '1000000',
+      netAmountNano: '999000000',
+      network: 'mainnet',
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    });
+    const confirmWithdrawal = vi.fn().mockResolvedValue({ id: 'withdrawal-1', status: 'pending' });
+    render(<BankScreen balance={5.0} onRequestWithdrawalQuote={requestQuote} onConfirmWithdrawal={confirmWithdrawal} />);
 
     // Open withdraw panel
     const withdrawBtn = screen.getByRole('button', { name: 'Withdraw' });
     fireEvent.click(withdrawBtn);
 
-    // Click confirm withdraw button
-    const confirmWithdrawBtn = screen.getByRole('button', { name: /Withdraw 1 GRAM/i });
-    fireEvent.click(confirmWithdrawBtn);
+    fireEvent.click(screen.getByRole('button', { name: /Get withdrawal quote/i }));
 
     await waitFor(() => {
-      expect(submitWithdrawal).toHaveBeenCalledWith({
+      expect(requestQuote).toHaveBeenCalledWith({
         walletAddress: mockAddress,
         amountNano: '1000000000',
       });
     });
-
-    expect(await screen.findByText(/Withdrawal of 1 GRAM submitted/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Review your Gram withdrawal/i)).toBeInTheDocument();
+    expect(screen.getByText(/0\.001 GRAM/i)).toBeInTheDocument();
+    expect(confirmWithdrawal).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: /Confirm withdrawal/i }));
+    await waitFor(() => expect(confirmWithdrawal).toHaveBeenCalledWith('f4b12ac8-1c11-4c4a-af8e-11dd9ba0a712'));
+    expect(await screen.findByText(/is pending on TON Mainnet/i)).toBeInTheDocument();
   });
 });
 

@@ -39,7 +39,7 @@ export const RollDicePayloadSchema = z.object({
 
 export const DropDiscPayloadSchema = z.object({
   roomCode: z.string(),
-  column: z.number().min(0).max(6),
+  column: z.number().int().min(0).max(6),
 });
 
 export const ChooseRPSPayloadSchema = z.object({
@@ -95,10 +95,11 @@ export const SubmitDepositPayloadSchema = z.object({
   network: z.enum(['mainnet', 'testnet']),
 });
 
-export const SubmitWithdrawalPayloadSchema = z.object({
+export const RequestWithdrawalQuotePayloadSchema = z.object({
   walletAddress: z.string().trim().min(10).max(128),
   amountNano: z.string().regex(/^\d+$/, 'amountNano must be an integer string').max(32),
-});
+}).strict();
+export const ConfirmWithdrawalPayloadSchema = z.object({ quoteId: z.string().uuid() }).strict();
 
 export const JoinQueuePayloadSchema = z.object({
   gameType: GameTypeSchema.optional(),
@@ -131,7 +132,8 @@ export const ClientMessageSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('CREATE_DEPOSIT_INTENT'), requestId: RequestIdSchema.optional(), payload: CreateDepositIntentPayloadSchema }),
   z.object({ type: z.literal('CANCEL_DEPOSIT_INTENT'), requestId: RequestIdSchema.optional(), payload: CancelDepositIntentPayloadSchema }),
   z.object({ type: z.literal('SUBMIT_DEPOSIT'), requestId: RequestIdSchema.optional(), payload: SubmitDepositPayloadSchema }),
-  z.object({ type: z.literal('SUBMIT_WITHDRAWAL'), requestId: RequestIdSchema.optional(), payload: SubmitWithdrawalPayloadSchema }),
+  z.object({ type: z.literal('REQUEST_WITHDRAWAL_QUOTE'), requestId: RequestIdSchema.optional(), payload: RequestWithdrawalQuotePayloadSchema }),
+  z.object({ type: z.literal('CONFIRM_WITHDRAWAL'), requestId: RequestIdSchema.optional(), payload: ConfirmWithdrawalPayloadSchema }),
   z.object({ type: z.literal('JOIN_QUEUE'), requestId: RequestIdSchema.optional(), payload: JoinQueuePayloadSchema }),
   z.object({ type: z.literal('CANCEL_QUEUE'), requestId: RequestIdSchema.optional(), payload: z.record(z.string(), z.unknown()).optional() }),
 ]);
@@ -276,14 +278,31 @@ export const TransactionConfirmedPayloadSchema = z.object({
   memo: z.string().optional(),
 });
 
+export const WithdrawalQuotePayloadSchema = z.object({
+  quoteId: z.string().uuid(), walletAddress: z.string(), grossAmountNano: z.string(),
+  feeNano: z.string(), netAmountNano: z.string(), network: z.literal('mainnet'), expiresAt: z.string(),
+});
+export const WithdrawalStatusPayloadSchema = z.object({
+  id: z.string(), status: z.enum(['pending', 'processing', 'completed', 'failed']),
+  grossAmountNano: z.string(), feeNano: z.string(), netAmountNano: z.string(),
+  amountGram: z.number(), walletAddress: z.string(), createdAt: z.string(), txHash: z.string().optional(),
+});
+
 export const PongPayloadSchema = z.object({
   timestamp: z.number(),
   clientTimestamp: z.number(),
 });
 
+export const AuthOkPayloadSchema = z.object({
+  telegramId: z.number(),
+  user: z.record(z.string(), z.unknown()),
+  activeRoom: RoomStatePayloadSchema.optional(),
+});
+export type AuthOkPayload = z.infer<typeof AuthOkPayloadSchema>;
+
 // Server Message Union Schema
 export const ServerMessageSchema = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('AUTH_OK'), requestId: z.string().optional(), payload: z.object({ telegramId: z.number(), user: z.record(z.string(), z.unknown()) }) }),
+  z.object({ type: z.literal('AUTH_OK'), requestId: z.string().optional(), payload: AuthOkPayloadSchema }),
   z.object({ type: z.literal('ACCOUNT_UPDATED'), requestId: z.string().optional(), payload: z.object({ user: z.record(z.string(), z.unknown()) }) }),
   z.object({ type: z.literal('ROOM_STATE'), requestId: z.string().optional(), payload: RoomStatePayloadSchema }),
   z.object({ type: z.literal('GAME_START'), requestId: z.string().optional(), payload: RoomStatePayloadSchema }),
@@ -308,5 +327,8 @@ export const ServerMessageSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('DEPOSIT_INTENT_CANCELLED'), requestId: z.string().optional(), payload: CancelDepositIntentPayloadSchema }),
   z.object({ type: z.literal('TRANSACTION_PENDING'), requestId: z.string().optional(), payload: PendingTransactionSchema }),
   z.object({ type: z.literal('TRANSACTION_CONFIRMED'), requestId: z.string().optional(), payload: TransactionConfirmedPayloadSchema }),
+  z.object({ type: z.literal('WITHDRAWAL_QUOTED'), requestId: z.string().optional(), payload: WithdrawalQuotePayloadSchema }),
+  z.object({ type: z.literal('WITHDRAWAL_PENDING'), requestId: z.string().optional(), payload: WithdrawalStatusPayloadSchema }),
+  z.object({ type: z.literal('WITHDRAWAL_UPDATED'), requestId: z.string().optional(), payload: WithdrawalStatusPayloadSchema }),
   z.object({ type: z.literal('REMATCH_FAILED'), requestId: z.string().optional(), payload: RematchFailedPayloadSchema }),
 ]);

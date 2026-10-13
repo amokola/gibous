@@ -119,6 +119,30 @@ export const DuelShell: React.FC<DuelShellProps> = ({
     }
 
     if (isSimultaneous) {
+      if (isSpectator) {
+        const p1HasChosen = Boolean(duelState.gameState?.p1HasChosen);
+        const p2HasChosen = Boolean(duelState.gameState?.p2HasChosen);
+        if (p1HasChosen && !p2HasChosen) {
+          return {
+            bg: 'bg-[#fff9c4] text-[#854d0e]',
+            dot: 'bg-[#854d0e]',
+            text: `🔵 WAITING FOR ${p2Name.toUpperCase()}...`,
+          };
+        }
+        if (p2HasChosen && !p1HasChosen) {
+          return {
+            bg: 'bg-[#fff9c4] text-[#854d0e]',
+            dot: 'bg-[#854d0e]',
+            text: `🔵 WAITING FOR ${p1Name.toUpperCase()}...`,
+          };
+        }
+        return {
+          bg: 'bg-[#fff9c4] text-[#854d0e]',
+          dot: 'bg-[#854d0e] animate-pulse',
+          text: 'WAITING FOR PLAYERS',
+        };
+      }
+
       const hasChosen = myRole === 'p1' ? duelState.gameState?.p1HasChosen : myRole === 'p2' ? duelState.gameState?.p2HasChosen : false;
       if (hasChosen) {
         return {
@@ -143,6 +167,13 @@ export const DuelShell: React.FC<DuelShellProps> = ({
     }
 
     if (isSpectator) {
+      if ((activePlayer as unknown) === 'all') {
+        return {
+          bg: 'bg-[#fff9c4] text-[#854d0e]',
+          dot: 'bg-[#854d0e] animate-pulse',
+          text: 'WAITING FOR PLAYERS',
+        };
+      }
       const activeName = activePlayer === 'p1' ? p1Name : p2Name;
       return {
         bg: 'bg-[#fff9c4] text-[#854d0e]',
