@@ -40,8 +40,6 @@ export interface OpenRoomSummary {
   createdAt: number;
 }
 
-type StakeFilter = 'any' | 'up-to-1' | '1-to-5' | '5-to-10' | 'over-10';
-
 interface LobbyScreenProps {
   selectedGame: GameTitle;
   onSelectGame: (game: GameTitle) => void;
@@ -78,7 +76,8 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
   const [openRooms, setOpenRooms] = useState<OpenRoomSummary[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [gameFilter, setGameFilter] = useState<GameTitle>(selectedGame);
-  const [stakeFilter, setStakeFilter] = useState<StakeFilter>('any');
+  const [minStakeFilter, setMinStakeFilter] = useState('');
+  const [maxStakeFilter, setMaxStakeFilter] = useState('');
   const [quickJoinCode, setQuickJoinCode] = useState('');
   const [showRulesDrawer, setShowRulesDrawer] = useState(false);
   const [customStake, setCustomStake] = useState<number>(initialStake || settings?.winningAmount || 0.5);
@@ -208,6 +207,20 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
     setTimeout(() => setCopiedCode(false), 2000);
   };
 
+  const minStake = minStakeFilter === '' ? undefined : Number(minStakeFilter);
+  const maxStake = maxStakeFilter === '' ? undefined : Number(maxStakeFilter);
+  const invalidMinStake =
+    minStake !== undefined &&
+    (!Number.isFinite(minStake) || minStake < MIN_STAKE || minStake > MAX_STAKE);
+  const invalidMaxStake =
+    maxStake !== undefined &&
+    (!Number.isFinite(maxStake) || maxStake < MIN_STAKE || maxStake > MAX_STAKE);
+  const invalidStakeRange =
+    minStake !== undefined &&
+    maxStake !== undefined &&
+    minStake > maxStake;
+  const invalidStakeFilter = invalidMinStake || invalidMaxStake || invalidStakeRange;
+
   // Filtered rooms list for search
   const filteredRooms = useMemo(() => {
     return openRooms.filter((room) => {
@@ -215,18 +228,12 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
         !searchQuery.trim() ||
         room.hostName.toLowerCase().includes(searchQuery.toLowerCase().trim());
       const matchesGame = room.gameType === gameFilter;
-      const matchesStake = (() => {
-        switch (stakeFilter) {
-          case 'up-to-1': return room.stakeAmount <= 1;
-          case '1-to-5': return room.stakeAmount > 1 && room.stakeAmount <= 5;
-          case '5-to-10': return room.stakeAmount > 5 && room.stakeAmount <= 10;
-          case 'over-10': return room.stakeAmount > 10;
-          default: return true;
-        }
-      })();
+      const matchesStake =
+        (minStake === undefined || room.stakeAmount >= minStake) &&
+        (maxStake === undefined || room.stakeAmount <= maxStake);
       return matchesSearch && matchesGame && matchesStake;
     });
-  }, [openRooms, searchQuery, gameFilter, stakeFilter]);
+  }, [openRooms, searchQuery, gameFilter, minStake, maxStake]);
 
   const hasRoomsForGame = openRooms.some((room) => room.gameType === gameFilter);
 
@@ -237,7 +244,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
   const drawRefund = breakdown.drawRefundPerPlayer;
 
   return (
-    <div className="w-full max-w-[420px] mx-auto h-full min-h-0 flex flex-col p-3 sm:p-4 select-none animate-fade-in pb-4 bg-[#fbfaf7] text-[#1a1a1a]">
+    <div className="w-full max-w-[420px] mx-auto h-full min-h-0 flex flex-col p-3 sm:p-4 select-none animate-fade-in pb-4 bg-game-paper-soft text-game-ink-black">
       {/* Top Header Bar */}
       <header className="w-full">
         <div className="flex items-center justify-between mb-3 px-1">
@@ -245,7 +252,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
             type="button"
             onClick={onBack}
             aria-label="Back to home"
-            className="p-2 bg-white hover:bg-[#f2efe9] border-2 border-black rounded-none text-[#1a1a1a] transition-colors sketch-shadow-xs active:translate-x-[1px] active:translate-y-[1px] active:shadow-none cursor-pointer"
+            className="p-2 bg-game-surface hover:bg-game-paper border-2 border-game-ink-black rounded-none text-game-ink-black transition-colors sketch-shadow-xs active:translate-x-[1px] active:translate-y-[1px] active:shadow-none cursor-pointer"
           >
             <ArrowLeft className="w-4 h-4" />
           </button>
@@ -289,8 +296,8 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
               type="button"
               onClick={() => setShowRulesDrawer(prev => !prev)}
               aria-label="Rules"
-              className={`p-2 border-2 border-black rounded-none transition-colors sketch-shadow-xs ${
-                showRulesDrawer ? 'bg-[#fff9c4] text-[#854d0e]' : 'bg-white hover:bg-[#f2efe9] text-[#1a1a1a]'
+              className={`p-2 border-2 border-game-ink-black rounded-none transition-colors sketch-shadow-xs ${
+                showRulesDrawer ? 'bg-game-note-yellow text-game-warning-text' : 'bg-game-surface hover:bg-game-paper text-game-ink-black'
               }`}
             >
               <Settings className="w-4 h-4" />
@@ -300,12 +307,12 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
 
         {/* Rules & Transparency Drawer */}
         {showRulesDrawer && (
-          <div className="w-full bg-white border-2 border-black rounded-none p-3.5 mb-3 sketch-shadow text-xs space-y-2 text-[#1a1a1a] animate-fade-in">
-            <div className="flex justify-between items-center font-sketch text-sm font-bold text-[#1a1a1a]">
+          <div className="w-full bg-game-surface border-2 border-game-ink-black rounded-none p-3.5 mb-3 sketch-shadow text-xs space-y-2 text-game-ink-black animate-fade-in">
+            <div className="flex justify-between items-center font-sketch text-sm font-bold text-game-ink-black">
               <span>Gibous Fair Play & Match Economics</span>
-              <span className="text-[#9b2c2c] cursor-pointer font-bold" onClick={() => setShowRulesDrawer(false)}>✕</span>
+              <span className="text-game-ink-red cursor-pointer font-bold" onClick={() => setShowRulesDrawer(false)}>✕</span>
             </div>
-            <div className="text-[#1a1a1a]/80 text-[11px] leading-relaxed font-sketch">
+            <div className="text-game-ink-black/80 text-[11px] leading-relaxed font-sketch">
               • <strong>Win Payout (90%)</strong>: Winner receives 90% of the pot.<br />
               • <strong>Arena Fee (10%)</strong>: 10% arena fee applies to matches.<br />
               • <strong>Draw Refund (95%)</strong>: In a draw, both players receive 95% of their stake.<br />
@@ -318,40 +325,40 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
       <main className="w-full">
         {/* PINNED HOSTED ROOM CARD (If user currently has an open room) */}
         {createdRoom && (
-          <div className="w-full bg-[#fff9c4] border-2 border-black p-3.5 mb-3 sketch-shadow rounded-none flex flex-col gap-2 animate-fade-in">
+          <div className="w-full bg-game-note-yellow border-2 border-game-ink-black p-3.5 mb-3 sketch-shadow rounded-none flex flex-col gap-2 animate-fade-in">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-1.5">
-                <span className="w-2.5 h-2.5 rounded-full bg-green-600 animate-ping" />
-                <span className="font-sketch text-xs font-bold text-[#854d0e] uppercase tracking-wider">
+                <span className="w-2.5 h-2.5 rounded-full bg-game-success-text animate-ping" />
+                <span className="font-sketch text-xs font-bold text-game-warning-text uppercase tracking-wider">
                   Waiting for opponent...
                 </span>
               </div>
-              <div className="flex items-center gap-1.5 bg-white px-2 py-0.5 border border-black">
+              <div className="flex items-center gap-1.5 bg-game-surface px-2 py-0.5 border border-game-ink-black">
                 <GameBadge game={createdRoom.gameType} size="xs" />
-                <span className="font-sketch text-xs font-bold text-[#1a365d]">
+                <span className="font-sketch text-xs font-bold text-game-ink-blue">
                   {GAME_CONFIGS[createdRoom.gameType]?.displayName || createdRoom.gameType.toUpperCase()}
                 </span>
               </div>
             </div>
 
-            <div className="flex items-center justify-between bg-white border-2 border-black p-2">
+            <div className="flex items-center justify-between bg-game-surface border-2 border-game-ink-black p-2">
               <div>
-                <span className="text-[10px] font-sketch text-[#1a1a1a]/60 block font-bold">Room Code</span>
-                <span className="font-mono text-lg font-bold text-[#1a1a1a]">{createdRoom.code}</span>
+                <span className="text-[10px] font-sketch text-game-ink-black/60 block font-bold">Room Code</span>
+                <span className="font-mono text-lg font-bold text-game-ink-black">{createdRoom.code}</span>
               </div>
               <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={() => handleCopy(createdRoom.code)}
-                  className="px-2 py-1 bg-[#f2efe9] hover:bg-[#fff9c4] border border-black font-sketch text-xs font-bold flex items-center gap-1"
+                  className="px-2 py-1 bg-game-paper hover:bg-game-note-yellow border border-game-ink-black font-sketch text-xs font-bold flex items-center gap-1"
                 >
-                  {copiedCode ? <Check className="w-3.5 h-3.5 text-green-700" /> : <Copy className="w-3.5 h-3.5" />}
+                  {copiedCode ? <Check className="w-3.5 h-3.5 text-game-success-text" /> : <Copy className="w-3.5 h-3.5" />}
                   {copiedCode ? 'Copied' : 'Copy'}
                 </button>
                 <button
                   type="button"
                   onClick={onShare}
-                  className="px-2 py-1 bg-[#1a365d] text-white hover:bg-[#122844] border border-black font-sketch text-xs font-bold flex items-center gap-1"
+                  className="px-2 py-1 bg-game-ink-blue text-game-surface hover:brightness-90 border border-game-ink-black font-sketch text-xs font-bold flex items-center gap-1"
                 >
                   <Share2 className="w-3.5 h-3.5" />
                   Share
@@ -359,7 +366,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                 <button
                   type="button"
                   onClick={handleCancelCreatedRoom}
-                  className="p-1 bg-[#fee2e2] hover:bg-[#fca5a5] text-[#9b2c2c] border border-black"
+                  className="p-1 bg-game-danger-bg hover:brightness-90 text-game-ink-red border border-game-ink-black"
                   title="Cancel Room"
                 >
                   <Trash2 className="w-4 h-4" />
@@ -367,10 +374,10 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
               </div>
             </div>
 
-            <div className="flex items-center justify-between text-[11px] font-sketch font-bold text-[#854d0e]">
+            <div className="flex items-center justify-between text-[11px] font-sketch font-bold text-game-warning-text">
               <span>Your Stake: {createdRoom.stakeAmount} GRAM</span>
               <span>Matched Pot: {createdRoom.stakeAmount * 2} GRAM</span>
-              <span className="text-[#166534]">Win Net: {Math.floor(createdRoom.stakeAmount * 2 * 0.9)} GRAM</span>
+              <span className="text-game-success-text">Win Net: {Math.floor(createdRoom.stakeAmount * 2 * 0.9)} GRAM</span>
             </div>
           </div>
         )}
@@ -379,8 +386,8 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
         {lobbyView === 'create' && (
           <div className="flex flex-col gap-3">
             {/* Step 1: Choose Game */}
-            <div className="bg-white border-2 border-black p-3 rounded-none sketch-shadow-xs">
-              <span className="font-sketch text-xs font-bold text-[#1a1a1a]/70 uppercase tracking-wider block mb-2">
+            <div className="bg-game-surface border-2 border-game-ink-black p-3 rounded-none sketch-shadow-xs">
+              <span className="font-sketch text-xs font-bold text-game-ink-black/70 uppercase tracking-wider block mb-2">
                 1. Choose Game:
               </span>
               <GameTypeSelector
@@ -391,15 +398,15 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
               />
 
               {/* Featured Game Preview Banner */}
-              <div className="flex items-center gap-3 p-2 bg-[#f2efe9] border-2 border-black rounded-none sketch-shadow-xs">
-                <div className="w-12 h-12 rounded-none bg-white border border-black flex items-center justify-center p-0.5 shrink-0">
+              <div className="flex items-center gap-3 p-2 bg-game-paper border-2 border-game-ink-black rounded-none sketch-shadow-xs">
+                <div className="w-12 h-12 rounded-none bg-game-surface border border-game-ink-black flex items-center justify-center p-0.5 shrink-0">
                   <GameBadge game={selectedGame} size="md" />
                 </div>
                 <div className="flex flex-col min-w-0">
-                  <span className="font-sketch text-sm font-bold text-[#1a1a1a] truncate">
+                  <span className="font-sketch text-sm font-bold text-game-ink-black truncate">
                     {GAME_CONFIGS[selectedGame]?.displayName || selectedGame}
                   </span>
-                  <span className="font-sketch text-[11px] text-[#1a1a1a]/70 truncate">
+                  <span className="font-sketch text-[11px] text-game-ink-black/70 truncate">
                     {GAME_CONFIGS[selectedGame]?.description}
                   </span>
                 </div>
@@ -407,9 +414,9 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
             </div>
 
             {/* Step 2: Choose Stake Amount (Custom Editable + Quick Presets) */}
-            <div className="bg-white border-2 border-black p-3 rounded-none sketch-shadow-xs">
+            <div className="bg-game-surface border-2 border-game-ink-black p-3 rounded-none sketch-shadow-xs">
               <div className="flex items-center mb-1">
-                <span className="font-sketch text-xs font-bold text-[#1a1a1a]/70 uppercase tracking-wider">
+                <span className="font-sketch text-xs font-bold text-game-ink-black/70 uppercase tracking-wider">
                   2. Stake Amount
                 </span>
               </div>
@@ -425,7 +432,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                     setCustomStake(nextStake);
                     onChangeSettings?.({ winningAmount: nextStake });
                   }}
-                  className="w-10 shrink-0 bg-[#f2efe9] hover:bg-[#e8e0d0] disabled:opacity-40 disabled:cursor-not-allowed border-2 border-black font-sketch text-xl font-bold leading-none"
+                  className="w-10 shrink-0 bg-game-paper hover:bg-game-paper-soft disabled:opacity-40 disabled:cursor-not-allowed border-2 border-game-ink-black font-sketch text-xl font-bold leading-none"
                 >
                   −
                 </button>
@@ -442,10 +449,10 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                     setCustomStake(safeVal);
                     onChangeSettings?.({ winningAmount: safeVal });
                   }}
-                  className="w-full p-2 bg-[#f2efe9] border-2 border-black font-sketch text-lg font-bold text-[#1a1a1a] focus:outline-none focus:bg-white focus:ring-2 focus:ring-[#9b2c2c]"
+                  className="w-full p-2 bg-game-paper border-2 border-game-ink-black font-sketch text-lg font-bold text-game-ink-black focus:outline-none focus:bg-game-surface focus:ring-2 focus:ring-game-ink-red"
                   placeholder="Enter stake amount (e.g. 0.5)"
                 />
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 font-sketch text-xs font-bold text-[#1a1a1a]/60">
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 font-sketch text-xs font-bold text-game-ink-black/60">
                   GRAM
                 </span>
                 </div>
@@ -458,7 +465,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                     setCustomStake(nextStake);
                     onChangeSettings?.({ winningAmount: nextStake });
                   }}
-                  className="w-10 shrink-0 bg-[#f2efe9] hover:bg-[#e8e0d0] disabled:opacity-40 disabled:cursor-not-allowed border-2 border-black font-sketch text-xl font-bold leading-none"
+                  className="w-10 shrink-0 bg-game-paper hover:bg-game-paper-soft disabled:opacity-40 disabled:cursor-not-allowed border-2 border-game-ink-black font-sketch text-xl font-bold leading-none"
                 >
                   +
                 </button>
@@ -474,10 +481,10 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                       setCustomStake(amt);
                       onChangeSettings?.({ winningAmount: amt });
                     }}
-                    className={`py-1 rounded-none border-2 border-black font-sketch text-xs font-bold transition-all sketch-btn-press ${
+                    className={`py-1 rounded-none border-2 border-game-ink-black font-sketch text-xs font-bold transition-all sketch-btn-press ${
                       customStake === amt
-                        ? 'bg-[#fff9c4] text-[#854d0e] sketch-shadow-xs ring-2 ring-[#ca8a04]'
-                        : 'bg-[#f2efe9] text-[#1a1a1a] hover:bg-white'
+                        ? 'bg-game-note-yellow text-game-warning-text sketch-shadow-xs ring-2 ring-game-note-yellow-border'
+                        : 'bg-game-paper text-game-ink-black hover:bg-game-surface'
                     }`}
                   >
                     {amt}
@@ -487,25 +494,25 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
             </div>
 
             {/* Economics Breakdown */}
-            <div className="bg-[#f2efe9] border-2 border-black p-3">
-              <div className="flex items-center justify-between text-xs font-sketch font-bold text-[#1a1a1a]/80 mb-2">
+            <div className="bg-game-paper border-2 border-game-ink-black p-3">
+              <div className="flex items-center justify-between text-xs font-sketch font-bold text-game-ink-black/80 mb-2">
                 <span>Total Match Pot:</span>
-                <span className="text-base text-[#1a365d] flex items-center gap-1 font-black">
+                <span className="text-base text-game-ink-blue flex items-center gap-1 font-black">
                   {pot} GRAM <GramIcon size="sm" />
                 </span>
               </div>
-              <div className="grid grid-cols-3 gap-1 text-[11px] text-[#1a1a1a]/80">
-                <div className="bg-white p-1.5 border border-black/30">
-                  <span className="text-[#166534] font-bold block">Winner (90%)</span>
-                  <span className="font-bold text-[#1a1a1a]">+{winnerNet} GRAM</span>
+              <div className="grid grid-cols-3 gap-1 text-[11px] text-game-ink-black/80">
+                <div className="bg-game-surface p-1.5 border border-game-ink-black/30">
+                  <span className="text-game-success-text font-bold block">Winner (90%)</span>
+                  <span className="font-bold text-game-ink-black">+{winnerNet} GRAM</span>
                 </div>
-                <div className="bg-white p-1.5 border border-black/30">
-                  <span className="text-[#9b2c2c] font-bold block">Arena Fee (10%)</span>
-                  <span className="font-bold text-[#1a1a1a]">-{arenaFee} GRAM</span>
+                <div className="bg-game-surface p-1.5 border border-game-ink-black/30">
+                  <span className="text-game-ink-red font-bold block">Arena Fee (10%)</span>
+                  <span className="font-bold text-game-ink-black">-{arenaFee} GRAM</span>
                 </div>
-                <div className="bg-white p-1.5 border border-black/30">
-                  <span className="text-[#854d0e] font-bold block">Draw (95% ea)</span>
-                  <span className="font-bold text-[#1a1a1a]">+{drawRefund} GRAM</span>
+                <div className="bg-game-surface p-1.5 border border-game-ink-black/30">
+                  <span className="text-game-warning-text font-bold block">Draw (95% ea)</span>
+                  <span className="font-bold text-game-ink-black">+{drawRefund} GRAM</span>
                 </div>
               </div>
             </div>
@@ -514,7 +521,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
             <button
               type="button"
               onClick={handleCreateRoomAction}
-              className="w-full py-3 bg-[#9b2c2c] hover:bg-[#802222] text-white border-2 border-black font-sketch text-base font-bold sketch-shadow-xs active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+              className="w-full py-3 bg-game-ink-red hover:brightness-90 text-game-surface border-2 border-game-ink-black font-sketch text-base font-bold sketch-shadow-xs active:scale-[0.98] transition-all flex items-center justify-center gap-2"
             >
               <PlusCircle className="w-5 h-5 stroke-[2.5]" />
               Create {selectedGame.toUpperCase()} Duel ({customStake} GRAM)
@@ -528,7 +535,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
           <div className="flex flex-col gap-3">
             <section aria-label="Filter open rooms" className="bg-game-surface border-2 border-game-ink-black p-3 sketch-shadow-xs flex flex-col gap-3">
               <div>
-                <p id="room-game-filter-label" className="font-body text-sm font-bold text-game-ink-black mb-2">Choose a game</p>
+                <p id="room-game-filter-label" className="font-sketch text-sm font-bold text-game-ink-black mb-2">Choose a game</p>
                 <div role="group" aria-labelledby="room-game-filter-label" className="grid grid-cols-3 gap-2">
                   {([
                     { key: 'snake', label: 'Snakes', accessibleLabel: 'Snakes and Ladders' },
@@ -544,9 +551,13 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                         setGameFilter(game.key);
                         onSelectGame(game.key);
                       }}
-                      className={`min-h-16 px-2 py-2 border-2 border-game-ink-black font-body text-sm font-bold flex flex-col items-center justify-center gap-1 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-game-ink-blue focus-visible:ring-offset-2 ${
+                      className={`min-h-16 px-2 py-2 border-2 border-game-ink-black rounded-xl font-sketch text-sm font-bold flex flex-col items-center justify-center gap-1 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-game-ink-blue focus-visible:ring-offset-2 ${
                         gameFilter === game.key
-                          ? 'bg-game-ink-blue text-game-surface shadow-sketch-xs'
+                          ? game.key === 'snake'
+                            ? 'bg-game-ink-red text-game-surface shadow-sketch-xs'
+                            : game.key === 'connect4'
+                              ? 'bg-game-ink-blue text-game-surface shadow-sketch-xs'
+                              : 'bg-game-note-yellow text-game-ink-black shadow-sketch-xs'
                           : 'bg-game-paper text-game-ink-black hover:bg-game-paper-soft'
                       }`}
                     >
@@ -557,24 +568,43 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 <div className="flex flex-col gap-1">
-                  <label htmlFor="room-stake-filter" className="font-body text-sm font-bold text-game-ink-black">Stake amount</label>
-                  <select
-                    id="room-stake-filter"
-                    value={stakeFilter}
-                    onChange={(event) => setStakeFilter(event.target.value as StakeFilter)}
-                    className="min-h-11 w-full px-3 bg-game-paper border-2 border-game-ink-black font-body text-sm text-game-ink-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-game-ink-blue focus-visible:ring-offset-2"
-                  >
-                    <option value="any">Any amount</option>
-                    <option value="up-to-1">Up to 1 GRAM</option>
-                    <option value="1-to-5">Over 1 to 5 GRAM</option>
-                    <option value="5-to-10">Over 5 to 10 GRAM</option>
-                    <option value="over-10">Over 10 GRAM</option>
-                  </select>
+                  <label htmlFor="room-min-stake-filter" className="font-sketch text-sm font-bold text-game-ink-black">Min GRAM</label>
+                  <input
+                    id="room-min-stake-filter"
+                    type="number"
+                    min={MIN_STAKE}
+                    max={MAX_STAKE}
+                    step="any"
+                    inputMode="decimal"
+                    value={minStakeFilter}
+                    onChange={(event) => setMinStakeFilter(event.target.value)}
+                    aria-invalid={invalidMinStake || invalidStakeRange}
+                    aria-describedby="room-stake-filter-help"
+                    placeholder="No min"
+                    className="min-h-11 w-full min-w-0 px-2 bg-game-paper border-2 border-game-ink-black font-sketch text-sm text-game-ink-black placeholder:text-game-ink-black/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-game-ink-red focus-visible:ring-offset-2"
+                  />
                 </div>
                 <div className="flex flex-col gap-1">
-                  <label htmlFor="room-host-search" className="font-body text-sm font-bold text-game-ink-black">Find a host</label>
+                  <label htmlFor="room-max-stake-filter" className="font-sketch text-sm font-bold text-game-ink-black">Max GRAM</label>
+                  <input
+                    id="room-max-stake-filter"
+                    type="number"
+                    min={MIN_STAKE}
+                    max={MAX_STAKE}
+                    step="any"
+                    inputMode="decimal"
+                    value={maxStakeFilter}
+                    onChange={(event) => setMaxStakeFilter(event.target.value)}
+                    aria-invalid={invalidMaxStake || invalidStakeRange}
+                    aria-describedby="room-stake-filter-help"
+                    placeholder="No max"
+                    className="min-h-11 w-full min-w-0 px-2 bg-game-paper border-2 border-game-ink-black font-sketch text-sm text-game-ink-black placeholder:text-game-ink-black/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-game-ink-red focus-visible:ring-offset-2"
+                  />
+                </div>
+                <div className="col-span-2 sm:col-span-1 flex flex-col gap-1">
+                  <label htmlFor="room-host-search" className="font-sketch text-sm font-bold text-game-ink-black">Find a host</label>
                   <div className="relative">
                     <Search aria-hidden="true" className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-game-ink-black/60" />
                     <input
@@ -583,15 +613,22 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                       value={searchQuery}
                       onChange={(event) => setSearchQuery(event.target.value)}
                       placeholder="Search player name"
-                      className="min-h-11 w-full pl-9 pr-3 bg-game-paper border-2 border-game-ink-black font-body text-sm text-game-ink-black placeholder:text-game-ink-black/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-game-ink-blue focus-visible:ring-offset-2"
+                      className="min-h-11 w-full pl-9 pr-3 bg-game-paper border-2 border-game-ink-black font-sketch text-sm text-game-ink-black placeholder:text-game-ink-black/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-game-ink-red focus-visible:ring-offset-2"
                     />
                   </div>
                 </div>
               </div>
+              <p id="room-stake-filter-help" aria-live="polite" className={`font-sketch text-xs ${invalidStakeFilter ? 'text-game-danger-text' : 'text-game-ink-black/70'}`}>
+                {invalidMinStake || invalidMaxStake
+                  ? `Enter an amount from ${MIN_STAKE} to ${MAX_STAKE} GRAM.`
+                  : invalidStakeRange
+                    ? 'Minimum must be less than or equal to maximum.'
+                    : 'Leave either field blank to skip that limit.'}
+              </p>
             </section>
 
             <form onSubmit={handleQuickJoinByCode} aria-label="Join with a room code" className="bg-game-note-blue border-2 border-game-ink-blue p-3 flex flex-col gap-2 sketch-shadow-xs">
-              <label htmlFor="quick-join-code" className="font-body text-sm font-bold text-game-ink-black">Have a room code?</label>
+              <label htmlFor="quick-join-code" className="font-sketch text-sm font-bold text-game-ink-black">Have a room code?</label>
               <div className="flex gap-2">
                 <input
                   id="quick-join-code"
@@ -606,11 +643,11 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                     setQuickJoinCode(event.target.value);
                     if (joinError) setJoinError(null);
                   }}
-                  className="min-h-11 min-w-0 flex-1 px-3 bg-game-surface border-2 border-game-ink-black font-body text-sm font-bold uppercase text-game-ink-black placeholder:text-game-ink-black/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-game-ink-blue focus-visible:ring-offset-2"
+                  className="min-h-11 min-w-0 flex-1 px-3 bg-game-surface border-2 border-game-ink-black font-sketch text-sm font-bold uppercase text-game-ink-black placeholder:text-game-ink-black/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-game-ink-red focus-visible:ring-offset-2"
                 />
                 <button
                   type="submit"
-                  className="min-h-11 px-4 bg-game-ink-blue hover:brightness-90 text-game-surface border-2 border-game-ink-black font-body text-sm font-bold whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-game-ink-red focus-visible:ring-offset-2"
+                  className="min-h-11 px-4 bg-game-ink-red hover:brightness-90 text-game-surface border-2 border-game-ink-black font-sketch text-sm font-bold whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-game-ink-blue focus-visible:ring-offset-2"
                 >
                   Join by code
                 </button>
@@ -653,7 +690,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                     <button
                       type="button"
                       onClick={() => setLobbyView('create')}
-                      className="mt-3 min-h-11 px-4 bg-game-ink-red text-game-surface border-2 border-game-ink-black font-body text-sm font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-game-ink-blue focus-visible:ring-offset-2"
+                      className="mt-3 min-h-11 px-4 bg-game-ink-red text-game-surface border-2 border-game-ink-black font-sketch text-sm font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-game-ink-blue focus-visible:ring-offset-2"
                     >
                       Create {GAME_CONFIGS[gameFilter]?.shortName || 'a'} duel
                     </button>
@@ -662,9 +699,10 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                       type="button"
                       onClick={() => {
                         setSearchQuery('');
-                        setStakeFilter('any');
+                        setMinStakeFilter('');
+                        setMaxStakeFilter('');
                       }}
-                      className="mt-3 min-h-11 px-4 bg-game-note-yellow text-game-ink-black border-2 border-game-ink-black font-body text-sm font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-game-ink-blue focus-visible:ring-offset-2"
+                      className="mt-3 min-h-11 px-4 bg-game-note-yellow text-game-ink-black border-2 border-game-ink-black font-sketch text-sm font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-game-ink-blue focus-visible:ring-offset-2"
                     >
                       Clear filters
                     </button>
