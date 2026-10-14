@@ -27,14 +27,8 @@ export const LeaderboardScreen: React.FC = () => {
   useEffect(() => {
     let active = true;
     setLoadError(null);
-    if (timeTab !== 'alltime') {
-      setPlayers([]);
-      setIsLoading(false);
-      return () => { active = false; };
-    }
-
     setIsLoading(true);
-    fetch('/api/leaderboard')
+    fetch(`/api/leaderboard?period=${timeTab}`)
       .then((response) => {
         if (!response.ok) throw new Error('Leaderboard unavailable');
         return response.json();
@@ -65,17 +59,15 @@ export const LeaderboardScreen: React.FC = () => {
             <span className="font-sketch text-xs text-[#1a1a1a]/60">Top players & winnings</span>
           </div>
         </div>
-        <div className="bg-[#fee2e2] border border-black px-2.5 py-1 text-[#9b2c2c] font-sketch text-xs font-bold">
-          ★ Season 1
-        </div>
       </div>
 
       {/* Time Tabs Switcher (Sharp Rectangular) */}
-      <div className="grid grid-cols-3 gap-2 bg-[#f2efe9] p-1.5 border-2 border-black rounded-none">
+      <div role="group" aria-label="Leaderboard period" className="grid grid-cols-3 gap-2 bg-[#f2efe9] p-1.5 border-2 border-black rounded-none">
         {(['daily', 'weekly', 'alltime'] as TimeTab[]).map((tab) => (
           <button
             key={tab}
             type="button"
+            aria-pressed={timeTab === tab}
             onClick={() => handleTabChange(tab)}
             className={`py-2 rounded-none font-sketch text-xs sm:text-sm font-bold transition-all sketch-btn-press ${
               timeTab === tab
@@ -140,15 +132,14 @@ export const LeaderboardScreen: React.FC = () => {
       </div>}
 
       {/* Ranked Players List */}
-      <div className="flex flex-col gap-2 my-1">
+      <div id="leaderboard-rankings" aria-live="polite" aria-busy={isLoading} className="flex flex-col gap-2 my-1">
         <span className="font-sketch text-xs font-bold text-[#1a1a1a]/70 uppercase tracking-wider px-1">
           Global Rankings ({players.length} Players)
         </span>
 
         {isLoading && <div className="p-5 bg-white border-2 border-black text-center font-sketch">Loading rankings…</div>}
         {!isLoading && loadError && <div className="p-5 bg-[#fee2e2] border-2 border-black text-center font-sketch text-[#991b1b]">{loadError}</div>}
-        {!isLoading && !loadError && timeTab !== 'alltime' && <div className="p-5 bg-white border-2 border-black text-center font-sketch">Daily and weekly rankings are coming soon.</div>}
-        {!isLoading && !loadError && timeTab === 'alltime' && players.length === 0 && <div className="p-5 bg-white border-2 border-black text-center font-sketch">No ranked matches yet.</div>}
+        {!isLoading && !loadError && players.length === 0 && <div className="p-5 bg-white border-2 border-black text-center font-sketch">{timeTab === 'alltime' ? 'No ranked matches yet.' : `No wins in the ${timeTab === 'daily' ? 'last 24 hours' : 'last 7 days'} yet.`}</div>}
         {players.slice(3).map((player) => (
           <div
             key={player.rank}
@@ -182,10 +173,8 @@ export const LeaderboardScreen: React.FC = () => {
           <Sparkles className="w-4 h-4 text-[#ca8a04]" />
           Play matches to rank up
         </span>
-        <span className="text-[#9b2c2c] bg-white px-2 py-0.5 border border-black">
-          Season 1
-        </span>
       </div>
+
     </div>
   );
 };

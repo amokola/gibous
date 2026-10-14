@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Share2, Clock, Swords, Zap, Check } from 'lucide-react';
+import { Share2, Clock, Swords, Target, Check } from 'lucide-react';
 import { MatchStats } from '../../types/game';
 import { useTelegram } from '../../hooks/useTelegram';
 
@@ -52,7 +52,7 @@ export const MatchStatsCard: React.FC<MatchStatsCardProps> = ({
 
         {/* Best Move */}
         <div className="bg-[#f2efe9] border border-black rounded-none p-2 flex flex-col items-center text-center">
-          <Zap className="w-3.5 h-3.5 text-[#166534] mb-0.5" />
+          <Target aria-hidden="true" className="w-3.5 h-3.5 text-[#166534] mb-0.5" />
           <span className="text-[9px] font-bold text-[#1a1a1a]/60 uppercase font-sketch">Highlight</span>
           <span className="font-sketch text-xs font-bold text-[#166534] truncate max-w-[70px]">
             {stats.biggestMove}

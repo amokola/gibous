@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useTonAddress, useTonWallet, useTonConnectUI } from '@tonconnect/ui-react';
 import { beginCell } from '@ton/core';
-import { Check, History, ShieldCheck, Zap, Wallet, Unlink, Loader2 } from 'lucide-react';
+import { Check, History, ShieldCheck, Wallet, Unlink, Loader2 } from 'lucide-react';
 import { GramIcon } from '../ui/GramIcon';
 import { BankVaultIcon, WalletDepositIcon, WalletWithdrawIcon } from '../icons/GameIcons';
 import { toNanoGram, formatGram } from '../../utils/tonUnits';
@@ -653,7 +653,7 @@ export const BankScreen: React.FC<BankScreenProps> = ({
 
           {/* Direct Instant TON Connect notice */}
           <div className="p-2.5 bg-[#f0fdf4] border border-[#166534]/30 font-sketch text-[11px] text-[#166534] flex items-center gap-1.5">
-            <Zap className="w-3.5 h-3.5 shrink-0" />
+            <ShieldCheck aria-hidden="true" className="w-3.5 h-3.5 shrink-0" />
             <span>Funds are transferred securely through your connected TON wallet.</span>
           </div>
 
@@ -664,7 +664,7 @@ export const BankScreen: React.FC<BankScreenProps> = ({
             disabled={isProcessing || depositAmount <= 0}
             className="w-full py-2.5 bg-[#166534] hover:bg-[#124d27] text-white border-2 border-black font-sketch text-sm font-bold sketch-shadow-xs active:scale-[0.98] transition-all flex items-center justify-center gap-2"
           >
-            <Zap className="w-4 h-4" />
+            <Wallet aria-hidden="true" className="w-4 h-4" />
             {isProcessing
               ? 'Confirming in wallet...'
               : `Deposit ${depositAmount} GRAM`}
@@ -788,8 +788,7 @@ export const BankScreen: React.FC<BankScreenProps> = ({
             </div>
           ) : (
             <button type="button" onClick={handleWithdrawAction} disabled={isProcessing || withdrawAmount <= 0 || withdrawAmount > balance} className="w-full py-2.5 bg-[#1a365d] hover:bg-[#122844] text-white border-2 border-black font-sketch text-sm font-bold sketch-shadow-xs active:scale-[0.98] transition-all flex items-center justify-center gap-2">
-              <ShieldCheck className="w-4 h-4" />
-              {isProcessing ? 'Estimating fee...' : 'Get withdrawal quote'}
+              {isProcessing ? 'Estimating fee...' : 'Withdraw'}
             </button>
           )}
         </div>

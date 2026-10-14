@@ -1,4 +1,5 @@
 import React from 'react';
+import { WifiOff } from 'lucide-react';
 import { ConnectionState } from '../../../shared';
 
 export interface ConnectionBannerProps {
@@ -63,7 +64,8 @@ export const ConnectionBanner: React.FC<ConnectionBannerProps> = ({
         className={`w-full shrink-0 z-30 bg-[#fee2e2] text-[#991b1b] border-2 border-black font-sketch text-xs font-bold px-3 py-1.5 flex items-center justify-between sketch-shadow-xs animate-fade-in ${className}`.trim()}
       >
         <div className="flex items-center gap-2">
-          <span>⚡ Connection lost.</span>
+          <WifiOff aria-hidden="true" className="w-3.5 h-3.5" />
+          <span>Connection lost.</span>
         </div>
         {onReconnect && (
           <button

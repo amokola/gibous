@@ -7,7 +7,7 @@ import {
   Search,
   Copy,
   Check,
-  Zap,
+  LogIn,
   Swords,
   Trash2,
   Radio,
@@ -39,6 +39,8 @@ export interface OpenRoomSummary {
   hostAvatar?: string;
   createdAt: number;
 }
+
+type StakeFilter = 'any' | 'up-to-1' | '1-to-5' | '5-to-10' | 'over-10';
 
 interface LobbyScreenProps {
   selectedGame: GameTitle;
@@ -75,7 +77,8 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
   const [createdRoom, setCreatedRoom] = useState<OpenRoomSummary | null>(null);
   const [openRooms, setOpenRooms] = useState<OpenRoomSummary[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [gameFilter, setGameFilter] = useState<'all' | GameTitle>('all');
+  const [gameFilter, setGameFilter] = useState<GameTitle>(selectedGame);
+  const [stakeFilter, setStakeFilter] = useState<StakeFilter>('any');
   const [quickJoinCode, setQuickJoinCode] = useState('');
   const [showRulesDrawer, setShowRulesDrawer] = useState(false);
   const [customStake, setCustomStake] = useState<number>(initialStake || settings?.winningAmount || 0.5);
@@ -123,6 +126,11 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
       setCustomStake(settings.winningAmount);
     }
   }, [settings?.winningAmount]);
+
+  // Start the room browser on the game already selected in the create flow.
+  useEffect(() => {
+    setGameFilter(selectedGame);
+  }, [selectedGame]);
 
   const executeCreateRoom = () => {
     setConfirmModal(null);
@@ -189,7 +197,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
     if (matched) {
       handleJoinSpecificRoom(matched);
     } else {
-      setJoinError(`Room "${cleanCode}" not found. You can create it in the Create tab!`);
+      setJoinError(`No open room found with code ${cleanCode}. Check the code and try again.`);
       setTimeout(() => setJoinError(null), 3000);
     }
   };
@@ -205,12 +213,22 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
     return openRooms.filter((room) => {
       const matchesSearch =
         !searchQuery.trim() ||
-        room.code.toLowerCase().includes(searchQuery.toLowerCase().trim()) ||
         room.hostName.toLowerCase().includes(searchQuery.toLowerCase().trim());
-      const matchesGame = gameFilter === 'all' || room.gameType === gameFilter;
-      return matchesSearch && matchesGame;
+      const matchesGame = room.gameType === gameFilter;
+      const matchesStake = (() => {
+        switch (stakeFilter) {
+          case 'up-to-1': return room.stakeAmount <= 1;
+          case '1-to-5': return room.stakeAmount > 1 && room.stakeAmount <= 5;
+          case '5-to-10': return room.stakeAmount > 5 && room.stakeAmount <= 10;
+          case 'over-10': return room.stakeAmount > 10;
+          default: return true;
+        }
+      })();
+      return matchesSearch && matchesGame && matchesStake;
     });
-  }, [openRooms, searchQuery, gameFilter]);
+  }, [openRooms, searchQuery, gameFilter, stakeFilter]);
+
+  const hasRoomsForGame = openRooms.some((room) => room.gameType === gameFilter);
 
   const breakdown = useMemo(() => calculatePotBreakdown(customStake), [customStake]);
   const pot = breakdown.totalPot;
@@ -233,16 +251,17 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
           </button>
 
           {/* Lobby View Switcher Tabs */}
-          <div className="flex items-center bg-[#f2efe9] border-2 border-black p-0.5 rounded-none sketch-shadow-xs">
+          <div role="group" aria-label="Lobby views" className="flex items-center bg-game-paper border-2 border-game-ink-black p-0.5 rounded-none shadow-sketch-xs">
             <button
               type="button"
+              aria-pressed={lobbyView === 'create'}
               onClick={() => {
                 setLobbyView('create');
               }}
-              className={`px-3 py-1 font-sketch text-xs font-bold rounded-none transition-all flex items-center gap-1 ${
+              className={`min-h-11 px-3 py-1 font-body text-sm font-bold rounded-none transition-all flex items-center gap-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-game-ink-blue focus-visible:ring-offset-2 ${
                 lobbyView === 'create'
-                  ? 'bg-[#9b2c2c] text-white border border-black sketch-shadow-xs'
-                  : 'text-[#1a1a1a]/70 hover:text-[#1a1a1a]'
+                  ? 'bg-game-ink-red text-game-surface border border-game-ink-black shadow-sketch-xs'
+                  : 'text-game-ink-black/70 hover:bg-game-surface hover:text-game-ink-black'
               }`}
             >
               <PlusCircle className="w-3.5 h-3.5" />
@@ -250,17 +269,18 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
             </button>
             <button
               type="button"
+              aria-pressed={lobbyView === 'browse'}
               onClick={() => {
                 setLobbyView('browse');
               }}
-              className={`px-3 py-1 font-sketch text-xs font-bold rounded-none transition-all flex items-center gap-1 cursor-pointer ${
+              className={`min-h-11 px-3 py-1 font-body text-sm font-bold rounded-none transition-all flex items-center gap-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-game-ink-blue focus-visible:ring-offset-2 ${
                 lobbyView === 'browse'
-                  ? 'bg-[#9b2c2c] text-white border border-black sketch-shadow-xs'
-                  : 'text-[#1a1a1a]/70 hover:text-[#1a1a1a]'
+                  ? 'bg-game-ink-red text-game-surface border border-game-ink-black shadow-sketch-xs'
+                  : 'text-game-ink-black/70 hover:bg-game-surface hover:text-game-ink-black'
               }`}
             >
               <Radio className="w-3.5 h-3.5" />
-              Open Rooms ({openRooms.length})
+              Open Rooms
             </button>
           </div>
 
@@ -506,142 +526,190 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
         {/* ================= VIEW 2: LIVE OPEN ROOMS BROWSER & SEARCH ================= */}
         {lobbyView === 'browse' && (
           <div className="flex flex-col gap-3">
-            {/* Quick Search & Filter Bar */}
-            <div className="bg-white border-2 border-black p-2.5 rounded-none sketch-shadow-xs flex flex-col gap-2">
-              <div className="relative">
-                <Search className="w-4 h-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-[#1a1a1a]/50" />
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search by code or player..."
-                  className="w-full pl-8 pr-3 py-1.5 bg-[#f2efe9] border-2 border-black font-sketch text-xs text-[#1a1a1a] focus:outline-none focus:bg-white"
-                />
+            <section aria-label="Filter open rooms" className="bg-game-surface border-2 border-game-ink-black p-3 sketch-shadow-xs flex flex-col gap-3">
+              <div>
+                <p id="room-game-filter-label" className="font-body text-sm font-bold text-game-ink-black mb-2">Choose a game</p>
+                <div role="group" aria-labelledby="room-game-filter-label" className="grid grid-cols-3 gap-2">
+                  {([
+                    { key: 'snake', label: 'Snakes', accessibleLabel: 'Snakes and Ladders' },
+                    { key: 'connect4', label: 'Connect 4', accessibleLabel: 'Connect 4' },
+                    { key: 'rps', label: 'RPS', accessibleLabel: 'Rock Paper Scissors' },
+                  ] as const).map((game) => (
+                    <button
+                      key={game.key}
+                      type="button"
+                      aria-label={`${game.accessibleLabel} rooms`}
+                      aria-pressed={gameFilter === game.key}
+                      onClick={() => {
+                        setGameFilter(game.key);
+                        onSelectGame(game.key);
+                      }}
+                      className={`min-h-16 px-2 py-2 border-2 border-game-ink-black font-body text-sm font-bold flex flex-col items-center justify-center gap-1 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-game-ink-blue focus-visible:ring-offset-2 ${
+                        gameFilter === game.key
+                          ? 'bg-game-ink-blue text-game-surface shadow-sketch-xs'
+                          : 'bg-game-paper text-game-ink-black hover:bg-game-paper-soft'
+                      }`}
+                    >
+                      <GameBadge game={game.key} size="sm" alt="" />
+                      <span>{game.label}</span>
+                    </button>
+                  ))}
+                </div>
               </div>
 
-              {/* Game Type Filter Chips */}
-              <div className="flex items-center gap-1 overflow-x-auto scrollbar-none pb-0.5">
-                {[
-                  { key: 'all', label: 'All Games' },
-                  { key: 'snake', label: '🐍 Snakes' },
-                  { key: 'connect4', label: '🔵 Connect 4' },
-                  { key: 'rps', label: '✂️ RPS' },
-                ].map((tab) => (
-                  <button
-                    key={tab.key}
-                    type="button"
-                    onClick={() => {
-                      setGameFilter(tab.key as any);
-                    }}
-                    className={`px-2.5 py-1 rounded-none border border-black font-sketch text-[11px] font-bold whitespace-nowrap transition-all ${
-                      gameFilter === tab.key
-                        ? 'bg-[#1a365d] text-white border-black'
-                        : 'bg-[#f2efe9] text-[#1a1a1a]/70 hover:text-[#1a1a1a]'
-                    }`}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="flex flex-col gap-1">
+                  <label htmlFor="room-stake-filter" className="font-body text-sm font-bold text-game-ink-black">Stake amount</label>
+                  <select
+                    id="room-stake-filter"
+                    value={stakeFilter}
+                    onChange={(event) => setStakeFilter(event.target.value as StakeFilter)}
+                    className="min-h-11 w-full px-3 bg-game-paper border-2 border-game-ink-black font-body text-sm text-game-ink-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-game-ink-blue focus-visible:ring-offset-2"
                   >
-                    {tab.label}
-                  </button>
-                ))}
+                    <option value="any">Any amount</option>
+                    <option value="up-to-1">Up to 1 GRAM</option>
+                    <option value="1-to-5">Over 1 to 5 GRAM</option>
+                    <option value="5-to-10">Over 5 to 10 GRAM</option>
+                    <option value="over-10">Over 10 GRAM</option>
+                  </select>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label htmlFor="room-host-search" className="font-body text-sm font-bold text-game-ink-black">Find a host</label>
+                  <div className="relative">
+                    <Search aria-hidden="true" className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-game-ink-black/60" />
+                    <input
+                      id="room-host-search"
+                      type="search"
+                      value={searchQuery}
+                      onChange={(event) => setSearchQuery(event.target.value)}
+                      placeholder="Search player name"
+                      className="min-h-11 w-full pl-9 pr-3 bg-game-paper border-2 border-game-ink-black font-body text-sm text-game-ink-black placeholder:text-game-ink-black/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-game-ink-blue focus-visible:ring-offset-2"
+                    />
+                  </div>
+                </div>
               </div>
-            </div>
+            </section>
 
-            {/* Quick Join via Code Form */}
-            <form onSubmit={handleQuickJoinByCode} className="flex gap-2">
-              <input
-                type="text"
-                value={quickJoinCode}
-                onChange={(e) => setQuickJoinCode(e.target.value)}
-                placeholder="Enter room code"
-                className="flex-1 p-2 bg-white border-2 border-black font-mono text-xs font-bold text-[#1a1a1a] focus:outline-none uppercase"
-              />
-              <button
-                type="submit"
-                className="px-4 bg-[#1a365d] hover:bg-[#122844] text-white border-2 border-black font-sketch text-xs font-bold whitespace-nowrap cursor-pointer"
-              >
-                Join Room
-              </button>
+            <form onSubmit={handleQuickJoinByCode} aria-label="Join with a room code" className="bg-game-note-blue border-2 border-game-ink-blue p-3 flex flex-col gap-2 sketch-shadow-xs">
+              <label htmlFor="quick-join-code" className="font-body text-sm font-bold text-game-ink-black">Have a room code?</label>
+              <div className="flex gap-2">
+                <input
+                  id="quick-join-code"
+                  type="text"
+                  value={quickJoinCode}
+                  autoComplete="off"
+                  maxLength={12}
+                  placeholder="Enter code"
+                  aria-invalid={Boolean(joinError)}
+                  aria-describedby={joinError ? 'quick-join-error' : undefined}
+                  onChange={(event) => {
+                    setQuickJoinCode(event.target.value);
+                    if (joinError) setJoinError(null);
+                  }}
+                  className="min-h-11 min-w-0 flex-1 px-3 bg-game-surface border-2 border-game-ink-black font-body text-sm font-bold uppercase text-game-ink-black placeholder:text-game-ink-black/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-game-ink-blue focus-visible:ring-offset-2"
+                />
+                <button
+                  type="submit"
+                  className="min-h-11 px-4 bg-game-ink-blue hover:brightness-90 text-game-surface border-2 border-game-ink-black font-body text-sm font-bold whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-game-ink-red focus-visible:ring-offset-2"
+                >
+                  Join by code
+                </button>
+              </div>
+              {joinError && (
+                <p id="quick-join-error" role="alert" className="font-body text-sm font-bold text-game-danger-text">
+                  {joinError}
+                </p>
+              )}
             </form>
 
-            {joinError && (
-              <span className="font-sketch text-xs text-[#9b2c2c] font-bold block px-1 animate-fade-in">
-                ⚠️ {joinError}
-              </span>
-            )}
-
-            {/* List of Active Open Rooms */}
-            <div className="flex flex-col gap-2 mt-1">
+            <section aria-labelledby="open-rooms-heading" className="flex flex-col gap-2">
               <div className="flex items-center justify-between px-1">
-                <span className="font-sketch text-xs font-bold text-[#1a1a1a]/70 uppercase tracking-wider">
-                  Open Matches ({filteredRooms.length})
-                </span>
-                <span className="text-[10px] text-[#166534] font-sketch font-bold">
-                  🟢 Live
-                </span>
+                <h2 id="open-rooms-heading" className="font-sketch text-lg font-bold text-game-ink-black">
+                  {GAME_CONFIGS[gameFilter]?.displayName || 'Open rooms'}
+                </h2>
+                <p aria-live="polite" aria-atomic="true" className="font-body text-sm font-bold text-game-ink-black">
+                  {filteredRooms.length} {filteredRooms.length === 1 ? 'room' : 'rooms'}
+                </p>
               </div>
 
               {filteredRooms.length === 0 ? (
-                <div className="p-6 bg-white border-2 border-black rounded-none text-center sketch-shadow-xs">
-                  <Swords className="w-8 h-8 mx-auto text-[#1a1a1a]/40 mb-1" />
-                  <span className="font-sketch text-sm font-bold text-[#1a1a1a] block">
-                    No rooms found
-                  </span>
-                  <p className="font-sketch text-xs text-[#1a1a1a]/60 mt-0.5">
-                    Create a room to start playing.
+                <div className="p-5 bg-game-surface border-2 border-game-ink-black text-center shadow-sketch-xs">
+                  <Swords aria-hidden="true" className="w-8 h-8 mx-auto text-game-ink-black/50 mb-1" />
+                  <h3 className="font-sketch text-base font-bold text-game-ink-black">
+                    {openRooms.length === 0
+                      ? 'No open rooms yet'
+                      : !hasRoomsForGame
+                        ? `No ${GAME_CONFIGS[gameFilter]?.shortName || 'game'} rooms right now`
+                        : 'No rooms match these filters'}
+                  </h3>
+                  <p className="font-body text-sm text-game-ink-black/70 mt-1">
+                    {openRooms.length === 0
+                      ? 'Create a room and invite someone to play.'
+                      : !hasRoomsForGame
+                        ? 'Pick another game above or create the first room.'
+                        : 'Try another stake amount or host name.'}
                   </p>
-                  <button
-                    type="button"
-                    onClick={() => setLobbyView('create')}
-                    className="mt-3 px-4 py-1.5 bg-[#9b2c2c] text-white border-2 border-black font-sketch text-xs font-bold cursor-pointer"
-                  >
-                    + Create Room
-                  </button>
+                  {openRooms.length === 0 || !hasRoomsForGame ? (
+                    <button
+                      type="button"
+                      onClick={() => setLobbyView('create')}
+                      className="mt-3 min-h-11 px-4 bg-game-ink-red text-game-surface border-2 border-game-ink-black font-body text-sm font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-game-ink-blue focus-visible:ring-offset-2"
+                    >
+                      Create {GAME_CONFIGS[gameFilter]?.shortName || 'a'} duel
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSearchQuery('');
+                        setStakeFilter('any');
+                      }}
+                      className="mt-3 min-h-11 px-4 bg-game-note-yellow text-game-ink-black border-2 border-game-ink-black font-body text-sm font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-game-ink-blue focus-visible:ring-offset-2"
+                    >
+                      Clear filters
+                    </button>
+                  )}
                 </div>
               ) : (
-                filteredRooms.map((room) => (
-                  <div
-                    key={room.code}
-                    className="p-3 bg-white border-2 border-black rounded-none flex items-center justify-between sketch-shadow-xs hover:bg-[#fbfaf7] transition-colors"
-                  >
-                    <div className="flex items-center gap-2.5">
-                      <Avatar name={room.hostName} photoUrl={room.hostAvatar} color="green" size="sm" />
-                      <div className="flex flex-col">
-                        <div className="flex items-center gap-1.5">
-                          <GameBadge game={room.gameType} size="xs" />
-                          <span className="font-sketch text-xs font-bold text-[#1a1a1a]">
-                            {room.hostName}
-                          </span>
-                          <span className="text-[9px] font-sketch bg-[#f2efe9] px-1.5 py-0.5 border border-black/40 text-[#1a365d] uppercase font-bold">
-                            {GAME_CONFIGS[room.gameType]?.shortName || room.gameType}
-                          </span>
+                <ul className="flex flex-col gap-2">
+                  {filteredRooms.map((room) => (
+                    <li key={room.code}>
+                      <article className="p-3 bg-game-surface border-2 border-game-ink-black flex items-center justify-between gap-3 shadow-sketch-xs hover:bg-game-paper-soft transition-colors">
+                        <div className="flex min-w-0 items-center gap-2.5">
+                          <Avatar name={room.hostName} photoUrl={room.hostAvatar} color="green" size="sm" />
+                          <div className="flex min-w-0 flex-col">
+                            <h3 className="font-body text-sm font-bold text-game-ink-black truncate">
+                              {room.hostName}
+                            </h3>
+                            <p className="font-body text-xs text-game-ink-black/70 mt-0.5">
+                              Room code: <span className="font-mono font-bold select-text">{room.code}</span>
+                            </p>
+                            <p className="font-body text-xs text-game-success-text font-bold mt-0.5">
+                              Potential win +{calculatePotBreakdown(room.stakeAmount).winnerPayout} GRAM
+                            </p>
+                          </div>
                         </div>
-                        <span className="font-mono text-[10px] text-[#1a1a1a]/60 mt-0.5">
-                          Code: {room.code} • Pot: {room.potAmount}G
-                        </span>
-                      </div>
-                    </div>
 
-                    <div className="flex items-center gap-2">
-                      <div className="text-right">
-                        <span className="font-sketch text-xs font-bold text-[#9b2c2c] block">
-                          {room.stakeAmount} GRAM
-                        </span>
-                        <span className="text-[9px] text-[#166534] font-sketch font-bold">
-                          Win +{Math.floor(room.potAmount * 0.9)}G
-                        </span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => handleJoinSpecificRoom(room)}
-                        className="px-3 py-1.5 bg-[#166534] hover:bg-[#124d27] text-white border-2 border-black font-sketch text-xs font-bold sketch-shadow-xs active:scale-95 transition-all flex items-center gap-1"
-                      >
-                        <Zap className="w-3.5 h-3.5" />
-                        Duel
-                      </button>
-                    </div>
-                  </div>
-                ))
+                        <div className="flex shrink-0 items-center gap-2">
+                          <p className="font-body text-sm font-bold text-game-ink-red text-right">
+                            {room.stakeAmount} GRAM
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => handleJoinSpecificRoom(room)}
+                            aria-label={`Join ${room.hostName}'s room, ${room.stakeAmount} GRAM stake`}
+                            className="min-h-11 px-3 bg-game-success-text hover:brightness-90 text-game-surface border-2 border-game-ink-black font-body text-sm font-bold shadow-sketch-xs active:translate-x-px active:translate-y-px active:shadow-none transition-all flex items-center gap-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-game-ink-blue focus-visible:ring-offset-2"
+                          >
+                            <LogIn aria-hidden="true" className="w-4 h-4" />
+                            Join
+                          </button>
+                        </div>
+                      </article>
+                    </li>
+                  ))}
+                </ul>
               )}
-            </div>
+            </section>
           </div>
         )}
 

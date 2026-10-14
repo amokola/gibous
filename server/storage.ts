@@ -289,8 +289,8 @@ export class StorageService {
     })), now);
   }
 
-  async getLeaderboard(limit = 50) {
-    return this.db.loadLeaderboard(limit);
+  async getLeaderboard(limit = 50, period: 'alltime' | 'daily' | 'weekly' = 'alltime') {
+    return this.db.loadLeaderboard(limit, period);
   }
 
   async createDepositIntent(input: {

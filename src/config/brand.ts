@@ -16,7 +16,7 @@ export const BRAND = {
     vault: 'Gibous Vault',
     balance: 'GRAM Balance',
     ranks: 'Gibous Ranks',
-    standings: 'Season 1 Global Standings',
+    standings: 'Global Standings',
     lobby: 'Arena Lobby',
     rooms: 'Duel Rooms',
     createRoom: 'Create Duel',

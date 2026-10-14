@@ -1818,7 +1818,12 @@ export class DatabasePool {
 
       const matches = this.inMemoryDb.get('matches') || [];
       const m = matches.find((item) => item.code === matchCode);
-      if (m) m.status = 'finished';
+      if (m) {
+        m.status = 'finished';
+        m.winner_telegram_id = winnerTgId;
+        m.winner_payout = calc.winnerPayout;
+        m.finished_at = new Date();
+      }
 
       return { applied: true, calculation: calc };
     }
@@ -2223,7 +2228,60 @@ export class DatabasePool {
     });
   }
 
-  async loadLeaderboard(limit = 50) {
+  async loadLeaderboard(limit = 50, period: 'alltime' | 'daily' | 'weekly' = 'alltime') {
+    if (period !== 'alltime') {
+      const since = new Date(Date.now() - (period === 'daily' ? 24 : 168) * 60 * 60 * 1000);
+      if (!this.usesPersistentDatabase()) {
+        const usersByTelegramId = new Map(this.getUsers().map((user) => [user.telegram_id, user]));
+        const totals = new Map<number, { wins: number; earned: number }>();
+        for (const match of this.inMemoryDb.get('matches') || []) {
+          const finishedAt = new Date(match.finished_at || match.updated_at || 0);
+          const winnerTelegramId = Number(match.winner_telegram_id);
+          if (match.status !== 'finished' || !winnerTelegramId || finishedAt < since || !usersByTelegramId.has(winnerTelegramId)) continue;
+          const total = totals.get(winnerTelegramId) || { wins: 0, earned: 0 };
+          total.wins += 1;
+          total.earned += Math.max(0, Number(match.winner_payout || 0) - Number(match.stakeAmount ?? match.stake_amount ?? 0));
+          totals.set(winnerTelegramId, total);
+        }
+        return [...totals.entries()]
+          .map(([telegramId, total]) => {
+            const user = usersByTelegramId.get(telegramId)!;
+            return {
+              name: user.first_name,
+              handle: user.username ? `@${user.username}` : undefined,
+              wins: total.wins,
+              earned: total.earned,
+              tier: user.level >= 20 ? 'Grandmaster' : user.level >= 10 ? 'Diamond' : user.level >= 5 ? 'Gold' : 'Unranked',
+            };
+          })
+          .sort((a, b) => b.wins - a.wins || b.earned - a.earned || a.name.localeCompare(b.name))
+          .slice(0, limit)
+          .map((player, index) => ({ ...player, rank: index + 1 }));
+      }
+
+      const result = await this.query<any>(
+        `SELECT u.telegram_id, u.username, u.first_name, u.level,
+                COUNT(m.id)::integer AS wins,
+                COALESCE(SUM(GREATEST(t.amount - m.stake_amount, 0)), 0) AS earned
+           FROM matches m
+           JOIN users u ON u.id = m.winner_id
+           LEFT JOIN transactions t ON t.match_code = m.code AND t.user_id = u.id AND t.type = 'match_win'
+          WHERE m.status = 'finished' AND m.finished_at >= $1
+          GROUP BY u.id, u.telegram_id, u.username, u.first_name, u.level
+          ORDER BY wins DESC, earned DESC, u.telegram_id ASC
+          LIMIT $2`,
+        [since, limit]
+      );
+      return result.rows.map((row: any, index: number) => ({
+        rank: index + 1,
+        name: row.first_name,
+        handle: row.username ? `@${row.username}` : undefined,
+        wins: Number(row.wins),
+        earned: Number(row.earned),
+        tier: Number(row.level) >= 20 ? 'Grandmaster' : Number(row.level) >= 10 ? 'Diamond' : Number(row.level) >= 5 ? 'Gold' : 'Unranked',
+      }));
+    }
+
     if (!this.usesPersistentDatabase()) {
       const users = this.getUsers();
       return users

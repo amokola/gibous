@@ -232,8 +232,10 @@ app.get('/api/rooms', (_req, res) => {
   res.json({ rooms: roomManager.getOpenRooms() });
 });
 
-app.get('/api/leaderboard', async (_req, res) => {
-  res.json({ period: 'alltime', players: await storage.getLeaderboard() });
+app.get('/api/leaderboard', async (req, res) => {
+  const requestedPeriod = req.query.period;
+  const period = requestedPeriod === 'daily' || requestedPeriod === 'weekly' ? requestedPeriod : 'alltime';
+  res.json({ period, players: await storage.getLeaderboard(50, period) });
 });
 
 app.post('/api/rooms', async (req, res) => {
