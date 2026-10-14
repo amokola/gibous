@@ -9,7 +9,7 @@ interface HeroBannerProps {
 
 export const HeroBanner: React.FC<HeroBannerProps> = ({ onQuickJoin }) => {
   return (
-    <div className="relative w-full rounded-none bg-game-note-yellow border-2 sm:border-[2.5px] border-black p-4 sm:p-5 sketch-shadow-lg overflow-hidden select-none my-2">
+    <div className="relative flex min-h-44 sm:min-h-48 w-full flex-col rounded-none bg-game-note-yellow border-2 sm:border-[2.5px] border-black p-4 sm:p-5 sketch-shadow-lg overflow-hidden select-none my-2">
       <div aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden">
         <img
           src="/assets/gibous-watercolor-watermark.webp"
@@ -20,7 +20,7 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({ onQuickJoin }) => {
       </div>
 
       {/* Content */}
-      <div className="relative z-10 flex flex-col gap-2.5">
+      <div className="relative z-10 flex flex-1 flex-col justify-between gap-2.5">
         <div>
           <h2 className="font-sketch text-2xl sm:text-3xl font-bold text-[#1a1a1a] tracking-wide leading-tight flex items-center gap-2">
             <span>Gibous</span>
