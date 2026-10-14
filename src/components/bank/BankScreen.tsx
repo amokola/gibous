@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useTonAddress, useTonWallet, useTonConnectUI } from '@tonconnect/ui-react';
 import { beginCell } from '@ton/core';
-import { Check, History, ShieldCheck, Wallet, Unlink, Loader2 } from 'lucide-react';
+import { Check, History, Wallet, Unlink, Loader2 } from 'lucide-react';
 import { GramIcon } from '../ui/GramIcon';
 import { BankVaultIcon, WalletDepositIcon, WalletWithdrawIcon } from '../icons/GameIcons';
 import { toNanoGram, formatGram } from '../../utils/tonUnits';
@@ -413,7 +413,7 @@ export const BankScreen: React.FC<BankScreenProps> = ({
         )}
       </div>
 
-      {/* 2. Top Gaming Vault Balance Card */}
+      {/* 2. Top Gaming Balance Card */}
       <div className="w-full bg-white border-2 border-black p-4 sketch-shadow rounded-none flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="w-12 h-12 bg-[#e0f2fe] border-2 border-black flex items-center justify-center">
@@ -421,7 +421,7 @@ export const BankScreen: React.FC<BankScreenProps> = ({
           </div>
           <div>
             <span className="font-sketch text-xs text-[#1a1a1a]/60 uppercase font-bold tracking-wider block">
-              Vault Balance
+              Balance
             </span>
             <div className="flex items-center gap-1.5 mt-0.5">
               <span className="font-sketch text-2xl sm:text-3xl font-bold text-[#1a365d]">
@@ -492,13 +492,13 @@ export const BankScreen: React.FC<BankScreenProps> = ({
                 {localInFlight?.status === 'credited' ? '✓' : localInFlight?.status === 'expired' ? '!' : '3'}
               </span>
               <span>
-                {localInFlight?.status === 'credited' ? '3. Vault balance credited!' : localInFlight?.status === 'expired' ? '3. No funds were credited' : '3. Crediting vault balance'}
+                {localInFlight?.status === 'credited' ? '3. Balance credited!' : localInFlight?.status === 'expired' ? '3. No funds were credited' : '3. Crediting balance'}
               </span>
             </div>
           </div>
           {localInFlight?.status === 'expired' && (
             <p className="border-t border-[#9b2c2c]/30 pt-2 font-sketch text-[11px] text-[#9b2c2c]">
-              This request expired without a confirmed Vault credit. Check your transaction history before starting another deposit.
+              This request expired before your balance was credited. Check your transaction history before starting another deposit.
             </p>
           )}
         </div>
@@ -580,7 +580,7 @@ export const BankScreen: React.FC<BankScreenProps> = ({
               </span>
             </div>
             <span className="font-sketch text-xs text-[#166534] bg-[#dcfce7] px-2 py-0.5 border border-black font-bold">
-              TON Connect
+              Deposit
             </span>
           </div>
 
@@ -649,12 +649,6 @@ export const BankScreen: React.FC<BankScreenProps> = ({
                 </button>
               ))}
             </div>
-          </div>
-
-          {/* Direct Instant TON Connect notice */}
-          <div className="p-2.5 bg-[#f0fdf4] border border-[#166534]/30 font-sketch text-[11px] text-[#166534] flex items-center gap-1.5">
-            <ShieldCheck aria-hidden="true" className="w-3.5 h-3.5 shrink-0" />
-            <span>Funds are transferred securely through your connected TON wallet.</span>
           </div>
 
           {/* On-Chain Transaction CTA */}
