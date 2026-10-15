@@ -36,8 +36,7 @@ import {
 import { multiplayerService } from './services/multiplayerService';
 
 // Lazy-loaded screens
-const HomeScreen = lazy(() => import('./components/home/HomeScreen').then((m) => ({ default: m.HomeScreen })));
-const LobbyScreen = lazy(() => import('./components/lobby/LobbyScreen').then((m) => ({ default: m.LobbyScreen })));
+const PrimaryScreens = lazy(() => import('./components/PrimaryScreens').then((m) => ({ default: m.PrimaryScreens })));
 const WaitingRoomScreen = lazy(() => import('./components/lobby/WaitingRoomScreen').then((m) => ({ default: m.WaitingRoomScreen })));
 const VSIntroOverlay = lazy(() => import('./components/duel/VSIntroOverlay').then((m) => ({ default: m.VSIntroOverlay })));
 const DuelShell = lazy(() => import('./components/duel/DuelShell').then((m) => ({ default: m.DuelShell })));
@@ -84,8 +83,6 @@ export const App: React.FC = () => {
     tg,
     showBackButton,
     hideBackButton,
-    impactOccurred,
-    notificationOccurred,
     enableClosingConfirmation,
     disableClosingConfirmation,
   } = useTelegram();
@@ -107,7 +104,6 @@ export const App: React.FC = () => {
 
   // Auto-join duel from deep link (startapp or start_param)
   const hasHandledStartParam = useRef(false);
-  const lastHapticGameOverRef = useRef<string | null>(null);
   useEffect(() => {
     if (!startParam || hasHandledStartParam.current) return;
     if (connectionState === 'CONNECTED' && authenticatedUser) {
@@ -153,17 +149,6 @@ export const App: React.FC = () => {
       }
     }
   }, [currentRoom?.status, currentScreen, setScreen]);
-
-  useEffect(() => {
-    if (!lastGameOverEvent || !myRole) return;
-    const eventKey = `${lastGameOverEvent.roomCode}:${lastGameOverEvent.version}`;
-    if (lastHapticGameOverRef.current === eventKey) return;
-    lastHapticGameOverRef.current = eventKey;
-
-    if (lastGameOverEvent.winner === 'draw') notificationOccurred('warning');
-    else if (lastGameOverEvent.winner === myRole) notificationOccurred('success');
-    else notificationOccurred('error');
-  }, [lastGameOverEvent, myRole, notificationOccurred]);
 
   // Transaction mapping for HomeScreen recent activity feed
   const accountTransactions = useMemo(() => {
@@ -372,31 +357,29 @@ export const App: React.FC = () => {
             </div>
           }
         >
-          {currentScreen === 'home' && (
-            <HomeScreen
-              userName={tgUser.first_name || 'Player 1'}
-              avatarUrl={tgUser.photo_url}
-              balance={userBalance}
-              onSelectAndPlayGame={handleSelectAndPlayGame}
-              onSubmitDeposit={submitDeposit}
-              onRequestWithdrawalQuote={requestWithdrawalQuote}
-              onConfirmWithdrawal={confirmWithdrawal}
-              initialTransactions={accountTransactions}
-              account={authenticatedUser}
+          {(currentScreen === 'home' || currentScreen === 'lobby') && (
+            <PrimaryScreens
+              screen={currentScreen}
+              homeProps={{
+                userName: tgUser.first_name || 'Player 1',
+                avatarUrl: tgUser.photo_url,
+                balance: userBalance,
+                onSelectAndPlayGame: handleSelectAndPlayGame,
+                onSubmitDeposit: submitDeposit,
+                onRequestWithdrawalQuote: requestWithdrawalQuote,
+                onConfirmWithdrawal: confirmWithdrawal,
+                initialTransactions: accountTransactions,
+                account: authenticatedUser,
+              }}
+              lobbyProps={{
+                selectedGame,
+                onSelectGame: setSelectedGame,
+                initialStake: duelState.stakeAmount ?? MIN_STAKE,
+                onCreateDuel: (game, stake) => handleCreateRoom(stake, game),
+                onJoinDuel: (code) => handleJoinRoom(code),
+                onBack: () => setScreen('home'),
+              }}
             />
-          )}
-
-          {currentScreen === 'lobby' && (
-            <div className="flex-1 min-h-0 flex flex-col">
-              <LobbyScreen
-                selectedGame={selectedGame}
-                onSelectGame={setSelectedGame}
-                initialStake={duelState.stakeAmount ?? MIN_STAKE}
-                onCreateDuel={(game, stake) => handleCreateRoom(stake, game)}
-                onJoinDuel={(code) => handleJoinRoom(code)}
-                onBack={() => setScreen('home')}
-              />
-            </div>
           )}
 
           {currentScreen === 'waiting' && currentRoom && (
@@ -436,21 +419,21 @@ export const App: React.FC = () => {
               {currentRoom.gameType === 'snake' && (
                 <SnakeLadderArena
                   duelState={duelState}
-                  onRoll={() => { impactOccurred('light'); sendSnakeRoll(currentRoom.code); }}
+                  onRoll={() => sendSnakeRoll(currentRoom.code)}
                 />
               )}
 
               {currentRoom.gameType === 'connect4' && (
                 <Connect4Arena
                   duelState={duelState}
-                  onDropDisc={(col) => { impactOccurred('medium'); sendConnect4Drop(currentRoom.code, col); }}
+                  onDropDisc={(col) => sendConnect4Drop(currentRoom.code, col)}
                 />
               )}
 
               {currentRoom.gameType === 'rps' && (
                 <RPSArena
                   duelState={duelState}
-                  onChooseRPS={(choice) => { impactOccurred('light'); sendRPSChoice(currentRoom.code, choice); }}
+                  onChooseRPS={(choice) => sendRPSChoice(currentRoom.code, choice)}
                 />
               )}
             </DuelShell>

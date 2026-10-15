@@ -131,6 +131,50 @@ describe('Withdrawal Flow & Invariants', () => {
     expect(resultZero.error).toContain('fee must be less than');
   });
 
+  it.each([
+    ['empty gross amount', '', '1'],
+    ['malformed gross amount', '1.5', '1'],
+    ['negative gross amount', '-1', '1'],
+    ['negative fee', '1000000000', '-1'],
+    ['fee equal to gross amount', '1000000000', '1000000000'],
+    ['malformed fee', '1000000000', '1.5'],
+  ])('rejects %s without creating a quote', async (_label, grossAmountNano, feeNano) => {
+    const telegramId = 880020;
+    await storage.getOrCreateUser({ id: telegramId, first_name: 'Invalid Quote Player' });
+
+    const result = await storage.createWithdrawalQuote({
+      telegramId,
+      walletAddress: 'UQATZc4GlaIi1yqeAQ8RwG_JpJN27ZdgFrEtVM1UZkOnT8Cz',
+      grossAmountNano,
+      feeNano,
+      network: 'mainnet',
+    });
+
+    expect(result.success).toBe(false);
+    expect((DatabasePool.getInstance() as any).inMemoryDb.get('withdrawal_quotes')).toHaveLength(0);
+  });
+
+  it('accepts the exact configured minimum and maximum gross amounts', async () => {
+    const telegramId = 880021;
+    await storage.getOrCreateUser({ id: telegramId, first_name: 'Boundary Quote Player' });
+
+    const minimum = await storage.createWithdrawalQuote({
+      telegramId, walletAddress: 'UQATZc4GlaIi1yqeAQ8RwG_JpJN27ZdgFrEtVM1UZkOnT8Cz',
+      grossAmountNano: '100000000', feeNano: '1', network: 'mainnet',
+    });
+    const maximum = await storage.createWithdrawalQuote({
+      telegramId, walletAddress: 'UQATZc4GlaIi1yqeAQ8RwG_JpJN27ZdgFrEtVM1UZkOnT8Cz',
+      grossAmountNano: '5000000000', feeNano: '1', network: 'mainnet',
+    });
+
+    expect(minimum.success).toBe(true);
+    expect(maximum.success).toBe(true);
+    if (minimum.success && maximum.success) {
+      expect(minimum.quote.netAmountNano).toBe('99999999');
+      expect(maximum.quote.netAmountNano).toBe('4999999999');
+    }
+  });
+
   it('rejects invalid recipient wallet address', async () => {
     const telegramId = 880004;
     await storage.getOrCreateUser({ id: telegramId, first_name: 'Bad Address Player' });
@@ -235,6 +279,167 @@ describe('Withdrawal Flow & Invariants', () => {
     expect(ledgerRows[0].amount_nano).toBe('-3000000000');
     const snapshot = await storage.getAccountSnapshot(telegramId);
     expect(snapshot?.transactions.find((tx: any) => tx.id === first.withdrawal.id)).toMatchObject({ status: 'pending', amountGram: 3 });
+  });
+
+  it('does not debit twice when the same quote is confirmed concurrently', async () => {
+    const telegramId = 880022;
+    const user = await storage.getOrCreateUser({ id: telegramId, first_name: 'Concurrent Confirm Player' });
+    const db = DatabasePool.getInstance();
+    const account = db.getUserByTelegramId(telegramId)!;
+    account.balance_nano = '8000000000'; account.balance_gram = 8; db.saveUser(account);
+    const quote = await storage.createWithdrawalQuote({
+      telegramId, walletAddress: 'UQATZc4GlaIi1yqeAQ8RwG_JpJN27ZdgFrEtVM1UZkOnT8Cz',
+      grossAmountNano: '3000000000', feeNano: '1000000', network: 'mainnet',
+    });
+    if (!quote.success) throw new Error('Expected a valid quote');
+
+    const results = await Promise.all([1, 2, 3, 4].map((index) => storage.confirmWithdrawalQuote({
+      telegramId, quoteId: quote.quote.quoteId, operationKey: `concurrent-confirm-${index}`,
+    })));
+
+    expect(results.every((result) => result.success)).toBe(true);
+    expect(new Set(results.map((result) => result.success && result.withdrawal.id)).size).toBe(1);
+    expect(db.getUserByTelegramId(telegramId)?.balance_nano).toBe('5000000000');
+    expect(db.getTransactionsForUser(user.id).filter((tx: any) => tx.type === 'withdraw')).toHaveLength(1);
+  });
+
+  it('rejects reusing one idempotency key for a different quote without a second debit', async () => {
+    const telegramId = 880023;
+    const user = await storage.getOrCreateUser({ id: telegramId, first_name: 'Key Reuse Player' });
+    const db = DatabasePool.getInstance();
+    const account = db.getUserByTelegramId(telegramId)!;
+    account.balance_nano = '8000000000'; account.balance_gram = 8; db.saveUser(account);
+    const createQuote = () => storage.createWithdrawalQuote({
+      telegramId, walletAddress: 'UQATZc4GlaIi1yqeAQ8RwG_JpJN27ZdgFrEtVM1UZkOnT8Cz',
+      grossAmountNano: '2000000000', feeNano: '1000000', network: 'mainnet',
+    });
+    const firstQuote = await createQuote();
+    const secondQuote = await createQuote();
+    if (!firstQuote.success || !secondQuote.success) throw new Error('Expected valid quotes');
+
+    const first = await storage.confirmWithdrawalQuote({
+      telegramId, quoteId: firstQuote.quote.quoteId, operationKey: 'shared-idempotency-key',
+    });
+    const replay = await storage.confirmWithdrawalQuote({
+      telegramId, quoteId: secondQuote.quote.quoteId, operationKey: 'shared-idempotency-key',
+    });
+
+    expect(first.success).toBe(true);
+    expect(replay).toMatchObject({ success: false, error: expect.stringContaining('Idempotency key') });
+    expect(db.getUserByTelegramId(telegramId)?.balance_nano).toBe('6000000000');
+    expect(db.getTransactionsForUser(user.id).filter((tx: any) => tx.type === 'withdraw')).toHaveLength(1);
+    expect((db as any).inMemoryDb.get('withdrawal_quotes').find((item: any) => item.id === secondQuote.quote.quoteId)?.status).toBe('quoted');
+  });
+
+  it('applies the global daily cap when users confirm quotes concurrently', async () => {
+    vi.stubEnv('PAYOUT_GLOBAL_DAILY_LIMIT_NANO', '6000000000');
+    const telegramIds = [880024, 880025];
+    const users = await Promise.all(telegramIds.map((id) => storage.getOrCreateUser({ id, first_name: 'Global Cap Player' })));
+    const db = DatabasePool.getInstance();
+    for (const telegramId of telegramIds) {
+      const account = db.getUserByTelegramId(telegramId)!;
+      account.balance_nano = '8000000000'; account.balance_gram = 8; db.saveUser(account);
+    }
+    const quotes = await Promise.all(telegramIds.map((telegramId) => storage.createWithdrawalQuote({
+      telegramId, walletAddress: 'UQATZc4GlaIi1yqeAQ8RwG_JpJN27ZdgFrEtVM1UZkOnT8Cz',
+      grossAmountNano: '4000000000', feeNano: '1000000', network: 'mainnet',
+    })));
+    const results = await Promise.all(quotes.map((quote, index) => {
+      if (!quote.success) throw new Error('Expected a valid quote');
+      return storage.confirmWithdrawalQuote({
+        telegramId: telegramIds[index], quoteId: quote.quote.quoteId, operationKey: `global-race-${index}`,
+      });
+    }));
+
+    expect(results.filter((result) => result.success)).toHaveLength(1);
+    expect(results.filter((result) => !result.success && result.error?.includes('Global daily withdrawal limit'))).toHaveLength(1);
+    expect(users.reduce((total, user) => total + db.getTransactionsForUser(user.id).filter((tx: any) => tx.type === 'withdraw').length, 0)).toBe(1);
+    expect(telegramIds.reduce((total, id) => total + BigInt(db.getUserByTelegramId(id)!.balance_nano), 0n)).toBe(12000000000n);
+  });
+
+  it('expires a quote at the exact expiry instant without changing the account', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-15T12:00:00.000Z'));
+    const telegramId = 880026;
+    await storage.getOrCreateUser({ id: telegramId, first_name: 'Expiry Boundary Player' });
+    const db = DatabasePool.getInstance();
+    const account = db.getUserByTelegramId(telegramId)!;
+    account.balance_nano = '5000000000'; account.balance_gram = 5; db.saveUser(account);
+    const quote = await storage.createWithdrawalQuote({
+      telegramId, walletAddress: 'UQATZc4GlaIi1yqeAQ8RwG_JpJN27ZdgFrEtVM1UZkOnT8Cz',
+      grossAmountNano: '1000000000', feeNano: '1000000', network: 'mainnet',
+    });
+    if (!quote.success) throw new Error('Expected a valid quote');
+    vi.setSystemTime(new Date(quote.quote.expiresAt));
+
+    const result = await storage.confirmWithdrawalQuote({
+      telegramId, quoteId: quote.quote.quoteId, operationKey: 'expiry-boundary',
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('expired');
+    expect(db.getUserByTelegramId(telegramId)?.balance_nano).toBe('5000000000');
+    expect(db.getTransactionsForUser(account.id).filter((tx: any) => tx.type === 'withdraw')).toHaveLength(0);
+  });
+
+  it('starts a fresh per-user daily limit at UTC midnight', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-15T23:59:59.999Z'));
+    const telegramId = 880027;
+    await storage.getOrCreateUser({ id: telegramId, first_name: 'UTC Rollover Player' });
+    const db = DatabasePool.getInstance();
+    const account = db.getUserByTelegramId(telegramId)!;
+    account.balance_nano = '10000000000'; account.balance_gram = 10; db.saveUser(account);
+    const createQuote = () => storage.createWithdrawalQuote({
+      telegramId, walletAddress: 'UQATZc4GlaIi1yqeAQ8RwG_JpJN27ZdgFrEtVM1UZkOnT8Cz',
+      grossAmountNano: '4000000000', feeNano: '1000000', network: 'mainnet',
+    });
+    const firstQuote = await createQuote();
+    if (!firstQuote.success) throw new Error('Expected first quote');
+    const first = await storage.confirmWithdrawalQuote({
+      telegramId, quoteId: firstQuote.quote.quoteId, operationKey: 'utc-day-before-midnight',
+    });
+    expect(first.success).toBe(true);
+    vi.setSystemTime(new Date('2026-10-16T00:00:00.000Z'));
+    const secondQuote = await createQuote();
+    if (!secondQuote.success) throw new Error('Expected second quote');
+
+    const second = await storage.confirmWithdrawalQuote({
+      telegramId, quoteId: secondQuote.quote.quoteId, operationKey: 'utc-day-after-midnight',
+    });
+
+    expect(second.success).toBe(true);
+    expect(db.getUserByTelegramId(telegramId)?.balance_nano).toBe('2000000000');
+  });
+
+  it('preserves exact nano arithmetic above JavaScript safe integer precision', async () => {
+    vi.stubEnv('PAYOUT_MIN_WITHDRAWAL_NANO', '1');
+    vi.stubEnv('PAYOUT_MAX_WITHDRAWAL_NANO', '10000000000000000');
+    vi.stubEnv('PAYOUT_USER_DAILY_LIMIT_NANO', '10000000000000000');
+    vi.stubEnv('PAYOUT_GLOBAL_DAILY_LIMIT_NANO', '10000000000000000');
+    const telegramId = 880028;
+    const user = await storage.getOrCreateUser({ id: telegramId, first_name: 'Big Integer Player' });
+    const db = DatabasePool.getInstance();
+    const account = db.getUserByTelegramId(telegramId)!;
+    account.balance_nano = '9007199254740993';
+    account.balance_gram = Number(account.balance_nano) / 1e9;
+    db.saveUser(account);
+    const quote = await storage.createWithdrawalQuote({
+      telegramId, walletAddress: 'UQATZc4GlaIi1yqeAQ8RwG_JpJN27ZdgFrEtVM1UZkOnT8Cz',
+      grossAmountNano: '9007199254740992', feeNano: '1', network: 'mainnet',
+    });
+    if (!quote.success) throw new Error('Expected a valid large integer quote');
+    const result = await storage.confirmWithdrawalQuote({
+      telegramId, quoteId: quote.quote.quoteId, operationKey: 'large-integer-confirm',
+    });
+
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.withdrawal.amount_nano).toBe('9007199254740992');
+    expect(result.withdrawal.fee_nano).toBe('1');
+    expect(result.withdrawal.net_amount_nano).toBe('9007199254740991');
+    expect(db.getUserByTelegramId(telegramId)?.balance_nano).toBe('1');
+    expect(db.getTransactionsForUser(user.id).find((tx: any) => tx.type === 'withdraw')?.amount_nano).toBe('-9007199254740992');
   });
 
   it('serializes competing confirmations against the configured daily cap', async () => {

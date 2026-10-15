@@ -89,7 +89,7 @@ export const CreateDepositIntentPayloadSchema = z.object({
 });
 
 export const SubmitDepositPayloadSchema = z.object({
-  intentId: z.string().optional(),
+  intentId: z.string().trim().min(1).max(128),
   walletAddress: z.string().trim().min(10).max(128),
   depositAddress: z.string().trim().min(10).max(128),
   amountNano: z.string().regex(/^\d+$/, 'amountNano must be an integer string').max(32),

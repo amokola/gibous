@@ -27,7 +27,6 @@ export const StakeConfirmModal: React.FC<StakeConfirmModalProps> = ({
   const config = GAME_CONFIGS[gameType];
   const pot = stakeAmount * 2;
   const breakdown = calculatePotBreakdown(stakeAmount);
-  const drawRefund = Math.floor(stakeAmount * 0.95);
 
   return (
     <div
@@ -81,20 +80,31 @@ export const StakeConfirmModal: React.FC<StakeConfirmModalProps> = ({
         </div>
 
         {/* Economic Distribution Rules */}
-        <div className="grid grid-cols-3 gap-1.5 text-[10px]">
-          <div className="bg-white p-2 border border-black/40 text-center">
-            <span className="text-[#166534] font-bold block">Winner (90%)</span>
-            <span className="font-bold text-xs text-[#1a1a1a]">+{breakdown.winnerPayout}G</span>
+        <section
+          aria-label="Payout breakdown"
+          className="bg-game-surface border-2 border-game-ink-black px-3 py-2 font-body"
+        >
+          <div className="divide-y divide-game-paper-rule">
+            <div className="flex min-h-9 items-center justify-between gap-3 text-xs">
+              <span className="font-semibold text-game-success-text">Winner payout (90%)</span>
+              <span className="whitespace-nowrap font-bold text-game-ink-black">
+                +{breakdown.winnerPayout} GRAM
+              </span>
+            </div>
+            <div className="flex min-h-9 items-center justify-between gap-3 text-xs">
+              <span className="font-semibold text-game-ink-red">Arena fee (10%)</span>
+              <span className="whitespace-nowrap font-bold text-game-ink-black">
+                -{breakdown.arenaFee} GRAM
+              </span>
+            </div>
+            <div className="flex min-h-9 items-center justify-between gap-3 text-xs">
+              <span className="font-semibold text-game-warning-text">Draw refund (95% per player)</span>
+              <span className="whitespace-nowrap font-bold text-game-ink-black">
+                +{breakdown.drawRefundPerPlayer} GRAM
+              </span>
+            </div>
           </div>
-          <div className="bg-white p-2 border border-black/40 text-center">
-            <span className="text-[#9b2c2c] font-bold block">Arena Fee (10%)</span>
-            <span className="font-bold text-xs text-[#1a1a1a]">-{breakdown.arenaFee}G</span>
-          </div>
-          <div className="bg-white p-2 border border-black/40 text-center">
-            <span className="text-[#854d0e] font-bold block">Draw Refund (95%)</span>
-            <span className="font-bold text-xs text-[#1a1a1a]">+{drawRefund}G</span>
-          </div>
-        </div>
+        </section>
 
         {/* Action Buttons */}
         <div className="flex items-center gap-2 pt-1">

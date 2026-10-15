@@ -3,12 +3,6 @@ import { BRAND } from '../config/brand';
 import type { TelegramSafeAreaInset } from '../utils/telegramSafeArea';
 import { requestPreparedBragShare } from '../services/telegramBragService';
 import { resolveTelegramTheme } from '../utils/telegramTheme';
-import {
-  triggerHapticImpact,
-  triggerHapticNotification,
-  type HapticImpactStyle,
-  type HapticNotificationType,
-} from '../utils/telegramHaptics';
 
 // Telegram WebApp Type Declarations
 export interface TelegramUser {
@@ -47,11 +41,6 @@ declare global {
           button_text_color?: string;
           secondary_bg_color?: string;
           header_bg_color?: string;
-        };
-        HapticFeedback?: {
-          impactOccurred?: (style: HapticImpactStyle) => unknown;
-          notificationOccurred?: (type: HapticNotificationType) => unknown;
-          selectionChanged?: () => unknown;
         };
         isExpanded: boolean;
         viewportHeight: number;
@@ -270,14 +259,6 @@ export function useTelegram() {
     return requestPreparedBragShare(initData, tg || {});
   }, [initData, tg]);
 
-  const impactOccurred = useCallback((style: HapticImpactStyle = 'light') => {
-    triggerHapticImpact(tg?.HapticFeedback, style);
-  }, [tg]);
-
-  const notificationOccurred = useCallback((type: HapticNotificationType) => {
-    triggerHapticNotification(tg?.HapticFeedback, type);
-  }, [tg]);
-
   const shareRoomInvite = (roomCode: string, betAmount: number) => {
     const text = `⚔️ Duel me on Gibous!\n🎲 Room: ${roomCode}\n💎 Pot: ${betAmount * 2} GRAM\n\nTap to play!`;
     const botUrl = `https://t.me/share/url?url=${encodeURIComponent(`${BRAND.links.botAppUrl}?startapp=${roomCode}`)}&text=${encodeURIComponent(text)}`;
@@ -339,8 +320,6 @@ export function useTelegram() {
     startParam,
     sharePreparedBragCard,
     shareRoomInvite,
-    impactOccurred,
-    notificationOccurred,
     showBackButton,
     hideBackButton,
     enableClosingConfirmation,

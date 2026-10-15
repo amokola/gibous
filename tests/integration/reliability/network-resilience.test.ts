@@ -96,8 +96,16 @@ describe('Network Resilience & Financial Invariants Integration Tests', () => {
     const storage = new StorageService();
     const userTgId = 920031;
     await storage.getOrCreateUser({ id: userTgId, first_name: 'DepositUser' });
+    const depositIntent = await storage.createDepositIntent({
+      telegramId: userTgId,
+      amountNano: '1000000000',
+      walletAddress: 'EQBvW8Z5huBkMJYdnfAEM5JqTNt2XYBaxLVTNVGZDp0_Av',
+      depositAddress: process.env.TON_DEPOSIT_ADDRESS || 'UQATZc4GlaIi1yqeAQ8RwG_JpJN27ZdgFrEtVM1UZkOnT8Cz',
+      network: 'mainnet',
+    });
 
     const depositInput = {
+      intentId: depositIntent.id,
       telegramId: userTgId,
       walletAddress: 'EQBvW8Z5huBkMJYdnfAEM5JqTNt2XYBaxLVTNVGZDp0_Av',
       depositAddress: process.env.TON_DEPOSIT_ADDRESS || 'UQATZc4GlaIi1yqeAQ8RwG_JpJN27ZdgFrEtVM1UZkOnT8Cz',

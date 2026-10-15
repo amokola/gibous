@@ -172,7 +172,7 @@ describe('BankScreen Component with TON Connect & Real GRAM', () => {
     />);
 
     expect(await screen.findByText(/Deposit Credited/i)).toBeInTheDocument();
-    expect(screen.getByText(/Vault balance credited/i)).toBeInTheDocument();
+    expect(screen.getByText(/Balance credited!/i)).toBeInTheDocument();
   });
 
   it('shows a recoverable error when the server rejects a signed deposit', async () => {
@@ -303,7 +303,8 @@ describe('BankScreen Component with TON Connect & Real GRAM', () => {
     const withdrawBtn = screen.getByRole('button', { name: 'Withdraw' });
     fireEvent.click(withdrawBtn);
 
-    fireEvent.click(screen.getByRole('button', { name: /Get withdrawal quote/i }));
+    // The form's Withdraw button requests and displays the server-generated fee quote.
+    fireEvent.click(screen.getByRole('button', { name: 'Withdraw' }));
 
     await waitFor(() => {
       expect(requestQuote).toHaveBeenCalledWith({

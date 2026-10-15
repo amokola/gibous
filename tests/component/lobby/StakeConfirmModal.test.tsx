@@ -22,9 +22,9 @@ describe('StakeConfirmModal Component Tests', () => {
 
     expect(screen.getByText(/Confirm Duel Entry/i)).toBeInTheDocument();
     expect(screen.getByText(/Your Entry Stake:/i)).toBeInTheDocument();
-    expect(screen.getByText('+180G')).toBeInTheDocument(); // Net Winner prize
-    expect(screen.getByText('-20G')).toBeInTheDocument(); // Arena fee
-    expect(screen.getByText('+95G')).toBeInTheDocument(); // Draw refund
+    expect(screen.getByText('Winner payout (90%)').parentElement).toHaveTextContent(/\+180\s*GRAM/);
+    expect(screen.getByText('Arena fee (10%)').parentElement).toHaveTextContent(/-20\s*GRAM/);
+    expect(screen.getByText('Draw refund (95% per player)').parentElement).toHaveTextContent(/\+95\s*GRAM/);
 
     // Confirm action
     const confirmBtn = screen.getByRole('button', { name: /Confirm & Create/i });

@@ -341,7 +341,7 @@ export class StorageService {
   }
 
   async recordPendingDeposit(input: {
-    intentId?: string;
+    intentId: string;
     telegramId: number;
     walletAddress: string;
     depositAddress: string;
@@ -349,6 +349,10 @@ export class StorageService {
     boc: string;
     network: 'mainnet' | 'testnet';
   }) {
+    if (!input.intentId) {
+      return { success: false as const, error: 'DEPOSIT_INTENT_REQUIRED' };
+    }
+
     const user = await this.db.loadUserByTelegramId(input.telegramId);
     if (!user) return { success: false as const, error: 'Account not found' };
 
@@ -369,64 +373,50 @@ export class StorageService {
     }
     if (amountNano <= 0n) return { success: false as const, error: 'Deposit amount must be greater than zero' };
 
-    if (input.intentId) {
-      const intent = await this.db.loadDepositIntentById(input.intentId);
-      if (!intent) {
-        return { success: false as const, error: 'DEPOSIT_INTENT_NOT_FOUND' };
-      }
-      if (Number(intent.telegram_id) !== input.telegramId) {
-        return { success: false as const, error: 'DEPOSIT_INTENT_OWNERSHIP_MISMATCH' };
-      }
-      if (intent.status === 'confirmed') {
-        return { success: false as const, error: 'DEPOSIT_INTENT_ALREADY_CONFIRMED' };
-      }
-      if (intent.status !== 'pending') {
-        return { success: false as const, error: 'Deposit intent is not pending' };
-      }
-      if (intent.expires_at && new Date() > new Date(intent.expires_at)) {
-        await this.db.updatePersistentDepositIntent(intent.id, { status: 'expired' });
-        return { success: false as const, error: 'DEPOSIT_INTENT_EXPIRED' };
-      }
-      if (String(intent.amount_nano) !== String(input.amountNano)) {
-        return { success: false as const, error: 'DEPOSIT_AMOUNT_MISMATCH' };
-      }
-
-      const existingByBoc = await this.db.loadDepositIntentByBoc(input.boc);
-      if (existingByBoc && existingByBoc.id !== intent.id) {
-        return { success: false as const, error: 'This deposit transaction is already associated with another intent' };
-      }
-
-      const updated = await this.db.updatePersistentDepositIntent(intent.id, {
-        boc: input.boc,
-        wallet_address: input.walletAddress || intent.wallet_address,
-      });
-      return { success: true as const, transaction: this.toPendingDeposit(updated || intent) };
+    const intent = await this.db.loadDepositIntentById(input.intentId);
+    if (!intent) {
+      return { success: false as const, error: 'DEPOSIT_INTENT_NOT_FOUND' };
     }
-
-    const existing = await this.db.loadDepositIntentByBoc(input.boc);
-    if (existing) {
-      // Prevent BOC reconnaissance: verify user ownership before returning details
-      if (Number(existing.telegram_id) !== input.telegramId) {
-        return { success: false as const, error: 'This deposit is already linked to another account' };
-      }
-      return { success: true as const, transaction: this.toPendingDeposit(existing) };
-    }
-
-    const intent = await this.db.persistDepositIntent({
-      telegram_id: input.telegramId,
-      wallet_address: input.walletAddress,
-      deposit_address: input.depositAddress,
-      amount_nano: input.amountNano,
-      boc: input.boc,
-      network: input.network,
-      status: 'pending',
-    });
-
     if (Number(intent.telegram_id) !== input.telegramId) {
-      return { success: false as const, error: 'This deposit is already linked to another account' };
+      return { success: false as const, error: 'DEPOSIT_INTENT_OWNERSHIP_MISMATCH' };
+    }
+    if (intent.status === 'confirmed') {
+      return { success: false as const, error: 'DEPOSIT_INTENT_ALREADY_CONFIRMED' };
+    }
+    if (intent.status !== 'pending') {
+      return { success: false as const, error: 'Deposit intent is not pending' };
+    }
+    if (intent.expires_at && new Date() > new Date(intent.expires_at)) {
+      await this.db.updatePersistentDepositIntent(intent.id, { status: 'expired' });
+      return { success: false as const, error: 'DEPOSIT_INTENT_EXPIRED' };
+    }
+    if (String(intent.amount_nano) !== String(input.amountNano)) {
+      return { success: false as const, error: 'DEPOSIT_AMOUNT_MISMATCH' };
     }
 
-    return { success: true as const, transaction: this.toPendingDeposit(intent) };
+    if (intent.deposit_address !== input.depositAddress) {
+      return { success: false as const, error: 'DEPOSIT_ADDRESS_MISMATCH' };
+    }
+    if (intent.network !== input.network) {
+      return { success: false as const, error: 'DEPOSIT_NETWORK_MISMATCH' };
+    }
+    if (intent.wallet_address && intent.wallet_address !== input.walletAddress) {
+      return { success: false as const, error: 'DEPOSIT_WALLET_MISMATCH' };
+    }
+    if (intent.boc && intent.boc !== input.boc) {
+      return { success: false as const, error: 'DEPOSIT_INTENT_ALREADY_BOUND_TO_BOC' };
+    }
+
+    const existingByBoc = await this.db.loadDepositIntentByBoc(input.boc);
+    if (existingByBoc && existingByBoc.id !== intent.id) {
+      return { success: false as const, error: 'This deposit transaction is already associated with another intent' };
+    }
+
+    const updated = await this.db.claimPendingDepositBoc(intent.id, input.boc, input.walletAddress || intent.wallet_address);
+    if (!updated) {
+      return { success: false as const, error: 'This deposit transaction is already associated with another intent' };
+    }
+    return { success: true as const, transaction: this.toPendingDeposit(updated || intent) };
   }
 
   async getPendingDepositIntents() {

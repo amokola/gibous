@@ -17,6 +17,7 @@
     "test": "vitest run",
     "test:unit": "vitest run tests/unit",
     "test:integration": "vitest run tests/integration",
+    "test:postgres": "vitest run --config vitest.postgres.config.ts",
     "test:component": "vitest run tests/component",
     "test:contract": "vitest run tests/contract",
     "test:security": "vitest run tests/security",

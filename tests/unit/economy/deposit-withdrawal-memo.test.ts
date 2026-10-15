@@ -1,8 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { DatabasePool, generateDepositMemo, generateWithdrawalMemo } from '../../../server/db/index';
-import { StorageService, PendingDepositIntent } from '../../../server/storage';
-import { DepositVerificationService } from '../../../server/tonVerifier';
-import { Address } from '@ton/core';
+import { StorageService } from '../../../server/storage';
 
 describe('Server-Generated Deposit and Withdrawal Memos', () => {
   let storage: StorageService;
@@ -256,69 +254,4 @@ describe('Server-Generated Deposit and Withdrawal Memos', () => {
     });
   });
 
-  describe('Strict Memo Matching in TonVerifier', () => {
-    it('requires strict exact memo equality and rejects prefix, suffix, and substring matches', async () => {
-      const verifier = new DepositVerificationService(storage);
-
-      const targetMemo = 'dep_42_a8c9e2f4';
-      const intent: PendingDepositIntent = {
-        id: 'test_intent_1',
-        telegram_id: 9999,
-        wallet_address: 'EQD48x9_ton_player_wallet_address_12345',
-        deposit_address: 'EQD48x9_gibous_vault_address_12345',
-        amount_nano: '1000000000',
-        amount_gram: 1,
-        memo: targetMemo,
-        network: 'testnet',
-        status: 'pending',
-        created_at: new Date(),
-      };
-
-      // Mock extractComment helper behavior
-      const testCases = [
-        { comment: 'dep_42_a8c9e2f4', expectedMatch: true },
-        { comment: 'dep_42_a8c9e2f40', expectedMatch: false }, // extra char at end
-        { comment: 'dep_42_a8c9e2f', expectedMatch: false }, // missing char
-        { comment: 'xdep_42_a8c9e2f4', expectedMatch: false }, // prepended char
-        { comment: 'dep_42_a8c9e2f4_extra', expectedMatch: false }, // suffix
-        { comment: 'something dep_42_a8c9e2f4 else', expectedMatch: false }, // substring
-        { comment: '', expectedMatch: false },
-      ];
-
-      for (const tc of testCases) {
-        if (intent.memo) {
-          const isExact = tc.comment === intent.memo;
-          expect(isExact).toBe(tc.expectedMatch);
-        }
-      }
-    });
-
-    it('preserves backward compatibility for legacy intents without memo', () => {
-      const legacyIntent: PendingDepositIntent = {
-        id: 'legacy_uuid_12345',
-        telegram_id: 55555,
-        wallet_address: 'EQD48x9_ton_player_wallet_address_12345',
-        deposit_address: 'EQD48x9_gibous_vault_address_12345',
-        amount_nano: '1000000000',
-        amount_gram: 1,
-        boc: 'boc-legacy',
-        network: 'testnet',
-        status: 'pending',
-        created_at: new Date(),
-      };
-
-      // When memo is absent, legacy matching checks id or telegram_id
-      const commentMatchesId = 'legacy_uuid_12345';
-      const commentMatchesTg = '55555';
-      const commentInvalid = 'random_comment';
-
-      const checkLegacy = (comment: string) => {
-        return comment.includes(legacyIntent.id) || comment.includes(String(legacyIntent.telegram_id));
-      };
-
-      expect(checkLegacy(commentMatchesId)).toBe(true);
-      expect(checkLegacy(commentMatchesTg)).toBe(true);
-      expect(checkLegacy(commentInvalid)).toBe(false);
-    });
-  });
 });

@@ -4,6 +4,8 @@ import { connectTestClient, sendAndAwaitResponse, waitForMessage } from '../../s
 import { generateValidInitData, TEST_BOT_TOKEN } from '../../setup/mock-data';
 import { WebSocket } from 'ws';
 import { metrics } from '../../../server/observability';
+import { connectionManager } from '../../../server/connectionManager';
+import { sessionManager } from '../../../server/sessionManager';
 
 describe('WebSocket Handshake & Auth Integration Tests', () => {
   let wsUrl: string;
@@ -110,6 +112,27 @@ describe('WebSocket Handshake & Auth Integration Tests', () => {
 
     expect(response.type).toBe('AUTH_OK');
     expect(response.payload.telegramId).toBe(user.id);
+    clientWs.close();
+  });
+
+  it('rejects AUTH again on an already authenticated socket', async () => {
+    const firstUser = { id: 555006, first_name: 'FirstIdentity' };
+    const secondUser = { id: 555007, first_name: 'SecondIdentity' };
+    clientWs = await connectTestClient(wsUrl);
+    await sendAndAwaitResponse(clientWs, {
+      type: 'AUTH',
+      payload: { telegramId: firstUser.id, playerName: firstUser.first_name },
+    }, 'AUTH_OK');
+
+    const response = await sendAndAwaitResponse(clientWs, {
+      type: 'AUTH',
+      payload: { telegramId: secondUser.id, playerName: secondUser.first_name },
+    }, 'ERROR');
+
+    expect(response.payload.code).toBe('ALREADY_AUTHENTICATED');
+    expect(sessionManager.getSession(clientWs as any)).toBeUndefined();
+    expect(connectionManager.getConnection(firstUser.id)?.telegramId).toBe(firstUser.id);
+    expect(connectionManager.getConnection(secondUser.id)).toBeUndefined();
     clientWs.close();
   });
 

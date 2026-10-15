@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { prepareE2EUser } from './database-setup';
 
 test.describe('E2E Flow C: Resign / Surrender Flow', () => {
   test('should allow active player to surrender match and award victory to opponent', async ({ browser }) => {
@@ -7,6 +8,8 @@ test.describe('E2E Flow C: Resign / Surrender Flow', () => {
 
     const pageA = await contextA.newPage();
     const pageB = await contextB.newPage();
+    await prepareE2EUser(pageA);
+    await prepareE2EUser(pageB);
 
     // 1. Player A creates room
     await pageA.goto('/');
@@ -24,8 +27,8 @@ test.describe('E2E Flow C: Resign / Surrender Flow', () => {
     await pageB.getByText(/ROCK PAPER SCISSORS/i).first().click();
     await pageB.getByRole('button', { name: /Open Rooms/i }).click();
 
-    await pageB.getByPlaceholder(/Enter 6-char Room Code/i).fill(roomCode!);
-    await pageB.getByRole('button', { name: /Join Code/i }).click();
+    await pageB.getByPlaceholder('Enter code').fill(roomCode!);
+    await pageB.getByRole('button', { name: /Join by code/i }).click();
     await pageB.getByRole('button', { name: /Confirm & Duel/i }).click();
 
     // 3. Both enter game arena

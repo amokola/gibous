@@ -6,9 +6,13 @@ import { HeroBanner } from './HeroBanner';
 import { GameCard } from './GameCard';
 import { BottomNav } from '../layout/BottomNav';
 import { LeaderboardScreen } from '../leaderboard/LeaderboardScreen';
-import { BankScreen, BankTransactionItem } from '../bank/BankScreen';
+import type { BankTransactionItem } from '../bank/BankScreen';
 import { ProfileScreen } from '../profile/ProfileScreen';
 import { GameBadge } from '../ui/GameBadge';
+
+const TonConnectBankScreen = React.lazy(() =>
+  import('../bank/TonConnectBankScreen').then((module) => ({ default: module.TonConnectBankScreen })),
+);
 
 interface HomeScreenProps {
   userName: string;
@@ -70,10 +74,11 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   }, [account, avatarUrl, balance, userName]);
 
   const handleTabSelect = (tab: NavTab) => {
-    setActiveTab(tab);
     if (tab === 'lobby') {
       onSelectAndPlayGame('snake');
+      return;
     }
+    setActiveTab(tab);
   };
 
   return (
@@ -171,14 +176,16 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
       {/* Tab 4: Full-Page Bank Gaming Vault View (No Modal) */}
       {activeTab === 'wallet' && (
         <main className="flex-1 min-h-0 overflow-y-auto scrollbar-none">
-          <BankScreen
-            balance={balance}
-            onSubmitDeposit={onSubmitDeposit}
-            onRequestWithdrawalQuote={onRequestWithdrawalQuote}
-            onConfirmWithdrawal={onConfirmWithdrawal}
-            initialTransactions={initialTransactions}
-            activeDeposit={(account as any)?.activeDeposit}
-          />
+          <React.Suspense fallback={<div className="p-6 text-center font-sketch">Loading vault…</div>}>
+            <TonConnectBankScreen
+              balance={balance}
+              onSubmitDeposit={onSubmitDeposit}
+              onRequestWithdrawalQuote={onRequestWithdrawalQuote}
+              onConfirmWithdrawal={onConfirmWithdrawal}
+              initialTransactions={initialTransactions}
+              activeDeposit={(account as any)?.activeDeposit}
+            />
+          </React.Suspense>
         </main>
       )}
 

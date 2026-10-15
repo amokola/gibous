@@ -2,6 +2,8 @@ import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
   testDir: './tests/e2e',
+  testMatch: '**/*.spec.ts',
+  globalSetup: './tests/e2e/global-setup.ts',
   timeout: 30000,
   fullyParallel: false, // Run flows cleanly
   forbidOnly: !!process.env.CI,
@@ -24,13 +26,19 @@ export default defineConfig({
     {
       command: 'npm run server',
       port: 3001,
-      reuseExistingServer: !process.env.CI,
+      reuseExistingServer: false,
       timeout: 10000,
+      env: {
+        DATABASE_URL: process.env.E2E_DATABASE_URL || process.env.TEST_DATABASE_URL || '',
+        NODE_ENV: 'development',
+        ALLOW_UNSIGNED_AUTH: 'true',
+        PAYOUT_WORKER_ENABLED: 'false',
+      },
     },
     {
       command: 'npm run dev',
       port: 5173,
-      reuseExistingServer: !process.env.CI,
+      reuseExistingServer: false,
       timeout: 10000,
     },
   ],

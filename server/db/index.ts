@@ -143,7 +143,7 @@ export class DatabasePool {
   async query<T = any>(sql: string, params: any[] = []): Promise<QueryResult<T>> {
     const trimmed = sql.trim().toLowerCase();
 
-    // If real DATABASE_URL is configured, we connect via pg (skip in automated test suite)
+    // A configured database is authoritative outside the isolated test suite.
     if (process.env.DATABASE_URL && process.env.NODE_ENV !== 'test') {
       try {
         // Dynamic import to support optional pg installation
@@ -152,10 +152,9 @@ export class DatabasePool {
         const res = await pool.query(sql, params);
         return { rows: res.rows, rowCount: res.rowCount || res.rows.length };
       } catch (err) {
-        if (process.env.NODE_ENV === 'production') {
-          throw err;
-        }
-        console.warn('PostgreSQL connection fallback to memory:', (err as Error).message);
+        // Falling back here would make reads and writes appear to succeed while
+        // diverging from PostgreSQL, so fail closed in development as well.
+        throw err;
       }
     }
 
@@ -335,13 +334,14 @@ export class DatabasePool {
       }
       return this.getUserByTelegramId(user.telegram_id);
     }
-    const balanceNano = gramsToNano(Number(user.balance_gram || 0));
+    const balanceGram = Number(user.balance_gram || 0);
+    const balanceNano = gramsToNano(balanceGram);
     const result = await this.query<any>(
       `INSERT INTO users (
-        telegram_id, username, first_name, last_name, photo_url, balance_nano,
+        telegram_id, username, first_name, last_name, photo_url, balance_nano, balance_gram,
         total_winnings, total_volume, total_matches, wins, losses, draws,
         current_streak, best_streak, level, xp, favorite_game
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
       ON CONFLICT (telegram_id) DO UPDATE SET
         username = EXCLUDED.username, first_name = EXCLUDED.first_name,
         last_name = EXCLUDED.last_name, photo_url = EXCLUDED.photo_url,
@@ -354,7 +354,7 @@ export class DatabasePool {
       RETURNING *`,
       [
         user.telegram_id, user.username, user.first_name, user.last_name || '', user.photo_url || '',
-        balanceNano, user.total_winnings, user.total_volume, user.total_matches,
+        balanceNano, balanceGram, user.total_winnings, user.total_volume, user.total_matches,
         user.wins, user.losses, user.draws, user.current_streak, user.best_streak,
         user.level, user.xp, user.favorite_game,
       ]
@@ -2560,6 +2560,38 @@ export class DatabasePool {
       [id, ...values]
     );
     return result.rows[0];
+  }
+
+  /** Atomically bind one signed BOC to a pending intent without permitting replacement or replay. */
+  async claimPendingDepositBoc(id: string, boc: string, walletAddress?: string) {
+    if (!this.usesPersistentDatabase()) {
+      const intent = this.getDepositIntentById(id);
+      if (!intent || intent.status !== 'pending') return undefined;
+      if (intent.boc && intent.boc !== boc) return undefined;
+      const existing = this.getDepositIntentByBoc(boc);
+      if (existing && existing.id !== id) return undefined;
+      return this.updateDepositIntent(id, {
+        boc,
+        ...(walletAddress ? { wallet_address: walletAddress } : {}),
+      });
+    }
+
+    try {
+      const result = await this.query<any>(
+        `UPDATE deposit_intents
+            SET boc = $2,
+                wallet_address = CASE WHEN $3::text IS NULL OR $3 = '' THEN wallet_address ELSE $3 END,
+                updated_at = CURRENT_TIMESTAMP
+          WHERE id = $1 AND status = 'pending' AND (boc IS NULL OR boc = $2)
+          RETURNING *`,
+        [id, boc, walletAddress || null]
+      );
+      return result.rows[0];
+    } catch (error: any) {
+      // The unique BOC index arbitrates concurrent claims made against different intent rows.
+      if (error?.code === '23505' && error?.constraint === 'idx_deposit_intents_boc_unique') return undefined;
+      throw error;
+    }
   }
 
   /**

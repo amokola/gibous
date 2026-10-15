@@ -110,6 +110,12 @@ describe('Shared Zod Protocol Contract Tests', () => {
       };
       expect(ClientMessageSchema.safeParse(submitDeposit).success).toBe(true);
 
+      const legacyDepositWithoutIntent = {
+        ...submitDeposit,
+        payload: { ...submitDeposit.payload, intentId: undefined },
+      };
+      expect(ClientMessageSchema.safeParse(legacyDepositWithoutIntent).success).toBe(false);
+
       const cancelIntent = {
         type: 'CANCEL_DEPOSIT_INTENT',
         requestId: 'req-dep-3',

@@ -185,8 +185,9 @@ export class DepositVerificationService {
   }
 
   private findMatchingVaultTransfer(intent: PendingDepositIntent, vaultTransactions: any[]): string | null {
-    if (!this.vaultAddress) return null;
+    if (!this.vaultAddress || !intent.memo) return null;
     if (intent.network !== process.env.TON_NETWORK) return null;
+    if (intent.expires_at && Date.now() > new Date(intent.expires_at).getTime()) return null;
 
     let intentDepositAddress: Address;
     try {
@@ -197,12 +198,12 @@ export class DepositVerificationService {
     if (!intentDepositAddress.equals(this.vaultAddress)) return null;
 
     let source: Address | null = null;
-    try {
-      if (intent.wallet_address) {
+    if (intent.wallet_address) {
+      try {
         source = Address.parse(intent.wallet_address);
+      } catch {
+        return null;
       }
-    } catch {
-      source = null;
     }
 
     const expectedAmount = BigInt(intent.amount_nano);
@@ -220,19 +221,7 @@ export class DepositVerificationService {
       if (source && !inMsg.info.src?.equals(source)) continue;
 
       const comment = extractComment(inMsg.body);
-      if (intent.memo) {
-        if (comment !== intent.memo) continue;
-      } else {
-        if (process.env.REQUIRE_DEPOSIT_MEMO === 'true') {
-          if (!comment || (!comment.includes(intent.id) && !comment.includes(String(intent.telegram_id)))) {
-            continue;
-          }
-        } else if (comment) {
-          if (!comment.includes(intent.id) && !comment.includes(String(intent.telegram_id))) {
-            continue;
-          }
-        }
-      }
+      if (comment !== intent.memo) continue;
 
       return transaction.hash().toString('hex');
     }
@@ -241,7 +230,7 @@ export class DepositVerificationService {
   }
 
   private async findMatchingTransfer(intent: PendingDepositIntent): Promise<string | null> {
-    if (!this.client || !this.vaultAddress) return null;
+    if (!this.client || !this.vaultAddress || !intent.memo) return null;
 
     if (intent.network !== process.env.TON_NETWORK) return null;
 
@@ -253,7 +242,12 @@ export class DepositVerificationService {
     }
     if (!intentDepositAddress.equals(this.vaultAddress)) return null;
 
-    const source = Address.parse(intent.wallet_address);
+    let source: Address;
+    try {
+      source = Address.parse(intent.wallet_address);
+    } catch {
+      return null;
+    }
     const expectedAmount = BigInt(intent.amount_nano);
     const transactions = await this.client.getTransactions(source, { limit: 20 });
     const earliestAllowed = intent.created_at.getTime() - 2 * 60_000;
@@ -274,23 +268,7 @@ export class DepositVerificationService {
         if (message.info.value.coins !== expectedAmount) continue;
 
         const comment = extractComment(message.body);
-        if (intent.memo) {
-          // --- NEW MEMO MATCHING (Strict exact equality) ---
-          if (comment !== intent.memo) {
-            continue;
-          }
-        } else {
-          // --- LEGACY MATCHING (Fallback for older intents created before migration) ---
-          if (process.env.REQUIRE_DEPOSIT_MEMO === 'true') {
-            if (!comment || (!comment.includes(intent.id) && !comment.includes(String(intent.telegram_id)))) {
-              continue;
-            }
-          } else if (comment) {
-            if (!comment.includes(intent.id) && !comment.includes(String(intent.telegram_id))) {
-              continue;
-            }
-          }
-        }
+        if (comment !== intent.memo) continue;
 
         return transaction.hash().toString('hex');
       }

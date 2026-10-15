@@ -135,6 +135,57 @@ describe('mainnet withdrawal payout worker', () => {
     expect(broadcasts).toEqual(['same-signed-payload']);
   });
 
+  it('reconciles an ambiguous chain result by retrying only the same persisted payload', async () => {
+    const withdrawal = await confirmedWithdrawal();
+    const config = loadWithdrawalWorkerConfig()!;
+    const prepare = vi.spyOn(client, 'prepareSignedTransfer');
+    const first = new WithdrawalPayoutWorker({ storage, client, config, workerId: 'ambiguous-one' });
+    await first.start();
+    await first.stop();
+    const stored = (DatabasePool.getInstance() as any).inMemoryDb.get('withdrawals').find((item: any) => item.id === withdrawal.id);
+    expect(stored.status).toBe('processing');
+    expect(stored.signed_payload_ciphertext).toBeDefined();
+    expect(DatabasePool.getInstance().getTransactionsForUser(DatabasePool.getInstance().getUserByTelegramId(Number(withdrawal.telegram_id))!.id)
+      .filter((tx: any) => tx.type === 'withdrawal_refund')).toHaveLength(0);
+
+    vi.setSystemTime(new Date(Date.now() + config.leaseMs + 1));
+    const restarted = new WithdrawalPayoutWorker({ storage, client, config, workerId: 'ambiguous-two' });
+    await restarted.start();
+    await restarted.stop();
+
+    expect(prepare).toHaveBeenCalledTimes(1);
+    expect(broadcasts).toEqual(['same-signed-payload', 'same-signed-payload']);
+    expect(stored.status).toBe('processing');
+    expect(stored.tx_hash).toBeUndefined();
+    expect(DatabasePool.getInstance().getUserByTelegramId(Number(withdrawal.telegram_id))?.balance_nano).toBe('3000000000');
+    expect(DatabasePool.getInstance().getTransactionsForUser(DatabasePool.getInstance().getUserByTelegramId(Number(withdrawal.telegram_id))!.id)
+      .filter((tx: any) => tx.type === 'withdrawal_refund')).toHaveLength(0);
+  });
+
+  it.each([
+    ['wrong finalized destination', (withdrawal: any) => ({ destination: 'UQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJKZ', amountNano: withdrawal.net_amount_nano })],
+    ['wrong finalized amount', (withdrawal: any) => ({ destination: withdrawal.wallet_address, amountNano: (BigInt(withdrawal.net_amount_nano) + 1n).toString() })],
+  ])('does not complete or refund a finalized success with a mismatched %s', async (_label, mismatch) => {
+    const withdrawal = await confirmedWithdrawal();
+    inspection = {
+      status: 'finalized_success',
+      ...mismatch(withdrawal),
+      txHash: 'mismatched-finalized-transfer',
+      actualFeeNano: '400000',
+    };
+    const worker = new WithdrawalPayoutWorker({ storage, client, config: loadWithdrawalWorkerConfig()!, workerId: 'mismatch-worker' });
+    await worker.start();
+    await worker.stop();
+    const db = DatabasePool.getInstance();
+    const stored = (db as any).inMemoryDb.get('withdrawals').find((item: any) => item.id === withdrawal.id);
+    const user = db.getUserByTelegramId(Number(withdrawal.telegram_id))!;
+
+    expect(stored.status).toBe('processing');
+    expect(stored.tx_hash).toBeUndefined();
+    expect(user.balance_nano).toBe('3000000000');
+    expect(db.getTransactionsForUser(user.id).filter((tx: any) => tx.type === 'withdrawal_refund')).toHaveLength(0);
+  });
+
   it('fails closed when the deployment encryption key cannot decrypt a persisted payload', async () => {
     await confirmedWithdrawal();
     const config = loadWithdrawalWorkerConfig()!;

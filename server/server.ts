@@ -2,7 +2,7 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import { createServer } from 'http';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, timingSafeEqual } from 'node:crypto';
 import path from 'node:path';
 import fs from 'node:fs';
 import { WebSocketServer, WebSocket } from 'ws';
@@ -43,6 +43,10 @@ const TRUSTED_PROXY_IPS = getTrustedProxyIps();
 function isAllowedWebSocketOrigin(origin?: string): boolean {
   if (!origin) return true;
   return ALLOW_ANY_WS_ORIGIN || ALLOWED_WS_ORIGINS.has(origin);
+}
+
+function isValidTelegramWebhookSecret(secret: string | undefined): secret is string {
+  return Boolean(secret && secret.length <= 256 && /^[A-Za-z0-9_-]+$/.test(secret));
 }
 
 process.on('uncaughtException', (err) => {
@@ -376,6 +380,21 @@ app.get('/api/telegram/brag/image/:token.jpg', async (req, res) => {
  * Handles incoming bot updates (/start commands, deep links, inline queries)
  */
 app.post('/api/telegram/webhook', async (req, res) => {
+  const webhookSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
+  if (!isValidTelegramWebhookSecret(webhookSecret)) {
+    return res.status(503).send('Webhook authentication is not configured');
+  }
+
+  const providedSecret = req.get('X-Telegram-Bot-Api-Secret-Token');
+  const expectedSecretBytes = Buffer.from(webhookSecret, 'utf8');
+  const providedSecretBytes = Buffer.from(providedSecret ?? '', 'utf8');
+  if (
+    expectedSecretBytes.length !== providedSecretBytes.length ||
+    !timingSafeEqual(expectedSecretBytes, providedSecretBytes)
+  ) {
+    return res.status(401).send('Unauthorized');
+  }
+
   res.status(200).send('OK');
 
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
@@ -699,6 +718,12 @@ wss.on('connection', (ws: WebSocket, req) => {
 
         // --- 2. AUTHENTICATION ---
         case 'AUTH': {
+          if (authenticatedSession) {
+            sendError(ws, 'ALREADY_AUTHENTICATED', 'Reconnect to change accounts.', requestId);
+            if (ws.readyState === WebSocket.OPEN) ws.close(1008, 'Socket already authenticated');
+            break;
+          }
+
           const { telegramId, playerName, avatarUrl, initData, reconnectTicket } = message.payload;
           let verifiedId: number | undefined;
           let verifiedName = playerName;
@@ -1382,6 +1407,7 @@ if (process.env.NODE_ENV !== 'test' && !process.env.VITEST) {
     const missingProductionConfig = [
       ['DATABASE_URL', process.env.DATABASE_URL],
       ['TELEGRAM_BOT_TOKEN', process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_BOT_TOKEN !== 'DEMO_BOT_TOKEN' ? 'configured' : ''],
+      ['TELEGRAM_WEBHOOK_SECRET', isValidTelegramWebhookSecret(process.env.TELEGRAM_WEBHOOK_SECRET) ? 'configured' : ''],
       ['CORS_ORIGIN', CORS_ORIGIN && CORS_ORIGIN !== '*' ? CORS_ORIGIN : ''],
       ['WS_RECONNECT_SECRET', process.env.WS_RECONNECT_SECRET && process.env.WS_RECONNECT_SECRET.trim().length >= 32 ? 'configured' : ''],
     ].filter(([, value]) => !value).map(([name]) => name);
@@ -1448,9 +1474,17 @@ if (process.env.NODE_ENV !== 'test' && !process.env.VITEST) {
       // Register Telegram Webhook if public app URL and bot token are available
       const botToken = process.env.TELEGRAM_BOT_TOKEN;
       const publicAppUrl = process.env.PUBLIC_APP_URL;
-      if (botToken && botToken !== 'DEMO_BOT_TOKEN' && publicAppUrl && publicAppUrl.startsWith('https://')) {
+      const webhookSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
+      if (
+        botToken && botToken !== 'DEMO_BOT_TOKEN' &&
+        publicAppUrl && publicAppUrl.startsWith('https://') &&
+        isValidTelegramWebhookSecret(webhookSecret)
+      ) {
         const webhookUrl = `${publicAppUrl}/api/telegram/webhook`;
-        fetch(`https://api.telegram.org/bot${botToken}/setWebhook?url=${encodeURIComponent(webhookUrl)}`)
+        const setWebhookUrl = new URL(`https://api.telegram.org/bot${botToken}/setWebhook`);
+        setWebhookUrl.searchParams.set('url', webhookUrl);
+        setWebhookUrl.searchParams.set('secret_token', webhookSecret);
+        fetch(setWebhookUrl)
           .then((r) => r.json())
           .then((res: any) => {
             if (res?.ok) {

@@ -18,7 +18,7 @@ services:
       - key: PGSSL_REJECT_UNAUTHORIZED
         value: "false"
       - key: CORS_ORIGIN
-        value: "*"
+        value: https://gibous.win
       - key: ALLOW_IN_MEMORY_DATABASE
         value: "false"
       - key: ALLOW_UNSIGNED_AUTH
@@ -31,6 +31,8 @@ services:
         value: "25"
       - key: TELEGRAM_BOT_TOKEN
         sync: false
+      - key: TELEGRAM_WEBHOOK_SECRET
+        generateValue: true
       - key: TELEGRAM_BOT_USERNAME
         value: gibous_bot
       - key: PUBLIC_APP_URL
