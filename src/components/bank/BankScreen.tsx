@@ -74,6 +74,9 @@ function friendlyBankError(error: unknown, fallback: string, action: 'deposit' |
   const normalized = message.toLowerCase();
 
   if (/userreject|usercancel|user declined|cancel|closed/.test(normalized)) return 'Request cancelled.';
+  if (/withdrawal.*limit|outside configured limit/.test(normalized)) {
+    return 'That amount is outside the withdrawal limits. Please enter a different amount.';
+  }
   if (/insufficient|balance/.test(normalized)) {
     return action === 'withdrawal'
       ? 'We could not process this withdrawal. Check your available balance and try again.'

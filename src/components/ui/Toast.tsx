@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { CheckCircle2, AlertCircle, AlertTriangle, Info, X } from 'lucide-react';
 
 export type ToastType = 'success' | 'error' | 'warning' | 'info';
@@ -13,18 +13,25 @@ export interface ToastProps {
 }
 
 export const Toast: React.FC<ToastProps> = ({
+  id,
   type = 'info',
   message,
   duration = 3500,
   onClose,
   className = '',
 }) => {
+  const onCloseRef = useRef(onClose);
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
   useEffect(() => {
     if (duration > 0 && onClose) {
-      const timer = setTimeout(onClose, duration);
+      const timer = setTimeout(() => onCloseRef.current?.(), duration);
       return () => clearTimeout(timer);
     }
-  }, [duration, onClose]);
+  }, [duration, id, message, Boolean(onClose)]);
 
   const getStyle = () => {
     switch (type) {

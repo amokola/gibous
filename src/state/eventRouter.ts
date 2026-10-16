@@ -51,7 +51,10 @@ const TECHNICAL_ERROR_COPY: Record<string, string> = {
   CANCEL_DEPOSIT_INTENT_FAILED: 'Could not cancel that deposit request. Please try again.',
 };
 
-function userFacingServerError(code?: string, _message?: string, fallback = 'Something went wrong. Please try again.') {
+function userFacingServerError(code?: string, message?: string, fallback = 'Something went wrong. Please try again.') {
+  if (code === 'WITHDRAWAL_REJECTED' && /withdrawal amount.*outside.*limit|outside configured limit/i.test(message || '')) {
+    return 'That amount is outside the withdrawal limits. Please enter a different amount.';
+  }
   if (code) return TECHNICAL_ERROR_COPY[code] || fallback;
   return fallback;
 }
