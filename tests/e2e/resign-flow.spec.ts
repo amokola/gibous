@@ -43,8 +43,10 @@ test.describe('E2E Flow C: Resign / Surrender Flow', () => {
     const forfeitBtnA = pageA.getByRole('button', { name: /FORFEIT/i });
     await forfeitBtnA.click();
 
-    // 5. Player B receives Opponent Forfeited victory screen!
-    await expect(pageB.getByText(/Opponent Forfeited/i).or(pageB.getByText(/FORFEIT WIN/i))).toBeVisible({ timeout: 10000 });
+    // 5. Both players receive a clear, settled result screen.
+    await expect(pageA.getByRole('heading', { name: /You Forfeited The Match/i })).toBeVisible({ timeout: 10000 });
+    await expect(pageA.getByText(/Your stake went to the winner/i)).toBeVisible();
+    await expect(pageB.getByRole('heading', { name: /Opponent Forfeited! You Won!/i })).toBeVisible({ timeout: 10000 });
 
     await contextA.close();
     await contextB.close();

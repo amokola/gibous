@@ -23,6 +23,7 @@ import {
   joinDuel,
   cancelDuel,
   leaveDuel,
+  requestForfeitDuel,
   sendSnakeRoll,
   sendConnect4Drop,
   sendRPSChoice,
@@ -227,9 +228,8 @@ export const App: React.FC = () => {
   }, [currentRoom, cancelDuel, setScreen]);
 
   const handleLeaveDuel = useCallback(() => {
-    if (currentRoom?.code) leaveDuel(currentRoom.code);
-    setScreen('home');
-  }, [currentRoom, leaveDuel, setScreen]);
+    if (currentRoom?.code) requestForfeitDuel(currentRoom.code);
+  }, [currentRoom]);
 
   const handleRematch = useCallback(() => {
     if (currentRoom?.code) sendRematch(currentRoom.code);

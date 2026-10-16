@@ -1,0 +1,164 @@
+[
+  {
+    "id": "REL-001",
+    "severity": "High",
+    "category": "Reliability / Database Safety",
+    "confidence": "Confirmed",
+    "status": "Fixed",
+    "location": "scripts/release-gates/backup-restore.ts; tests/unit/scripts/backup-restore-safety.test.ts",
+    "summary": "Backup/restore release gate could drop a fixed-name database on any cluster because it did not validate DATABASE_URL; now requires the exact disposable source and refuses to overwrite an existing restore target."
+  },
+  {
+    "id": "ARCH-001",
+    "severity": "High",
+    "category": "Reliability / Database",
+    "confidence": "High Confidence",
+    "status": "Open",
+    "location": "render.yaml:5,80",
+    "summary": "Production Blueprint configures the financial database on Render free tier, which expires and has no provider-managed backups."
+  },
+  {
+    "id": "FIN-001",
+    "severity": "Medium",
+    "category": "Financial Integrity / Architecture",
+    "confidence": "High Confidence",
+    "status": "Open",
+    "location": "server/db/schema.sql; server/db/index.ts; PROJECT_ARCHITECTURE.md:124-133,396-400",
+    "summary": "Per-user transaction deltas and treasury aggregates exist, but no balanced accounting journal or custody-to-liability reconciliation was found."
+  },
+  {
+    "id": "SEC-001",
+    "severity": "Medium",
+    "category": "Security / Configuration",
+    "confidence": "Potential",
+    "status": "Open",
+    "location": "render.yaml:18; server/db/index.ts:186-191",
+    "summary": "Production PostgreSQL TLS accepts an untrusted server certificate; impact depends on interception of the configured network path."
+  },
+  {
+    "id": "SEC-002",
+    "severity": "Low",
+    "category": "Security / Information Disclosure",
+    "confidence": "Confirmed",
+    "status": "Open",
+    "location": "server/server.ts:231-233; server/observability.ts:182-240",
+    "summary": "Unauthenticated /api/metrics returns host and process resource telemetry, counters, gauges, and latency histograms."
+  },
+  {
+    "id": "UI-001",
+    "severity": "Low",
+    "category": "User Interface / Data Mapping",
+    "confidence": "Confirmed",
+    "status": "Fixed",
+    "location": "src/components/lobby/LobbyScreen.tsx; tests/e2e/scenario-coverage.spec.ts",
+    "summary": "Open-room snapshots nest host identity under p1, but the lobby expected top-level hostName; cards displayed undefined and host search failed. Incoming snapshots are normalized now."
+  },
+  {
+    "id": "UI-002",
+    "severity": "Low",
+    "category": "User Interface / Game Feedback",
+    "confidence": "Confirmed",
+    "status": "Fixed",
+    "location": "server/engines/Connect4Engine.ts; tests/e2e/scenario-coverage.spec.ts",
+    "summary": "A full first Connect 4 column displayed the internal zero-based index (Column 0); error feedback now uses the player's one-based column number."
+  },
+  {
+    "id": "UI-003",
+    "severity": "Low",
+    "category": "User Interface / Error Feedback",
+    "confidence": "Confirmed",
+    "status": "Fixed",
+    "location": "src/components/lobby/LobbyScreen.tsx; tests/e2e/scenario-coverage.spec.ts",
+    "summary": "Rejected lobby joins displayed both a specific global error and a conflicting generic inline error; the duplicate lobby error subscription was removed."
+  },
+  {
+    "id": "UI-004",
+    "severity": "Low",
+    "category": "User Interface / Game State",
+    "confidence": "Confirmed",
+    "status": "Fixed",
+    "location": "src/state/useGameStore.ts; tests/e2e/scenario-coverage.spec.ts",
+    "summary": "After an RPS tie the client unlocked the next round while continuing to display the completed round number; it now uses the server's nextRound value."
+  },
+  {
+    "id": "UI-005",
+    "severity": "Low",
+    "category": "User Interface / Deposit Lifecycle",
+    "confidence": "Confirmed",
+    "status": "Fixed",
+    "location": "src/components/bank/BankScreen.tsx; tests/component/bank/BankScreen.test.tsx",
+    "summary": "When a server-created deposit intent omitted its memo, the bank screen stopped but left the unusable draft open. The client now cancels the draft when the memo is missing or payload encoding fails."
+  },
+  {
+    "id": "DEP-001",
+    "severity": "Low",
+    "category": "Reliability / Deposit Lifecycle",
+    "confidence": "Confirmed",
+    "status": "Fixed",
+    "location": "server/storage.ts; tests/postgres/deposit-withdrawal-transactions.test.ts",
+    "summary": "PostgreSQL returns Telegram bigint IDs as strings, so strict owner comparison prevented users from cancelling their deposit intent. Ownership comparison now normalizes the persisted ID."
+  },
+  {
+    "id": "DEP-002",
+    "severity": "Low",
+    "category": "Reliability / Deposit Lifecycle",
+    "confidence": "Confirmed",
+    "status": "Fixed",
+    "location": "server/storage.ts; server/db/index.ts; tests/postgres/deposit-withdrawal-transactions.test.ts",
+    "summary": "A submitted signed deposit intent could be cancelled and removed from the verifier queue. Cancellation now atomically requires a pending intent with no submitted BOC."
+  },
+  {
+    "id": "DEP-003",
+    "severity": "Low",
+    "category": "Financial Integrity / Deposit Confirmation",
+    "confidence": "Confirmed",
+    "status": "Fixed",
+    "location": "server/db/index.ts; tests/postgres/deposit-withdrawal-transactions.test.ts",
+    "summary": "The database confirmation method could credit a pending deposit draft without a submitted BOC. It now requires a BOC-bound intent and non-empty transaction hash."
+  },
+  {
+    "id": "DEP-004",
+    "severity": "Low",
+    "category": "Reliability / Deposit Verification",
+    "confidence": "Confirmed",
+    "status": "Fixed",
+    "location": "server/tonVerifier.ts; tests/unit/server/ton-verifier-expanded-scenarios.test.ts",
+    "summary": "Malformed or missing TON transaction timestamps produced NaN comparisons that did not reject the candidate, bypassing the intent time window. Malformed indexer rows could also stop scanning later candidates. The verifier now rejects invalid timestamps and skips malformed rows."
+  },
+  {
+    "id": "DEP-005",
+    "severity": "Medium",
+    "category": "Financial Integrity / Deposit Accounting",
+    "confidence": "Confirmed",
+    "status": "Fixed",
+    "location": "server/db/index.ts; server/db/schema.sql; server/db/migrations/014_exact_nano_gram_conversion.sql; tests/postgres/payment-critical-scenarios.test.ts",
+    "summary": "Large nano values rounded incorrectly when PostgreSQL divided them to derive gram balances, violating balance-unit consistency. In-memory and PostgreSQL conversions now preserve exact nano-units; migration 014 rebuilds generated display columns."
+  },
+  {
+    "id": "DEP-006",
+    "severity": "Low",
+    "category": "Financial Integrity / Idempotency",
+    "confidence": "Confirmed",
+    "status": "Fixed",
+    "location": "server/db/index.ts; tests/unit/economy/payment-safety-matrix.test.ts; tests/postgres/deposit-withdrawal-transactions.test.ts",
+    "summary": "A confirmed deposit retry returned success for a different transaction hash. Retries now require the original normalized transaction evidence."
+  },
+  {
+    "id": "PAY-002",
+    "severity": "Low",
+    "category": "Financial Integrity / Input Validation",
+    "confidence": "Confirmed",
+    "status": "Fixed",
+    "location": "server/storage.ts; tests/unit/economy/payment-safety-matrix.test.ts",
+    "summary": "Withdrawal quote parsing accepted noncanonical BigInt strings such as signed or whitespace-padded values and amounts wider than the database display precision. Gross amount and fee now require one to 30 unsigned decimal digits."
+  },
+  {
+    "id": "PAY-001",
+    "severity": "Medium",
+    "category": "Financial Integrity / Payout Finality",
+    "confidence": "Confirmed",
+    "status": "Fixed",
+    "location": "server/withdrawalPayout.ts; tests/unit/server/withdrawal-payout-scenarios.test.ts",
+    "summary": "TON Center finality parsing treated malformed sequence values such as 'final' as finalized because NaN passed the prior nonpositive check. Payout finality now requires a positive integer masterchain sequence number and fails closed on malformed values."
+  }
+]

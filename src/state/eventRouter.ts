@@ -270,6 +270,12 @@ export function leaveDuel(roomCode: string) {
   multiplayerService.setCurrentRoomCode(null);
 }
 
+export function requestForfeitDuel(roomCode: string) {
+  // Keep the active room until GAME_OVER arrives so the forfeiting player can
+  // see the authoritative result and payout receipt.
+  multiplayerService.send('LEAVE_ROOM', { roomCode });
+}
+
 export function sendSnakeRoll(roomCode: string) {
   multiplayerService.send('ROLL_DICE', { roomCode });
 }

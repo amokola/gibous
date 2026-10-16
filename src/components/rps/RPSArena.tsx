@@ -60,6 +60,12 @@ export const RPSArena: React.FC<RPSArenaProps> = ({ duelState, onChooseRPS }) =>
     }
   };
 
+  const choiceTone = (type: RPSChoice) => ({
+    rock: 'rps-rock',
+    paper: 'rps-paper',
+    scissors: 'rps-scissors',
+  })[type];
+
   const hasAlreadyChosen = Boolean(
     (myRole === 'p1' && gameState?.p1HasChosen) || (myRole === 'p2' && gameState?.p2HasChosen)
   );
@@ -225,7 +231,7 @@ export const RPSArena: React.FC<RPSArenaProps> = ({ duelState, onChooseRPS }) =>
       {/* Main Showdown Display */}
       <div className="flex-1 flex flex-col items-center justify-center w-full min-h-[140px] my-1">
         {clashCountdown !== null ? (
-          <div className="flex flex-col items-center animate-bounce">
+          <div className="rps-countdown flex flex-col items-center">
             <span className="font-sketch font-bold text-xs text-neutral-600 uppercase tracking-widest mb-1">
               CLASHING IN
             </span>
@@ -233,21 +239,21 @@ export const RPSArena: React.FC<RPSArenaProps> = ({ duelState, onChooseRPS }) =>
           </div>
         ) : clashState ? (
           <div className="flex flex-col items-center animate-fade-in">
-            <div className="flex items-center gap-4 my-1">
-              <div className="flex flex-col items-center p-2.5 rounded-none bg-white border-2 border-black sketch-shadow-xs min-w-[72px]">
-                <div className="my-1 animate-bounce flex items-center justify-center">
-                  {renderChoiceIcon(clashState.p1Choice, 40)}
+            <div className="flex items-center gap-2.5 sm:gap-4 my-1">
+              <div className={`rps-reveal-card ${choiceTone(clashState.p1Choice)} flex flex-col items-center p-2 sm:p-2.5 min-w-[88px] sm:min-w-[100px]`}>
+                <div className="rps-reveal-art my-1 flex items-center justify-center">
+                  {renderChoiceIcon(clashState.p1Choice, 58)}
                 </div>
                 <span className="font-sketch font-bold text-xs text-[#166534] mt-0.5 uppercase">
                   {clashState.p1Choice}
                 </span>
               </div>
-              <div className="flex items-center justify-center">
-                <SwordsClashIcon size={32} />
+              <div className="rps-clash-mark flex items-center justify-center">
+                <SwordsClashIcon size={42} />
               </div>
-              <div className="flex flex-col items-center p-2.5 rounded-none bg-white border-2 border-black sketch-shadow-xs min-w-[72px]">
-                <div className="my-1 animate-bounce flex items-center justify-center">
-                  {renderChoiceIcon(clashState.p2Choice, 40)}
+              <div className={`rps-reveal-card ${choiceTone(clashState.p2Choice)} flex flex-col items-center p-2 sm:p-2.5 min-w-[88px] sm:min-w-[100px]`}>
+                <div className="rps-reveal-art my-1 flex items-center justify-center">
+                  {renderChoiceIcon(clashState.p2Choice, 58)}
                 </div>
                 <span className="font-sketch font-bold text-xs text-[#1a365d] mt-0.5 uppercase">
                   {clashState.p2Choice}
@@ -255,7 +261,7 @@ export const RPSArena: React.FC<RPSArenaProps> = ({ duelState, onChooseRPS }) =>
               </div>
             </div>
             <div
-              className={`mt-2 py-1 px-3 rounded-none font-sketch font-bold text-xs border-2 border-black sketch-shadow-xs tracking-wider uppercase ${
+              className={`rps-outcome mt-2 py-1.5 px-4 rounded-none font-sketch font-bold text-sm border-2 border-black sketch-shadow-xs tracking-wider uppercase ${
                 clashState.roundWinner === 'draw'
                   ? 'bg-[#fff9c4] text-[#854d0e]'
                   : isSpectator
@@ -316,6 +322,7 @@ export const RPSArena: React.FC<RPSArenaProps> = ({ duelState, onChooseRPS }) =>
               key={c.type}
               onClick={() => handleSelect(c.type)}
               disabled={isDisabled}
+              aria-pressed={isSelected}
               className={`flex flex-col items-center justify-center p-3 rounded-none border-2 border-black transition-all cursor-pointer ${
                 isSelected
                   ? 'bg-[#fff9c4] sketch-shadow-sm scale-105 ring-2 ring-[#9b2c2c]'
@@ -324,8 +331,8 @@ export const RPSArena: React.FC<RPSArenaProps> = ({ duelState, onChooseRPS }) =>
                   : 'bg-white hover:bg-[#fff9c4] sketch-shadow sketch-btn-press'
               }`}
             >
-              <div className="mb-1.5 flex items-center justify-center">
-                {renderChoiceIcon(c.type, 36)}
+              <div className={`rps-choice-art ${choiceTone(c.type)} mb-1.5 flex items-center justify-center`}>
+                {renderChoiceIcon(c.type, 52)}
               </div>
               <span className="font-sketch font-bold text-xs tracking-wider text-[#1a1a1a]">{c.label}</span>
             </button>

@@ -535,7 +535,7 @@ export class DatabasePool {
       const updatedUserRes = await client.query(
         `UPDATE users
             SET balance_nano = balance_nano - $1::numeric,
-                balance_gram = ROUND((balance_nano - $1::numeric) / 1000000000.0, 9),
+                balance_gram = nano_to_gram(balance_nano - $1::numeric),
                 updated_at = CURRENT_TIMESTAMP
           WHERE id = $2 AND balance_nano >= $1::numeric
         RETURNING *`,
@@ -668,7 +668,7 @@ export class DatabasePool {
       const updatedUserRes = await client.query(
         `UPDATE users
             SET balance_nano = balance_nano - $1::numeric,
-                balance_gram = ROUND((balance_nano - $1::numeric) / 1000000000.0, 9),
+                balance_gram = nano_to_gram(balance_nano - $1::numeric),
                 updated_at = CURRENT_TIMESTAMP
           WHERE id = $2 AND balance_nano >= $1::numeric
         RETURNING *`,
@@ -808,11 +808,11 @@ export class DatabasePool {
       }
 
       const up1 = await client.query(
-        'UPDATE users SET balance_nano = balance_nano - $1::numeric, balance_gram = ROUND((balance_nano - $1::numeric) / 1000000000.0, 9), updated_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING *',
+        'UPDATE users SET balance_nano = balance_nano - $1::numeric, balance_gram = nano_to_gram(balance_nano - $1::numeric), updated_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING *',
         [stakeNano, u1Row.id]
       );
       const up2 = await client.query(
-        'UPDATE users SET balance_nano = balance_nano - $1::numeric, balance_gram = ROUND((balance_nano - $1::numeric) / 1000000000.0, 9), updated_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING *',
+        'UPDATE users SET balance_nano = balance_nano - $1::numeric, balance_gram = nano_to_gram(balance_nano - $1::numeric), updated_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING *',
         [stakeNano, u2Row.id]
       );
 
@@ -942,7 +942,7 @@ export class DatabasePool {
       const updated = await client.query(
         `UPDATE users
             SET balance_nano = balance_nano - $1::numeric,
-                balance_gram = ROUND((balance_nano - $1::numeric) / 1000000000.0, 9),
+                balance_gram = nano_to_gram(balance_nano - $1::numeric),
                 updated_at = CURRENT_TIMESTAMP
           WHERE telegram_id = $2
             AND balance_nano >= $1::numeric
@@ -969,32 +969,43 @@ export class DatabasePool {
    * indexer has found the matching on-chain transfer.
    */
   async confirmDeposit(intentId: string, txHash: string) {
+    if (!txHash.trim()) return { success: false as const, error: 'Invalid deposit transaction hash' };
+    txHash = txHash.trim();
     if (!this.usesPersistentDatabase()) {
       const intent = this.getDepositIntentById(intentId);
       if (!intent) return { success: false as const, error: 'Deposit intent not found' };
-      if (intent.status === 'confirmed') return { success: true as const, user: this.getUserByTelegramId(intent.telegram_id) };
+      if (intent.status === 'confirmed') {
+        if (intent.tx_hash !== txHash) return { success: false as const, error: 'Deposit intent was confirmed with different transaction evidence' };
+        return { success: true as const, user: this.getUserByTelegramId(intent.telegram_id) };
+      }
       if (intent.status === 'expired' || (intent.expires_at && new Date() > new Date(intent.expires_at))) {
         this.updateDepositIntent(intentId, { status: 'expired' });
         return { success: false as const, error: 'Deposit intent has expired' };
       }
       if (intent.status !== 'pending') return { success: false as const, error: 'Deposit intent is not pending' };
+      if (!intent.boc) return { success: false as const, error: 'Deposit transaction has not been submitted' };
       const alreadyCredited = this.getDepositIntentByTxHash(txHash);
       if (alreadyCredited && alreadyCredited.id !== intentId) {
         return { success: false as const, error: 'This on-chain transfer was already credited' };
       }
       const user = this.getUserByTelegramId(intent.telegram_id);
       if (!user) return { success: false as const, error: 'User account not found' };
-      const amountGram = Number(intent.amount_gram ?? (Number(intent.amount_nano || 0) / 1e9));
-      user.balance_gram += amountGram;
-      user.balance_nano = gramsToNano(user.balance_gram);
+      const amountNano = BigInt(String(intent.amount_nano));
+      const currentBalanceNano = BigInt(String(user.balance_nano ?? gramsToNano(user.balance_gram)));
+      const nextBalanceNano = (currentBalanceNano + amountNano).toString();
+      const amountGram = nanoToGrams(amountNano);
+      user.balance_nano = nextBalanceNano;
+      user.balance_gram = nanoToGrams(nextBalanceNano);
       this.saveUser(user);
       this.recordTransaction({
         user_id: user.id,
         type: 'deposit',
         operation_key: `deposit:${intentId}`,
         amount: amountGram,
+        amount_nano: amountNano.toString(),
         fee: 0,
         balance_after: user.balance_gram,
+        balance_after_nano: nextBalanceNano,
         tx_hash: txHash,
       });
       this.updateDepositIntent(intentId, { status: 'confirmed', tx_hash: txHash });
@@ -1008,6 +1019,9 @@ export class DatabasePool {
         return { success: false as const, error: 'Deposit intent not found' };
       }
       if (intent.status === 'confirmed') {
+        if (intent.tx_hash !== txHash) {
+          return { success: false as const, error: 'Deposit intent was confirmed with different transaction evidence' };
+        }
         const existingUser = await client.query('SELECT * FROM users WHERE telegram_id = $1', [intent.telegram_id]);
         return {
           success: true as const,
@@ -1021,6 +1035,7 @@ export class DatabasePool {
       if (intent.status !== 'pending') {
         return { success: false as const, error: 'Deposit intent is not pending' };
       }
+      if (!intent.boc) return { success: false as const, error: 'Deposit transaction has not been submitted' };
       const alreadyCredited = await client.query(
         'SELECT id FROM deposit_intents WHERE tx_hash = $1 AND status = $2 AND id <> $3 FOR UPDATE',
         [txHash, 'confirmed', intentId]
@@ -1032,7 +1047,7 @@ export class DatabasePool {
       const updated = await client.query(
         `UPDATE users
             SET balance_nano = balance_nano + $1::numeric,
-                balance_gram = ROUND((balance_nano + $1::numeric) / 1000000000.0, 9),
+                balance_gram = nano_to_gram(balance_nano + $1::numeric),
                 updated_at = CURRENT_TIMESTAMP
           WHERE telegram_id = $2
         RETURNING *`,
@@ -1281,7 +1296,7 @@ export class DatabasePool {
       const newBalanceNano = (currentNano - quoteGrossNano).toString();
       const updatedUserRes = await client.query(
         `UPDATE users SET balance_nano = $1::numeric,
-          balance_gram = ROUND($1::numeric / 1000000000.0, 9), updated_at = CURRENT_TIMESTAMP
+          balance_gram = nano_to_gram($1::numeric), updated_at = CURRENT_TIMESTAMP
          WHERE id = $2 RETURNING *`,
         [newBalanceNano, userRow.id]
       );
@@ -1529,7 +1544,7 @@ export class DatabasePool {
       const gross = String(withdrawal.amount_nano);
       const updatedUser = await client.query(
         `UPDATE users SET balance_nano = balance_nano + $1::numeric,
-             balance_gram = ROUND((balance_nano + $1::numeric) / 1000000000.0, 9), updated_at = CURRENT_TIMESTAMP
+             balance_gram = nano_to_gram(balance_nano + $1::numeric), updated_at = CURRENT_TIMESTAMP
           WHERE id = $2 RETURNING *`, [gross, userRes.rows[0].id]
       );
       await client.query(
@@ -1714,7 +1729,7 @@ export class DatabasePool {
       const updatedUserRes = await client.query(
         `UPDATE users
             SET balance_nano = $1::numeric,
-                balance_gram = ROUND($1::numeric / 1000000000.0, 9),
+                balance_gram = nano_to_gram($1::numeric),
                 updated_at = CURRENT_TIMESTAMP
           WHERE id = $2
         RETURNING *`,
@@ -1887,7 +1902,7 @@ export class DatabasePool {
       loser.level = Math.floor(loser.xp / 250) + 1;
 
       await client.query(
-        `UPDATE users SET balance_nano = $1, balance_gram = ROUND($1::numeric / 1000000000.0, 9), total_winnings = $2, total_volume = $3,
+        `UPDATE users SET balance_nano = $1, balance_gram = nano_to_gram($1::numeric), total_winnings = $2, total_volume = $3,
           total_matches = $4, wins = $5, current_streak = $6, best_streak = $7,
           xp = $8, level = $9, updated_at = CURRENT_TIMESTAMP WHERE id = $10`,
         [winnerNewBalanceNano, winner.total_winnings, winner.total_volume, winner.total_matches,
@@ -2058,7 +2073,7 @@ export class DatabasePool {
 
       for (const { player } of players) {
         await client.query(
-          `UPDATE users SET balance_nano = $1, balance_gram = ROUND($1::numeric / 1000000000.0, 9), total_volume = $2, total_matches = $3,
+          `UPDATE users SET balance_nano = $1, balance_gram = nano_to_gram($1::numeric), total_volume = $2, total_matches = $3,
             draws = $4, xp = $5, level = $6, updated_at = CURRENT_TIMESTAMP WHERE id = $7`,
           [player.balance_nano, player.total_volume, player.total_matches, player.draws, player.xp, player.level, player.id]
         );
@@ -2137,7 +2152,7 @@ export class DatabasePool {
       const updated = await client.query(
         `UPDATE users
             SET balance_nano = balance_nano + $1::numeric,
-                balance_gram = ROUND((balance_nano + $1::numeric) / 1000000000.0, 9),
+                balance_gram = nano_to_gram(balance_nano + $1::numeric),
                 updated_at = CURRENT_TIMESTAMP
           WHERE telegram_id = $2
         RETURNING *`,
@@ -2206,7 +2221,7 @@ export class DatabasePool {
           );
           if (res.rowCount && res.rowCount > 0) {
             const updated = await client.query(
-              `UPDATE users SET balance_nano = balance_nano + $1::numeric, balance_gram = ROUND((balance_nano + $1::numeric) / 1000000000.0, 9), updated_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING *`,
+              `UPDATE users SET balance_nano = balance_nano + $1::numeric, balance_gram = nano_to_gram(balance_nano + $1::numeric), updated_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING *`,
               [stakeNano, user.id]
             );
             await client.query(
@@ -2456,12 +2471,8 @@ export class DatabasePool {
     depositAddress: string;
     network: 'mainnet' | 'testnet';
   }) {
-    let nanoAmount: bigint;
-    try {
-      nanoAmount = BigInt(params.amountNano);
-    } catch {
-      throw new Error('Invalid deposit amount');
-    }
+    if (!/^\d{1,30}$/.test(params.amountNano)) throw new Error('Invalid deposit amount');
+    const nanoAmount = BigInt(params.amountNano);
     if (nanoAmount <= 0n) {
       throw new Error('Deposit amount must be greater than zero');
     }
@@ -2560,6 +2571,21 @@ export class DatabasePool {
       [id, ...values]
     );
     return result.rows[0];
+  }
+
+  /** Cancel only an unsigned draft; a submitted BOC may already be on-chain. */
+  async cancelPendingDepositIntent(id: string): Promise<boolean> {
+    if (!this.usesPersistentDatabase()) {
+      const intent = this.getDepositIntentById(id);
+      if (!intent || intent.status !== 'pending' || intent.boc) return false;
+      this.updateDepositIntent(id, { status: 'cancelled' });
+      return true;
+    }
+    const result = await this.query(
+      "UPDATE deposit_intents SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND status = 'pending' AND boc IS NULL RETURNING id",
+      [id]
+    );
+    return result.rowCount === 1;
   }
 
   /** Atomically bind one signed BOC to a pending intent without permitting replacement or replay. */

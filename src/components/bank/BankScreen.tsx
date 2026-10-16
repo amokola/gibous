@@ -198,6 +198,7 @@ export const BankScreen: React.FC<BankScreenProps> = ({
       }
 
       if (!intent?.memo) {
+        if (intent?.intentId) void multiplayerService.cancelDepositIntent(intent.intentId);
         setIsProcessing(false);
         setNotification({ text: 'Server failed to provide a valid deposit memo.', type: 'error' });
         return;
@@ -212,6 +213,7 @@ export const BankScreen: React.FC<BankScreenProps> = ({
           .endCell();
         payloadBase64 = commentCell.toBoc().toString('base64');
       } catch {
+        if (intent?.intentId) void multiplayerService.cancelDepositIntent(intent.intentId);
         setIsProcessing(false);
         setNotification({ text: 'Failed to encode deposit memo payload.', type: 'error' });
         return;

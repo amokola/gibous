@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { ChevronLeft, AlertTriangle, WifiOff, RefreshCw } from 'lucide-react';
 import { NormalizedDuelState, FloatingEmote } from '../../types/game';
 import { PotBreakdownModal } from './PotBreakdownModal';
@@ -28,6 +28,8 @@ export const DuelShell: React.FC<DuelShellProps> = ({
 }) => {
   const [showPotModal, setShowPotModal] = useState(false);
   const [showResignModal, setShowResignModal] = useState(false);
+  const resignTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const stayButtonRef = useRef<HTMLButtonElement | null>(null);
   const [disconnectRemainingSec, setDisconnectRemainingSec] = useState(
     Math.round(disconnectTimeoutMs / 1000)
   );
@@ -56,6 +58,41 @@ export const DuelShell: React.FC<DuelShellProps> = ({
   const opponentName = opponentPlayer?.name || (myRole === 'p1' ? 'Player 2' : 'Player 1');
 
   const emotes = ['🔥', '😎', '💀', '😱', '👏', '🎲'];
+
+  useEffect(() => {
+    if (!showResignModal) return;
+
+    stayButtonRef.current?.focus();
+    const handleDialogKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setShowResignModal(false);
+        return;
+      }
+
+      if (event.key !== 'Tab') return;
+      const focusable = document.querySelectorAll<HTMLButtonElement>(
+        '[data-forfeit-dialog] button:not([disabled])'
+      );
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (!first || !last) return;
+
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener('keydown', handleDialogKeyDown);
+    return () => {
+      document.removeEventListener('keydown', handleDialogKeyDown);
+      resignTriggerRef.current?.focus();
+    };
+  }, [showResignModal]);
 
   const actualWinner = duelState.winner || duelState.gameState?.winner || null;
   const isGameOver = duelState.room?.status === 'gameover' || Boolean(actualWinner);
@@ -199,6 +236,7 @@ export const DuelShell: React.FC<DuelShellProps> = ({
         <div className="flex items-center justify-between gap-1.5 max-w-lg mx-auto">
           <button
             onClick={() => setShowResignModal(true)}
+            ref={resignTriggerRef}
             className="w-8 h-8 flex items-center justify-center rounded-none bg-white hover:bg-[#fff9c4] border-2 border-black sketch-shadow-xs sketch-btn-press transition cursor-pointer"
             title="Leave duel"
           >
@@ -410,11 +448,17 @@ export const DuelShell: React.FC<DuelShellProps> = ({
       {/* 9. Resign / Forfeit Confirmation Modal */}
       {showResignModal && (
         <div className="telegram-safe-overlay fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in select-none">
-          <div className="bg-[#fbfaf7] border-2 sm:border-[2.5px] border-black rounded-none p-5 max-w-xs w-full text-center sketch-shadow-xl text-[#1a1a1a]">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="forfeit-dialog-title"
+            data-forfeit-dialog
+            className="bg-[#fbfaf7] border-2 sm:border-[2.5px] border-black rounded-none p-5 max-w-xs w-full text-center sketch-shadow-xl text-[#1a1a1a]"
+          >
             <div className="w-12 h-12 rounded-none bg-[#fee2e2] border-2 border-black flex items-center justify-center mx-auto mb-3 text-[#991b1b]">
               <AlertTriangle className="w-6 h-6" />
             </div>
-            <h3 className="font-sketch font-bold text-2xl mb-1 text-[#1a1a1a]">
+            <h3 id="forfeit-dialog-title" className="font-sketch font-bold text-2xl mb-1 text-[#1a1a1a]">
               SURRENDER DUEL?
             </h3>
             <p className="font-body text-xs text-neutral-600 mb-4">
@@ -424,6 +468,7 @@ export const DuelShell: React.FC<DuelShellProps> = ({
             </p>
             <div className="flex gap-2 font-sketch text-base">
               <button
+                ref={stayButtonRef}
                 onClick={() => setShowResignModal(false)}
                 className="flex-1 py-2.5 bg-white hover:bg-[#fff9c4] text-[#1a1a1a] border-2 border-black rounded-none sketch-shadow-xs sketch-btn-press cursor-pointer"
               >

@@ -19,8 +19,6 @@ import { GramIcon } from '../ui/GramIcon';
 import { Avatar } from '../ui/Avatar';
 import { MultiplayerService } from '../../services/multiplayerService';
 import {
-  ERROR_MESSAGES,
-  ErrorCode,
   MIN_STAKE,
   MAX_STAKE,
   STAKE_INCREMENT,
@@ -97,25 +95,23 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
     const multiplayer = MultiplayerService.getInstance();
     multiplayer.connect();
 
-    const handleRoomsList = (data: { rooms?: OpenRoomSummary[] }) => {
+    const handleRoomsList = (data: {
+      rooms?: Array<OpenRoomSummary & { p1?: { name?: string; avatarUrl?: string } }>;
+    }) => {
       if (data.rooms && Array.isArray(data.rooms)) {
-        setOpenRooms(data.rooms);
+        setOpenRooms(data.rooms.map((room) => ({
+          ...room,
+          hostName: room.hostName || room.p1?.name || 'Player',
+          hostAvatar: room.hostAvatar || room.p1?.avatarUrl,
+        })));
       }
     };
 
-    const handleError = (payload: { code?: ErrorCode; message?: string }) => {
-      const msg = (payload.code && ERROR_MESSAGES[payload.code]) || payload.message || 'Error occurred';
-      setJoinError(msg);
-      setTimeout(() => setJoinError(null), 4000);
-    };
-
     const unsubRooms = multiplayer.on('ROOMS_LIST' as any, handleRoomsList);
-    const unsubError = multiplayer.on('ERROR' as any, handleError);
     multiplayer.send('GET_ROOMS' as any);
 
     return () => {
       unsubRooms();
-      unsubError();
     };
   }, [selectedGame]);
 
@@ -125,6 +121,8 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
       setCustomStake(settings.winningAmount);
     }
   }, [settings?.winningAmount]);
+
+  const invalidCustomStake = !Number.isFinite(customStake) || customStake < MIN_STAKE || customStake > MAX_STAKE;
 
   // Start the room browser on the game already selected in the create flow.
   useEffect(() => {
@@ -442,6 +440,8 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                   min={MIN_STAKE}
                   max={MAX_STAKE}
                   step={STAKE_INCREMENT}
+                  aria-invalid={invalidCustomStake}
+                  aria-describedby={invalidCustomStake ? 'custom-stake-error' : undefined}
                   value={customStake || ''}
                   onChange={(e) => {
                     const val = parseFloat(e.target.value);
@@ -470,6 +470,11 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                   +
                 </button>
               </div>
+              {invalidCustomStake && (
+                <p id="custom-stake-error" role="alert" className="mb-2 font-body text-sm font-bold text-game-danger-text">
+                  Stake must be between {MIN_STAKE} and {MAX_STAKE} GRAM.
+                </p>
+              )}
 
               {/* Quick Preset Chips */}
               <div className="grid grid-cols-5 gap-1.5">
@@ -521,7 +526,8 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
             <button
               type="button"
               onClick={handleCreateRoomAction}
-              className="w-full py-3 bg-game-ink-red hover:brightness-90 text-game-surface border-2 border-game-ink-black font-sketch text-base font-bold sketch-shadow-xs active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+              disabled={invalidCustomStake}
+              className="w-full py-3 bg-game-ink-red hover:brightness-90 disabled:opacity-50 disabled:cursor-not-allowed text-game-surface border-2 border-game-ink-black font-sketch text-base font-bold sketch-shadow-xs active:scale-[0.98] transition-all flex items-center justify-center gap-2"
             >
               <PlusCircle className="w-5 h-5 stroke-[2.5]" />
               Create {selectedGame.toUpperCase()} Duel ({customStake} GRAM)

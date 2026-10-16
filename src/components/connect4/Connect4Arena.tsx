@@ -44,7 +44,7 @@ export const Connect4Arena: React.FC<Connect4ArenaProps> = ({ duelState, onDropD
 
   const lastRow = lastDropEvent?.row;
   const lastCol = lastDropEvent?.col;
-
+  const activeCheckerColor = activePlayer === 'p2' ? 'blue' : 'red';
   return (
     <div className="flex flex-col items-center justify-center w-full h-full max-w-sm mx-auto py-1 font-body select-none">
       {/* Column Drop Controls */}
@@ -57,7 +57,11 @@ export const Connect4Arena: React.FC<Connect4ArenaProps> = ({ duelState, onDropD
               onClick={() => handleColumnClick(c)}
               onMouseEnter={() => setHoveredCol(c)}
               onMouseLeave={() => setHoveredCol(null)}
+              onFocus={() => setHoveredCol(c)}
+              onBlur={() => setHoveredCol(null)}
               disabled={!isMyTurn || isGameOver}
+              aria-label={`Drop a ${activeCheckerColor} checker in column ${c + 1}`}
+              data-active-target={isHovered ? 'true' : 'false'}
               className={`h-7 rounded-none flex items-center justify-center border-2 transition-all font-sketch font-bold cursor-pointer ${
                 isGameOver
                   ? 'bg-neutral-200/50 border-black/20 text-neutral-400 cursor-not-allowed'
@@ -67,14 +71,17 @@ export const Connect4Arena: React.FC<Connect4ArenaProps> = ({ duelState, onDropD
               }`}
               title={`Drop in column ${c + 1}`}
             >
-              <span className="text-xs">{isHovered ? '↓' : '•'}</span>
+              <span aria-hidden="true" className="text-sm leading-none">
+                {isHovered ? '↓' : '·'}
+              </span>
             </button>
           );
         })}
       </div>
 
       {/* 7x6 Board with Navy Casing */}
-      <div className="w-full bg-[#1a365d] border-2 sm:border-[3px] border-black rounded-none p-2.5 sketch-shadow-lg">
+      <div data-testid="connect4-board" className="connect4-board-shell relative w-full bg-[#24466f] border-2 sm:border-[3px] border-black rounded-none p-2.5 sm:p-3 sketch-shadow-lg">
+        <div aria-hidden="true" className="absolute inset-x-3 top-1.5 h-px bg-white/20 pointer-events-none" />
         <div className="grid grid-cols-7 gap-1.5 w-full">
           {rawBoard.map((row, rIdx) =>
             row.map((cell, cIdx) => {
@@ -83,21 +90,20 @@ export const Connect4Arena: React.FC<Connect4ArenaProps> = ({ duelState, onDropD
               const isP2 = cell === 'p2';
               const isLastDropped = lastRow === rIdx && lastCol === cIdx;
               const isColumnHovered = hoveredCol === cIdx && isMyTurn && !isGameOver;
-
               return (
                 <div
                   key={`${rIdx}-${cIdx}`}
                   onClick={() => handleColumnClick(cIdx)}
                   onMouseEnter={() => setHoveredCol(cIdx)}
                   onMouseLeave={() => setHoveredCol(null)}
-                  className={`relative flex items-center justify-center rounded-full border-2 border-black shadow-inner cursor-pointer transition-colors ${
-                    isColumnHovered ? 'bg-[#fff9c4]/80' : 'bg-[#f2efe9]'
+                  className={`c4-well relative flex items-center justify-center rounded-full border-2 border-black shadow-inner cursor-pointer transition-colors ${isColumnHovered ? 'c4-column-hovered' : ''} ${
+                    isColumnHovered ? 'bg-[#d8dabc]' : 'bg-[#f2efe9]'
                   }`}
                   style={{ aspectRatio: '1/1' }}
                 >
                   {isP1 && (
                     <div
-                      className={`w-[86%] h-[86%] rounded-full bg-[#9b2c2c] border-2 border-black sketch-shadow-xs transition-transform flex items-center justify-center ${
+                      className={`c4-checker c4-checker-red relative w-[86%] h-[86%] rounded-full border-2 border-black sketch-shadow-xs transition-transform flex items-center justify-center ${
                         isWinning
                           ? 'animate-bounce ring-4 ring-[#fff9c4]'
                           : isLastDropped
@@ -105,14 +111,15 @@ export const Connect4Arena: React.FC<Connect4ArenaProps> = ({ duelState, onDropD
                           : ''
                       }`}
                     >
+                      <span aria-hidden="true" className="c4-checker-stamp" />
                       {isLastDropped && !isWinning && (
-                        <span className="w-2 h-2 rounded-full bg-white/90 shadow-sm animate-pulse" />
+                        <span className="absolute w-2 h-2 rounded-full bg-white/90 shadow-sm" />
                       )}
                     </div>
                   )}
                   {isP2 && (
                     <div
-                      className={`w-[86%] h-[86%] rounded-full bg-[#2563eb] border-2 border-black sketch-shadow-xs transition-transform flex items-center justify-center ${
+                      className={`c4-checker c4-checker-blue relative w-[86%] h-[86%] rounded-full border-2 border-black sketch-shadow-xs transition-transform flex items-center justify-center ${
                         isWinning
                           ? 'animate-bounce ring-4 ring-[#fff9c4]'
                           : isLastDropped
@@ -120,8 +127,9 @@ export const Connect4Arena: React.FC<Connect4ArenaProps> = ({ duelState, onDropD
                           : ''
                       }`}
                     >
+                      <span aria-hidden="true" className="c4-checker-stamp" />
                       {isLastDropped && !isWinning && (
-                        <span className="w-2 h-2 rounded-full bg-white/90 shadow-sm animate-pulse" />
+                        <span className="absolute w-2 h-2 rounded-full bg-white/90 shadow-sm" />
                       )}
                     </div>
                   )}

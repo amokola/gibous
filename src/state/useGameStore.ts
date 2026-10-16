@@ -120,7 +120,7 @@ export const useGameStore = create<GameState>((set, get) => ({
         roundWinner: payload.roundWinner,
         p1Score: payload.p1Score,
         p2Score: payload.p2Score,
-        roundNumber: payload.round,
+        roundNumber: payload.nextRound ?? payload.round,
         p1HasChosen: false,
         p2HasChosen: false,
       }

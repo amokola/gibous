@@ -5,6 +5,17 @@
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
+CREATE OR REPLACE FUNCTION nano_to_gram(amount_nano NUMERIC)
+RETURNS NUMERIC
+LANGUAGE SQL
+IMMUTABLE
+STRICT
+PARALLEL SAFE
+AS $$
+  SELECT div(amount_nano, 1000000000::numeric)
+       + mod(amount_nano, 1000000000::numeric) / 1000000000::numeric;
+$$;
+
 -- 0. Universal Auto-Updating Timestamp Trigger Function
 CREATE OR REPLACE FUNCTION set_updated_at()
 RETURNS TRIGGER
@@ -130,9 +141,9 @@ CREATE TABLE IF NOT EXISTS transactions (
     amount_nano NUMERIC(39,0) NOT NULL,
     fee_nano NUMERIC(39,0) NOT NULL DEFAULT 0,
     balance_after_nano NUMERIC(39,0) NOT NULL,
-    amount NUMERIC(30,9) GENERATED ALWAYS AS (ROUND(amount_nano / 1000000000.0, 9)) STORED,
-    fee NUMERIC(30,9) GENERATED ALWAYS AS (ROUND(fee_nano / 1000000000.0, 9)) STORED,
-    balance_after NUMERIC(30,9) GENERATED ALWAYS AS (ROUND(balance_after_nano / 1000000000.0, 9)) STORED,
+    amount NUMERIC(30,9) GENERATED ALWAYS AS (nano_to_gram(amount_nano)) STORED,
+    fee NUMERIC(30,9) GENERATED ALWAYS AS (nano_to_gram(fee_nano)) STORED,
+    balance_after NUMERIC(30,9) GENERATED ALWAYS AS (nano_to_gram(balance_after_nano)) STORED,
     tx_hash VARCHAR(128),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT transactions_type_valid CHECK (type IN ('deposit', 'withdraw', 'withdrawal_refund', 'match_stake', 'match_win', 'match_draw_refund', 'match_cancelled_refund'))
@@ -150,7 +161,7 @@ CREATE TABLE IF NOT EXISTS deposit_intents (
     wallet_address VARCHAR(128) NOT NULL,
     deposit_address VARCHAR(128) NOT NULL,
     amount_nano NUMERIC(30,0) NOT NULL,
-    amount_gram NUMERIC(30,9) GENERATED ALWAYS AS (ROUND(amount_nano / 1000000000.0, 9)) STORED,
+    amount_gram NUMERIC(30,9) GENERATED ALWAYS AS (nano_to_gram(amount_nano)) STORED,
     memo VARCHAR(64) UNIQUE,
     boc TEXT UNIQUE,
     network VARCHAR(16) NOT NULL,
@@ -204,10 +215,10 @@ CREATE TABLE IF NOT EXISTS treasury (
     win_rake_nano NUMERIC(39,0) NOT NULL DEFAULT 0,
     draw_fees_nano NUMERIC(39,0) NOT NULL DEFAULT 0,
     total_volume_nano NUMERIC(39,0) NOT NULL DEFAULT 0,
-    total_rake_collected NUMERIC(30,9) GENERATED ALWAYS AS (ROUND(total_rake_nano / 1000000000.0, 9)) STORED,
-    win_rake_collected NUMERIC(30,9) GENERATED ALWAYS AS (ROUND(win_rake_nano / 1000000000.0, 9)) STORED,
-    draw_fees_collected NUMERIC(30,9) GENERATED ALWAYS AS (ROUND(draw_fees_nano / 1000000000.0, 9)) STORED,
-    total_volume_processed NUMERIC(30,9) GENERATED ALWAYS AS (ROUND(total_volume_nano / 1000000000.0, 9)) STORED,
+    total_rake_collected NUMERIC(30,9) GENERATED ALWAYS AS (nano_to_gram(total_rake_nano)) STORED,
+    win_rake_collected NUMERIC(30,9) GENERATED ALWAYS AS (nano_to_gram(win_rake_nano)) STORED,
+    draw_fees_collected NUMERIC(30,9) GENERATED ALWAYS AS (nano_to_gram(draw_fees_nano)) STORED,
+    total_volume_processed NUMERIC(30,9) GENERATED ALWAYS AS (nano_to_gram(total_volume_nano)) STORED,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT treasury_singleton CHECK (id = 1)
 );

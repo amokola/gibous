@@ -100,7 +100,7 @@ describe('Tier 2: Boundary & Corner Cases E2E Test Suite', () => {
       // 7th drop into column 0 by P1 should fail
       const fullColErr = await p1.sendAndAwait({ type: 'DROP_DISC', payload: { roomCode, column: 0 } }, 'ERROR');
       expect(fullColErr.type).toBe('ERROR');
-      expect(fullColErr.payload.message).toContain('Column 0 is full');
+      expect(fullColErr.payload.message).toContain('Column 1 is full');
 
       p1.close();
       p2.close();

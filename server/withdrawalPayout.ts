@@ -54,7 +54,12 @@ export async function tonCenterMessageIsMasterchainFinalized(input: {
   if (!response.ok) throw new Error(`TON Mainnet finality query failed (${response.status})`);
   const data = await response.json() as { transactions?: Array<{ account?: string; mc_block_seqno?: number | string }> };
   return (data.transactions || []).some((transaction) => {
-    if (!transaction.account || Number(transaction.mc_block_seqno || 0) <= 0) return false;
+    if (!transaction?.account) return false;
+    const seqno = transaction.mc_block_seqno;
+    const hasFinalizedSeqno = typeof seqno === 'number'
+      ? Number.isSafeInteger(seqno) && seqno > 0
+      : typeof seqno === 'string' && /^\d+$/.test(seqno) && BigInt(seqno) > 0n;
+    if (!hasFinalizedSeqno) return false;
     try { return Address.parse(transaction.account).equals(input.account); } catch { return false; }
   });
 }

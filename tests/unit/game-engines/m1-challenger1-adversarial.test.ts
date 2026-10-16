@@ -157,7 +157,7 @@ describe('Milestone 1 Challenger 1 - Adversarial & Stress Testing Harness', () =
         const currentActive = engine.getActivePlayer();
         const overflowRes = engine.handleAction(currentActive, 'DROP_DISC', { column: col });
         expect(overflowRes.success).toBe(false);
-        expect(overflowRes.error).toContain(`Column ${col} is full`);
+        expect(overflowRes.error).toContain(`Column ${col + 1} is full`);
         // Crucial invariant: active player must NOT switch on rejected move
         expect(engine.getActivePlayer()).toBe(currentActive);
       }

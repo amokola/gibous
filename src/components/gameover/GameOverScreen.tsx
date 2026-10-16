@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import confetti from 'canvas-confetti';
 import { Player, PlayerId, MatchStats } from '../../types/game';
 import { MatchResult, PlayerRole } from '../../../shared';
+import { calculatePotBreakdown } from '../../../shared/constants/economics';
 import { Avatar } from '../ui/Avatar';
 import { GramIcon } from '../ui/GramIcon';
 import { SketchButton } from '../ui/SketchButton';
@@ -42,6 +43,15 @@ export const GameOverScreen: React.FC<GameOverScreenProps> = ({
   const isWinner = !isSpectator && !isDraw && winnerRole !== null && winnerRole === currentRole;
   const isP1Winner = !isDraw && winnerRole === 'p1';
   const isP2Winner = !isDraw && winnerRole === 'p2';
+  const isForfeitLoss = isForfeit && !isWinner && !isSpectator;
+  const potBreakdown = calculatePotBreakdown(potAmount / 2);
+  const receiptAmount = isDraw
+    ? potBreakdown.drawRefundPerPlayer
+    : isWinner
+    ? potBreakdown.winnerPayout
+    : isForfeitLoss
+    ? -potBreakdown.stakePerPlayer
+    : 0;
 
   const winner = winnerRole === 'p1' ? p1 : winnerRole === 'p2' ? p2 : null;
 
@@ -63,27 +73,10 @@ export const GameOverScreen: React.FC<GameOverScreenProps> = ({
       const prefersReducedMotion = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
       if (!prefersReducedMotion) {
         confetti({
-          particleCount: 80,
-          spread: 70,
-          origin: { y: 0.6 },
+          particleCount: 36,
+          spread: 48,
+          origin: { y: 0.24 },
         });
-
-        const timer = setTimeout(() => {
-          confetti({
-            particleCount: 50,
-            angle: 60,
-            spread: 55,
-            origin: { x: 0 },
-          });
-          confetti({
-            particleCount: 50,
-            angle: 120,
-            spread: 55,
-            origin: { x: 1 },
-          });
-        }, 400);
-
-        return () => clearTimeout(timer);
       }
     }
   }, [isWinner, isDraw]);
@@ -97,7 +90,7 @@ export const GameOverScreen: React.FC<GameOverScreenProps> = ({
     turns: isDraw ? 16 : isWinner ? 14 : 15,
     duration: '1m 12s',
     biggestMove: isDraw ? 'Stalemate' : isWinner ? 'Pot Secured' : 'Runner Up',
-    potEarned: isDraw ? Math.floor(potAmount / 2 * 0.95) : isWinner ? Math.floor(potAmount * 0.9) : 0,
+    potEarned: isDraw ? potBreakdown.drawRefundPerPlayer : isWinner ? potBreakdown.winnerPayout : 0,
   };
 
   return (
@@ -126,7 +119,7 @@ export const GameOverScreen: React.FC<GameOverScreenProps> = ({
               isDraw
                 ? 'bg-[#e0f2fe]'
                 : isWinner
-                ? 'bg-[#fff9c4] animate-bounce-subtle'
+                ? 'bg-[#fff9c4]'
                 : 'bg-[#f2efe9]'
             }`}
           >
@@ -174,9 +167,7 @@ export const GameOverScreen: React.FC<GameOverScreenProps> = ({
 
         {/* Stamped Prize Receipt Card */}
         {(() => {
-          const arenaFee = Math.floor(potAmount * 0.10);
-          const netWinnerPrize = potAmount - arenaFee;
-          const drawRefundPerPlayer = Math.floor((potAmount / 2) * 0.95);
+          const { arenaFee } = potBreakdown;
 
           return (
             <div className="w-full bg-[#fff9c4] border-2 sm:border-[2.5px] border-black rounded-none p-3.5 sm:p-4 sketch-shadow-lg my-3 flex flex-col items-center relative overflow-hidden">
@@ -185,16 +176,18 @@ export const GameOverScreen: React.FC<GameOverScreenProps> = ({
                   ? 'Draw (95% Refund)'
                   : isWinner
                   ? 'Winner Payout (90% of Pot)'
+                  : isForfeitLoss
+                  ? 'Your Stake Was Forfeited'
                   : 'Match Completed'}
               </div>
 
               <div className="flex items-center gap-2 my-1">
                 <span
                   className={`font-sketch text-4xl sm:text-5xl font-bold ${
-                    isDraw ? 'text-[#0369a1]' : isWinner ? 'text-[#166534]' : 'text-[#854d0e]'
+                    isDraw ? 'text-[#0369a1]' : isWinner ? 'text-[#166534]' : isForfeitLoss ? 'text-[#991b1b]' : 'text-[#854d0e]'
                   }`}
                 >
-                  +{isDraw ? drawRefundPerPlayer : isWinner ? netWinnerPrize : 0}
+                  {receiptAmount > 0 ? '+' : ''}{receiptAmount}
                 </span>
                 <span className="font-sketch text-3xl sm:text-4xl font-bold text-[#9b2c2c]">
                   GRAM
@@ -206,7 +199,11 @@ export const GameOverScreen: React.FC<GameOverScreenProps> = ({
                 <span>
                   {isDraw
                     ? '5% Arena Fee'
-                    : `Gibous 10% Arena Fee: -${arenaFee} GRAM`}
+                    : isForfeitLoss
+                    ? 'Your stake went to the winner'
+                    : isWinner
+                    ? `Gibous 10% Arena Fee: -${arenaFee} GRAM`
+                    : 'No payout on this match'}
                 </span>
                 <span className={isWinner ? 'text-[#166534]' : 'text-[#854d0e]'}>
                   {isWinner ? '+150 XP' : '+25 XP'}
@@ -236,9 +233,9 @@ export const GameOverScreen: React.FC<GameOverScreenProps> = ({
               }`}
             >
               {isDraw
-                ? `Refund (+${Math.floor((potAmount / 2) * 0.95)}G)`
+                ? `Refund (+${potBreakdown.drawRefundPerPlayer}G)`
                 : isP1Winner
-                ? `Winner (+${Math.floor(potAmount * 0.9)}G)`
+                ? `Winner (+${potBreakdown.winnerPayout}G)`
                 : 'Runner Up (0G)'}
             </span>
           </div>
@@ -261,9 +258,9 @@ export const GameOverScreen: React.FC<GameOverScreenProps> = ({
               }`}
             >
               {isDraw
-                ? `Refund (+${Math.floor((potAmount / 2) * 0.95)}G)`
+                ? `Refund (+${potBreakdown.drawRefundPerPlayer}G)`
                 : isP2Winner
-                ? `Winner (+${Math.floor(potAmount * 0.9)}G)`
+                ? `Winner (+${potBreakdown.winnerPayout}G)`
                 : 'Runner Up (0G)'}
             </span>
           </div>

@@ -349,7 +349,7 @@ export const SnakeLadderArena: React.FC<SnakeLadderArenaProps> = ({
   const isWinner = (isP1Won && myRole === 'p1') || (isP2Won && myRole === 'p2');
 
   return (
-    <div className="flex flex-col items-center justify-between w-full h-full max-w-sm mx-auto py-1 font-body select-none">
+    <div className="flex flex-col items-center justify-between w-full h-full max-w-[min(96vw,560px)] mx-auto py-1 font-body select-none">
       {/* Jump Banner Alert or Game Over Alert */}
       {jumpBanner ? (
         <div

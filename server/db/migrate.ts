@@ -25,6 +25,7 @@ export async function runMigrations(customDatabaseUrl?: string): Promise<void> {
     path.join(dbDir, 'migrations', '011_pg_compliance_fixes.sql'),
     path.join(dbDir, 'migrations', '012_upgrade_user_ids_to_bigint.sql'),
     path.join(dbDir, 'migrations', '013_gram_withdrawal_payouts.sql'),
+    path.join(dbDir, 'migrations', '014_exact_nano_gram_conversion.sql'),
   ];
 
   const schemaSql = await readFile(schemaPath, 'utf8');

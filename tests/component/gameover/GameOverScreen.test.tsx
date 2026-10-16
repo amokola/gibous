@@ -55,6 +55,23 @@ describe('GameOverScreen Component Tests', () => {
     expect(onBackToLobby).toHaveBeenCalled();
   });
 
+  it('preserves fractional GRAM amounts for a 1 GRAM pot', () => {
+    render(
+      <GameOverScreen
+        winnerId="p1"
+        p1={p1}
+        p2={p2}
+        potAmount={1}
+        onPlayAgain={vi.fn()}
+        onBackToLobby={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText('+0.9')).toBeInTheDocument();
+    expect(screen.getByText(/Gibous 10% Arena Fee: -0.1 GRAM/i)).toBeInTheDocument();
+    expect(screen.getByText(/Winner \(\+0.9G\)/i)).toBeInTheDocument();
+  });
+
   it('should render draw state with +95 refund receipt when match ends in draw', () => {
     render(
       <GameOverScreen
@@ -136,7 +153,7 @@ describe('GameOverScreen Component Tests', () => {
         myRole="p2"
         p1={p1}
         p2={p2}
-        potAmount={200}
+        potAmount={1}
         onPlayAgain={vi.fn()}
         onBackToLobby={vi.fn()}
       />
@@ -144,5 +161,7 @@ describe('GameOverScreen Component Tests', () => {
 
     expect(screen.getAllByText(/FORFEITED/i).length).toBeGreaterThanOrEqual(1);
     expect(screen.getByRole('heading', { name: /You Forfeited The Match/i })).toBeInTheDocument();
+    expect(screen.getByText('-0.5')).toBeInTheDocument();
+    expect(screen.getByText(/Your stake went to the winner/i)).toBeInTheDocument();
   });
 });

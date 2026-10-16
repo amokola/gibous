@@ -25,6 +25,14 @@ function extractComment(bodyCell: any): string | null {
   }
 }
 
+function sameTonAddress(actual: any, expected: Address): boolean {
+  try {
+    return typeof actual?.equals === 'function' && actual.equals(expected);
+  } catch {
+    return false;
+  }
+}
+
 export function normalizeToncenterEndpoint(url: string): string {
   let trimmed = url.trim();
   if (trimmed.endsWith('/')) {
@@ -206,24 +214,31 @@ export class DepositVerificationService {
       }
     }
 
-    const expectedAmount = BigInt(intent.amount_nano);
+    let expectedAmount: bigint;
+    try { expectedAmount = BigInt(intent.amount_nano); } catch { return null; }
     const earliestAllowed = intent.created_at.getTime() - 2 * 60_000;
     const latestAllowed = Date.now() + 2 * 60_000;
 
     for (const transaction of vaultTransactions) {
-      if (transaction.now * 1000 < earliestAllowed) continue;
-      if (transaction.now * 1000 > latestAllowed) continue;
+      try {
+        if (!Number.isFinite(transaction?.now)) continue;
+        if (transaction.now * 1000 < earliestAllowed) continue;
+        if (transaction.now * 1000 > latestAllowed) continue;
 
-      const inMsg = transaction.inMessage;
-      if (!inMsg || inMsg.info?.type !== 'internal') continue;
-      if (!inMsg.info.dest?.equals(this.vaultAddress)) continue;
-      if (inMsg.info.value?.coins !== expectedAmount) continue;
-      if (source && !inMsg.info.src?.equals(source)) continue;
+        const inMsg = transaction.inMessage;
+        if (!inMsg || inMsg.info?.type !== 'internal' || inMsg.info.bounced === true) continue;
+        if (!sameTonAddress(inMsg.info.dest, this.vaultAddress)) continue;
+        if (inMsg.info.value?.coins !== expectedAmount) continue;
+        if (source && !sameTonAddress(inMsg.info.src, source)) continue;
 
-      const comment = extractComment(inMsg.body);
-      if (comment !== intent.memo) continue;
+        const comment = extractComment(inMsg.body);
+        if (comment !== intent.memo) continue;
 
-      return transaction.hash().toString('hex');
+        return transaction.hash().toString('hex');
+      } catch {
+        // Indexers can return incomplete rows; keep checking later candidates.
+        continue;
+      }
     }
 
     return null;
@@ -248,7 +263,8 @@ export class DepositVerificationService {
     } catch {
       return null;
     }
-    const expectedAmount = BigInt(intent.amount_nano);
+    let expectedAmount: bigint;
+    try { expectedAmount = BigInt(intent.amount_nano); } catch { return null; }
     const transactions = await this.client.getTransactions(source, { limit: 20 });
     const earliestAllowed = intent.created_at.getTime() - 2 * 60_000;
     const latestAllowed = Date.now() + 2 * 60_000;
@@ -258,19 +274,29 @@ export class DepositVerificationService {
     }
 
     for (const transaction of transactions) {
-      if (transaction.now * 1000 < earliestAllowed) continue;
-      if (transaction.now * 1000 > latestAllowed) continue;
+      try {
+        if (!Number.isFinite(transaction?.now)) continue;
+        if (transaction.now * 1000 < earliestAllowed) continue;
+        if (transaction.now * 1000 > latestAllowed) continue;
 
-      for (const message of transaction.outMessages.values()) {
-        if (message.info.type !== 'internal') continue;
-        if (!message.info.src.equals(source)) continue;
-        if (!message.info.dest.equals(this.vaultAddress)) continue;
-        if (message.info.value.coins !== expectedAmount) continue;
+        for (const message of transaction.outMessages.values()) {
+          try {
+            if (message.info.type !== 'internal' || message.info.bounced === true) continue;
+            if (!sameTonAddress(message.info.src, source)) continue;
+            if (!sameTonAddress(message.info.dest, this.vaultAddress)) continue;
+            if (message.info.value?.coins !== expectedAmount) continue;
 
-        const comment = extractComment(message.body);
-        if (comment !== intent.memo) continue;
+            const comment = extractComment(message.body);
+            if (comment !== intent.memo) continue;
 
-        return transaction.hash().toString('hex');
+            return transaction.hash().toString('hex');
+          } catch {
+            continue;
+          }
+        }
+      } catch {
+        // Skip malformed transactions or message collections from the indexer.
+        continue;
       }
     }
 

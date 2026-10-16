@@ -15,6 +15,10 @@ const restore = 'gibous_release_gate_restore_20260824';
 const sourceUrl = new URL(databaseUrl);
 const adminUrl = new URL(databaseUrl);
 const restoreUrl = new URL(databaseUrl);
+const configuredDatabaseName = decodeURIComponent(sourceUrl.pathname.replace(/^\//, ''));
+if (configuredDatabaseName !== source) {
+  throw new Error(`Refusing to mutate database '${configuredDatabaseName}'; DATABASE_URL must point to '${source}'.`);
+}
 adminUrl.pathname = '/postgres';
 sourceUrl.pathname = `/${source}`;
 restoreUrl.pathname = `/${restore}`;
@@ -30,7 +34,11 @@ const dumpPath = path.join(temporaryDirectory, 'release.dump');
 try {
   const admin = new Client({ connectionString: adminUrl.toString() });
   await admin.connect();
-  await admin.query(`DROP DATABASE IF EXISTS "${restore}"`);
+  const existingRestore = await admin.query('SELECT 1 FROM pg_database WHERE datname = $1', [restore]);
+  if (existingRestore.rowCount) {
+    await admin.end();
+    throw new Error(`Refusing to overwrite existing restore database '${restore}'.`);
+  }
   await admin.query(`CREATE DATABASE "${restore}"`);
   await admin.end();
 

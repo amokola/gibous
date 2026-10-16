@@ -159,7 +159,7 @@ export class ServerConnect4Engine implements IServerGameEngine {
     if (dropRow === -1) {
       return {
         success: false,
-        error: `Column ${column} is full`,
+        error: `Column ${column + 1} is full`,
         actionType,
         payload: {},
         isGameOver: false,

@@ -24,6 +24,21 @@ describe('Connect4Arena Component Tests', () => {
     expect(onDropDisc).toHaveBeenCalledWith(2); // 0-indexed column 2 (column 3)
   });
 
+  it('should render the single-shell navy playfield with a recessed well for every cell', () => {
+    const duelState = createMockDuelState({
+      room: { code: 'C4TEST', gameType: 'connect4', status: 'playing', version: 1 },
+      myRole: 'p1',
+      activePlayer: 'p1',
+    });
+
+    const { container } = render(<Connect4Arena duelState={duelState} onDropDisc={vi.fn()} />);
+
+    expect(screen.getByTestId('connect4-board')).toHaveClass('connect4-board-shell', 'bg-[#24466f]');
+    expect(screen.getByTestId('connect4-board')).toHaveClass('rounded-none');
+    expect(container.querySelector('.connect4-board-face')).not.toBeInTheDocument();
+    expect(container.querySelectorAll('.c4-well')).toHaveLength(42);
+  });
+
   it('should disable dropper buttons when it is not user turn', () => {
     const onDropDisc = vi.fn();
     const duelState = createMockDuelState({
@@ -38,9 +53,31 @@ describe('Connect4Arena Component Tests', () => {
 
     const col1Button = screen.getByTitle('Drop in column 1');
     expect(col1Button).toBeDisabled();
+    expect(col1Button).toHaveAttribute('aria-label', 'Drop a blue checker in column 1');
 
     fireEvent.click(col1Button);
     expect(onDropDisc).not.toHaveBeenCalled();
+  });
+
+  it('should mark the hovered column as the active drop target', () => {
+    const onDropDisc = vi.fn();
+    const duelState = createMockDuelState({
+      room: { code: 'C4TEST', gameType: 'connect4', status: 'playing', version: 1 },
+      myRole: 'p1',
+      activePlayer: 'p1',
+    });
+
+    render(<Connect4Arena duelState={duelState} onDropDisc={onDropDisc} />);
+
+    const col3Button = screen.getByTitle('Drop in column 3');
+    fireEvent.mouseEnter(col3Button);
+
+    expect(col3Button).toHaveAttribute('data-active-target', 'true');
+    expect(col3Button).toHaveAttribute('aria-label', 'Drop a red checker in column 3');
+    expect(col3Button).toHaveTextContent('↓');
+    expect(col3Button).not.toHaveTextContent('·');
+    expect(screen.getByTestId('connect4-board').querySelectorAll('.c4-column-hovered')).toHaveLength(6);
+    expect(screen.getByTestId('connect4-board').querySelector('.c4-drop-preview')).not.toBeInTheDocument();
   });
 
   it('should display winning callout and disable dropper buttons when game is over', () => {

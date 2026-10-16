@@ -355,6 +355,141 @@
   animation: discFall 0.38s cubic-bezier(0.25, 1, 0.5, 1) forwards;
 }
 
+/* Connect 4 checker finish: a tactile enamel face and an inked center mark. */
+.c4-checker-red {
+  background: radial-gradient(circle at 34% 28%, #ffaaa0 0 10%, #e15a50 35%, #a92f2a 76%, #7f211e 100%);
+}
+
+.c4-checker-blue {
+  background: radial-gradient(circle at 34% 28%, #b1d0ff 0 10%, #5d91ef 35%, #2e5eb7 76%, #1a3e7c 100%);
+}
+
+.c4-checker-stamp {
+  width: 38%;
+  height: 38%;
+  border: 1.5px solid rgba(26, 26, 26, 0.26);
+  border-radius: 9999px;
+  box-shadow: inset 0 1px 2px rgba(255, 255, 255, 0.34), 0 1px 1px rgba(0, 0, 0, 0.14);
+}
+
+/* RPS choice stamps keep the original hand-drawn SVGs and give them room to read. */
+.rps-choice-art {
+  width: 3.75rem;
+  height: 3.75rem;
+  border: 2px solid #1a1a1a;
+  box-shadow: 2px 2px 0 #1a1a1a;
+  transform: rotate(-2deg);
+}
+
+.rps-choice-art.rps-paper { transform: rotate(2deg); }
+.rps-choice-art.rps-scissors { transform: rotate(-1deg); }
+.rps-choice-art img { filter: drop-shadow(0 2px 0 rgba(26, 26, 26, 0.22)); }
+
+.rps-rock { background-color: #fff0e8; }
+.rps-paper { background-color: #fff9c4; }
+.rps-scissors { background-color: #e6f0ff; }
+
+.rps-reveal-card {
+  border: 2px solid #1a1a1a;
+  border-radius: 0.2rem;
+  background-image: repeating-linear-gradient(135deg, rgba(26, 26, 26, 0.035) 0 1px, transparent 1px 7px);
+  box-shadow: 3px 3px 0 #1a1a1a;
+  animation: rpsReveal 0.42s cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
+}
+
+.rps-reveal-card:nth-child(3) { animation-delay: 80ms; }
+
+.rps-reveal-art {
+  width: 4.25rem;
+  height: 4.25rem;
+  border: 1.5px solid rgba(26, 26, 26, 0.5);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.78);
+  box-shadow: inset 0 2px 2px rgba(26, 26, 26, 0.12);
+}
+
+.rps-reveal-art img { filter: drop-shadow(0 2px 1px rgba(26, 26, 26, 0.22)); }
+
+.rps-clash-mark { animation: clashPop 0.5s 0.12s cubic-bezier(0.2, 0.9, 0.3, 1.2) both; }
+.rps-outcome { animation: outcomeStamp 0.32s 0.28s ease-out both; }
+
+.rps-countdown > span:last-child {
+  display: grid;
+  width: 5rem;
+  height: 5rem;
+  place-items: center;
+  border: 3px solid #1a1a1a;
+  border-radius: 50%;
+  background: #fff9c4;
+  box-shadow: 4px 4px 0 #1a1a1a;
+  animation: countdownTick 0.42s cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
+}
+
+@keyframes rpsReveal {
+  from { opacity: 0; transform: translateY(14px) rotate(-4deg) scale(0.88); }
+  to { opacity: 1; transform: translateY(0) rotate(0) scale(1); }
+}
+
+@keyframes clashPop {
+  from { opacity: 0; transform: rotate(-24deg) scale(0.45); }
+  to { opacity: 1; transform: rotate(0) scale(1); }
+}
+
+@keyframes outcomeStamp {
+  from { opacity: 0; transform: translateY(7px) scale(0.9); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes countdownTick {
+  from { opacity: 0.6; transform: scale(0.75) rotate(-12deg); }
+  to { opacity: 1; transform: scale(1) rotate(0); }
+}
+
+/* Preserve square Connect 4 wells while the board uses its classic single shell. */
+.c4-well {
+  aspect-ratio: 1 / 1;
+}
+
+/* Snakes & Ladders: a framed wooden game board with ink-and-paint illustrations. */
+.snakes-ladders-board-frame {
+  border: 3px solid #392719;
+  background:
+    linear-gradient(180deg, rgba(255, 223, 160, 0.44), transparent 16% 82%, rgba(46, 25, 13, 0.32)),
+    repeating-linear-gradient(2deg, rgba(54, 30, 16, 0.13) 0 1px, transparent 1px 6px),
+    linear-gradient(112deg, #d19a5c 0%, #89532e 20%, #b47740 47%, #754628 75%, #c28a4c 100%);
+  box-shadow: 5px 5px 0 #23180f, inset 0 0 0 2px rgba(255, 222, 165, 0.66), inset 0 0 0 5px rgba(62, 36, 21, 0.38), inset 0 2px 0 rgba(255, 238, 201, 0.74), inset 0 -4px 0 rgba(48, 27, 15, 0.62);
+  border-radius: 0;
+}
+
+.snakes-ladders-board-canvas {
+  border: 2px solid #432b1c;
+  background: #faf6ee;
+  box-shadow: inset 0 1px 5px rgba(50, 31, 18, 0.23), 0 1px 0 rgba(255, 236, 197, 0.6);
+  border-radius: 0;
+}
+
+.snake-illustration-active { animation: snakeLanding 0.58s cubic-bezier(0.2, 0.9, 0.3, 1.15) both; }
+.snake-active-head { transform-box: fill-box; transform-origin: center; animation: snakeHeadNod 0.46s 0.08s ease-out both; }
+.ladder-illustration-active { transform-box: fill-box; transform-origin: center bottom; animation: ladderLanding 0.66s cubic-bezier(0.2, 0.9, 0.3, 1.1) both; }
+
+@keyframes snakeLanding {
+  0% { opacity: 0.74; }
+  50% { opacity: 1; }
+  100% { opacity: 1; }
+}
+
+@keyframes snakeHeadNod {
+  0% { scale: 0.88; }
+  55% { scale: 1.14; }
+  100% { scale: 1; }
+}
+
+@keyframes ladderLanding {
+  0% { transform: scaleY(0.985); }
+  45% { transform: scaleY(1.035); }
+  100% { transform: scaleY(1); }
+}
+
 /* Card Lock-In Suspense Animation */
 @keyframes cardLock {
   0% {

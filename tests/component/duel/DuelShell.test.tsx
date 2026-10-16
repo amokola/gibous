@@ -64,10 +64,26 @@ describe('DuelShell Component Tests', () => {
     fireEvent.click(backBtn);
 
     expect(screen.getByText(/SURRENDER DUEL\?/i)).toBeInTheDocument();
+    const dialog = screen.getByRole('dialog', { name: /SURRENDER DUEL/i });
+    expect(dialog).toHaveAttribute('aria-modal', 'true');
+    const stayButton = screen.getByRole('button', { name: /STAY & PLAY/i });
+    const forfeitBtn = screen.getByRole('button', { name: /FORFEIT/i });
+    expect(stayButton).toHaveFocus();
+    forfeitBtn.focus();
+    fireEvent.keyDown(document, { key: 'Tab' });
+    expect(stayButton).toHaveFocus();
+    stayButton.focus();
+    fireEvent.keyDown(document, { key: 'Tab', shiftKey: true });
+    expect(forfeitBtn).toHaveFocus();
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(backBtn).toHaveFocus();
+
+    fireEvent.click(backBtn);
 
     // Click forfeit
-    const forfeitBtn = screen.getByRole('button', { name: /FORFEIT/i });
-    fireEvent.click(forfeitBtn);
+    fireEvent.click(screen.getByRole('button', { name: /FORFEIT/i }));
 
     expect(onLeave).toHaveBeenCalled();
   });

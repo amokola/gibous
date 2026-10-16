@@ -303,12 +303,8 @@ export class StorageService {
     const user = await this.db.loadUserByTelegramId(input.telegramId);
     if (!user) throw new Error('Account not found');
 
-    let amountNano: bigint;
-    try {
-      amountNano = BigInt(input.amountNano);
-    } catch {
-      throw new Error('Invalid deposit amount');
-    }
+    if (!/^\d{1,30}$/.test(input.amountNano)) throw new Error('Invalid deposit amount');
+    const amountNano = BigInt(input.amountNano);
     if (amountNano <= 0n) throw new Error('Deposit amount must be greater than zero');
 
     return await this.db.createDepositIntent({
@@ -327,14 +323,19 @@ export class StorageService {
     const intent = await this.db.loadDepositIntentById(intentId);
     if (!intent) return { success: false as const, error: 'Deposit intent not found' };
 
-    if (intent.telegram_id !== telegramId) {
+    if (Number(intent.telegram_id) !== telegramId) {
       return { success: false as const, error: 'Unauthorized' };
     }
 
     if (intent.status === 'pending') {
-      await this.db.updatePersistentDepositIntent(intentId, {
-        status: 'cancelled',
-      });
+      const cancelled = await this.db.cancelPendingDepositIntent(intentId);
+      if (!cancelled) {
+        const latest = await this.db.loadDepositIntentById(intentId);
+        if (latest?.status === 'cancelled') return { success: true as const };
+        return { success: false as const, error: latest?.boc
+          ? 'A signed deposit is already being verified and cannot be cancelled'
+          : 'Deposit intent is no longer cancellable' };
+      }
     }
 
     return { success: true as const };
@@ -352,6 +353,10 @@ export class StorageService {
     if (!input.intentId) {
       return { success: false as const, error: 'DEPOSIT_INTENT_REQUIRED' };
     }
+    if (typeof input.boc !== 'string' || !input.boc.trim() || input.boc.trim().length > 250_000) {
+      return { success: false as const, error: 'Invalid signed deposit payload' };
+    }
+    const boc = input.boc.trim();
 
     const user = await this.db.loadUserByTelegramId(input.telegramId);
     if (!user) return { success: false as const, error: 'Account not found' };
@@ -365,12 +370,8 @@ export class StorageService {
       return { success: false as const, error: 'Invalid network' };
     }
 
-    let amountNano: bigint;
-    try {
-      amountNano = BigInt(input.amountNano);
-    } catch {
-      return { success: false as const, error: 'Invalid deposit amount' };
-    }
+    if (!/^\d{1,30}$/.test(input.amountNano)) return { success: false as const, error: 'Invalid deposit amount' };
+    const amountNano = BigInt(input.amountNano);
     if (amountNano <= 0n) return { success: false as const, error: 'Deposit amount must be greater than zero' };
 
     const intent = await this.db.loadDepositIntentById(input.intentId);
@@ -403,16 +404,16 @@ export class StorageService {
     if (intent.wallet_address && intent.wallet_address !== input.walletAddress) {
       return { success: false as const, error: 'DEPOSIT_WALLET_MISMATCH' };
     }
-    if (intent.boc && intent.boc !== input.boc) {
+    if (intent.boc && intent.boc !== boc) {
       return { success: false as const, error: 'DEPOSIT_INTENT_ALREADY_BOUND_TO_BOC' };
     }
 
-    const existingByBoc = await this.db.loadDepositIntentByBoc(input.boc);
+    const existingByBoc = await this.db.loadDepositIntentByBoc(boc);
     if (existingByBoc && existingByBoc.id !== intent.id) {
       return { success: false as const, error: 'This deposit transaction is already associated with another intent' };
     }
 
-    const updated = await this.db.claimPendingDepositBoc(intent.id, input.boc, input.walletAddress || intent.wallet_address);
+    const updated = await this.db.claimPendingDepositBoc(intent.id, boc, input.walletAddress || intent.wallet_address);
     if (!updated) {
       return { success: false as const, error: 'This deposit transaction is already associated with another intent' };
     }
@@ -462,6 +463,9 @@ export class StorageService {
     let address: Address;
     let grossNano: bigint;
     let feeNano: bigint;
+    if (!/^\d{1,30}$/.test(input.grossAmountNano) || !/^\d{1,30}$/.test(input.feeNano)) {
+      return { success: false as const, error: 'Invalid withdrawal address or amount' };
+    }
     try {
       address = Address.parse(input.walletAddress.trim());
       grossNano = BigInt(input.grossAmountNano);

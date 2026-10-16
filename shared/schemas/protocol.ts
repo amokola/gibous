@@ -84,7 +84,7 @@ export const CancelRoomPayloadSchema = z.object({
 });
 
 export const CreateDepositIntentPayloadSchema = z.object({
-  amountNano: z.string().regex(/^\d+$/, 'amountNano must be an integer string').max(32),
+  amountNano: z.string().regex(/^\d+$/, 'amountNano must be an integer string').max(30),
   walletAddress: z.string().trim().min(10).max(128).optional(),
 });
 
@@ -92,14 +92,14 @@ export const SubmitDepositPayloadSchema = z.object({
   intentId: z.string().trim().min(1).max(128),
   walletAddress: z.string().trim().min(10).max(128),
   depositAddress: z.string().trim().min(10).max(128),
-  amountNano: z.string().regex(/^\d+$/, 'amountNano must be an integer string').max(32),
+  amountNano: z.string().regex(/^\d+$/, 'amountNano must be an integer string').max(30),
   boc: z.string().trim().min(1).max(250_000),
   network: z.enum(['mainnet', 'testnet']),
 });
 
 export const RequestWithdrawalQuotePayloadSchema = z.object({
   walletAddress: z.string().trim().min(10).max(128),
-  amountNano: z.string().regex(/^\d+$/, 'amountNano must be an integer string').max(32),
+  amountNano: z.string().regex(/^\d+$/, 'amountNano must be an integer string').max(30),
 }).strict();
 export const ConfirmWithdrawalPayloadSchema = z.object({ quoteId: z.string().uuid() }).strict();
 

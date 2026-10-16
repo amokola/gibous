@@ -27,10 +27,12 @@ describe('RPSArena Component Tests', () => {
     expect(screen.getByText('SCISSORS')).toBeInTheDocument();
 
     const rockBtn = screen.getByRole('button', { name: /ROCK/i });
+    expect(rockBtn).toHaveAttribute('aria-pressed', 'false');
     fireEvent.click(rockBtn);
 
     expect(onChooseRPS).toHaveBeenCalledWith('rock');
     expect(screen.getByText(/YOUR CHOICE: rock/i)).toBeInTheDocument();
+    expect(rockBtn).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('should unlock choice buttons after 6000ms watchdog timeout when acknowledgment is lost', () => {
