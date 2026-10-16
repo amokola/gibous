@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
-import { Address, beginCell, storeMessage } from '@ton/core';
+import { Address, beginCell, Cell, MessageRelaxed, storeMessage } from '@ton/core';
 import { mnemonicToPrivateKey } from '@ton/crypto';
-import { internal, SendMode, TonClient, WalletContractV4 } from '@ton/ton';
+import { internal, SendMode, TonClient, WalletContractV3R2, WalletContractV4, WalletContractV5R1 } from '@ton/ton';
 import { StorageService } from './storage';
 
 export type SignedPayoutTransaction = {
@@ -88,6 +88,43 @@ export function loadWithdrawalWorkerConfig(env: Record<string, string | undefine
   };
 }
 
+export type PayoutWalletVersion = 'v5r1' | 'v4r2' | 'v3r2';
+export type PayoutWalletContract = WalletContractV5R1 | WalletContractV4 | WalletContractV3R2;
+
+type PayoutTransferArgs = {
+  seqno: number;
+  secretKey: Buffer;
+  messages: MessageRelaxed[];
+  sendMode: SendMode;
+  timeout: number;
+};
+
+/**
+ * Wallet contract factories ordered newest-first. A mnemonic always derives the same keypair, but the
+ * on-chain address depends on the wallet contract version, so we detect which version owns the
+ * configured payout address instead of assuming V4R2.
+ */
+export const PAYOUT_WALLET_FACTORIES: ReadonlyArray<{ version: PayoutWalletVersion; create: (publicKey: Buffer) => PayoutWalletContract }> = [
+  { version: 'v5r1', create: (publicKey) => WalletContractV5R1.create({ workchain: 0, publicKey }) },
+  { version: 'v4r2', create: (publicKey) => WalletContractV4.create({ workchain: 0, publicKey }) },
+  { version: 'v3r2', create: (publicKey) => WalletContractV3R2.create({ workchain: 0, publicKey }) },
+];
+
+/** Every supported wallet version shares the same signed-transfer argument shape. */
+export function createPayoutTransfer(wallet: PayoutWalletContract, args: PayoutTransferArgs): Cell {
+  return (wallet as WalletContractV4).createTransfer(args);
+}
+
+export function selectPayoutWallet(publicKey: Buffer, expectedAddress: Address): { version: PayoutWalletVersion; wallet: PayoutWalletContract } {
+  const candidates = PAYOUT_WALLET_FACTORIES.map(({ version, create }) => ({ version, wallet: create(publicKey) }));
+  const matched = candidates.find((candidate) => candidate.wallet.address.equals(expectedAddress));
+  if (!matched) {
+    const derived = candidates.map((candidate) => `${candidate.version}=${candidate.wallet.address.toRawString()}`).join(', ');
+    throw new Error(`Payout signer does not match PAYOUT_WALLET_ADDRESS (derived from mnemonic: ${derived})`);
+  }
+  return matched;
+}
+
 export async function createMainnetTonWithdrawalClient(env: Record<string, string | undefined> = process.env): Promise<TonWithdrawalPayoutClient> {
   if (env.PAYOUT_NETWORK !== 'mainnet') throw new Error('Only TON Mainnet is supported for payouts');
   const endpointText = env.TONCENTER_API_URL;
@@ -95,13 +132,19 @@ export async function createMainnetTonWithdrawalClient(env: Record<string, strin
   if (!endpointText || !mnemonicText) throw new Error('TONCENTER_API_URL and payout signer mnemonic are required');
   const endpoint = new URL(endpointText);
   if (endpoint.protocol !== 'https:' || endpoint.hostname.toLowerCase().includes('testnet')) throw new Error('Payout RPC must be a TON Mainnet HTTPS endpoint');
-  const keyPair = await mnemonicToPrivateKey(mnemonicText.trim().split(/\s+/));
-  const wallet = WalletContractV4.create({ workchain: 0, publicKey: keyPair.publicKey });
   const expected = env.PAYOUT_WALLET_ADDRESS;
-  if (!expected || !Address.parse(expected).equals(wallet.address)) throw new Error('Payout signer does not match PAYOUT_WALLET_ADDRESS');
+  if (!expected) throw new Error('PAYOUT_WALLET_ADDRESS is required for mainnet payouts');
+  let expectedAddress: Address;
+  try {
+    expectedAddress = Address.parse(expected);
+  } catch {
+    throw new Error('PAYOUT_WALLET_ADDRESS is not a valid TON address');
+  }
+  const keyPair = await mnemonicToPrivateKey(mnemonicText.trim().split(/\s+/));
+  const { wallet } = selectPayoutWallet(keyPair.publicKey, expectedAddress);
   const endpointUrl = endpoint.toString().replace(/\/$/, '').endsWith('/jsonRPC') ? endpoint.toString() : `${endpoint.toString().replace(/\/$/, '')}/jsonRPC`;
   const client = new TonClient({ endpoint: endpointUrl, apiKey: env.TONCENTER_API_KEY || undefined });
-  const openedWallet = client.open(wallet);
+  const openedWallet = client.open(wallet as WalletContractV4);
   const canonicalAddress = wallet.address.toString({ urlSafe: true, bounceable: true, testOnly: false });
   const isMasterchainFinalized = (messageHash: string, account: Address, queryByBody = false) =>
     tonCenterMessageIsMasterchainFinalized({ endpoint, apiKey: env.TONCENTER_API_KEY, messageHash, account, queryByBody });
@@ -111,7 +154,7 @@ export async function createMainnetTonWithdrawalClient(env: Record<string, strin
   return {
     address: canonicalAddress,
     estimateFee: async ({ destination, amountNano, memo }) => {
-      const transfer = await wallet.createTransfer({
+      const transfer = createPayoutTransfer(wallet, {
         seqno: 0, secretKey: keyPair.secretKey, timeout: Math.floor(Date.now() / 1000) + 60,
         sendMode: SendMode.PAY_GAS_SEPARATELY, messages: [makeMessage(destination, amountNano, memo)],
       });
@@ -124,7 +167,7 @@ export async function createMainnetTonWithdrawalClient(env: Record<string, strin
     getBalance: () => openedWallet.getBalance(),
     getSeqno: () => openedWallet.getSeqno(),
     prepareSignedTransfer: async ({ destination, amountNano, memo, seqno, validUntil }) => {
-      const body = await wallet.createTransfer({
+      const body = createPayoutTransfer(wallet, {
         seqno, secretKey: keyPair.secretKey, timeout: validUntil,
         sendMode: SendMode.PAY_GAS_SEPARATELY, messages: [makeMessage(destination, amountNano, memo)],
       });

@@ -1,8 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Address } from '@ton/core';
+import { mnemonicToPrivateKey } from '@ton/crypto';
+import { WalletContractV4, WalletContractV5R1 } from '@ton/ton';
 import { DatabasePool } from '../../../server/db';
 import { StorageService } from '../../../server/storage';
 import {
+  createMainnetTonWithdrawalClient,
   loadWithdrawalWorkerConfig,
   tonCenterMessageIsMasterchainFinalized,
   TonWithdrawalPayoutClient,
@@ -101,6 +104,40 @@ describe('expanded TON Center withdrawal finality response scenarios', () => {
     const fetcher = vi.fn(async () => new Response(JSON.stringify({ transactions: [] }), { status: 200 }));
     await tonCenterMessageIsMasterchainFinalized({ endpoint: new URL('https://toncenter.com/subpath/jsonRPC'), messageHash: 'hash', account: senderAccount, fetcher: fetcher as typeof fetch });
     expect(new URL(String(fetcher.mock.calls[0][0])).pathname).toBe('/api/v3/transactionsByMessage');
+  });
+});
+
+const signerMnemonic = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art';
+const payoutEnv = () => ({
+  PAYOUT_NETWORK: 'mainnet',
+  TONCENTER_API_URL: 'https://toncenter.com',
+  PAYOUT_SIGNER_MNEMONIC: signerMnemonic,
+});
+
+describe('mainnet payout wallet version detection', () => {
+  it.each([
+    ['v4r2', (publicKey: Buffer) => WalletContractV4.create({ workchain: 0, publicKey })],
+    ['v5r1', (publicKey: Buffer) => WalletContractV5R1.create({ workchain: 0, publicKey })],
+  ])('accepts the %s address that belongs to the signer mnemonic', async (_version, create) => {
+    const keyPair = await mnemonicToPrivateKey(signerMnemonic.split(' '));
+    const address = create(keyPair.publicKey).address.toString({ urlSafe: true, bounceable: true });
+    const client = await createMainnetTonWithdrawalClient({ ...payoutEnv(), PAYOUT_WALLET_ADDRESS: address });
+    expect(client.address).toBe(address);
+  });
+
+  it('rejects an address that belongs to no supported wallet version', async () => {
+    await expect(createMainnetTonWithdrawalClient({ ...payoutEnv(), PAYOUT_WALLET_ADDRESS: wallet }))
+      .rejects.toThrow(/does not match PAYOUT_WALLET_ADDRESS/);
+  });
+
+  it('rejects a malformed payout address before deriving the wallet', async () => {
+    await expect(createMainnetTonWithdrawalClient({ ...payoutEnv(), PAYOUT_WALLET_ADDRESS: 'not-an-address' }))
+      .rejects.toThrow('not a valid TON address');
+  });
+
+  it('requires a payout address', async () => {
+    await expect(createMainnetTonWithdrawalClient(payoutEnv()))
+      .rejects.toThrow('PAYOUT_WALLET_ADDRESS is required');
   });
 });
 
