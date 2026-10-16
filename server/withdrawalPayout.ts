@@ -115,11 +115,16 @@ export function createPayoutTransfer(wallet: PayoutWalletContract, args: PayoutT
   return (wallet as WalletContractV4).createTransfer(args);
 }
 
+/** Renders a mainnet address in the same user-friendly form (UQ…/EQ…) wallets display. */
+export function toFriendlyAddress(address: Address): string {
+  return address.toString({ urlSafe: true, bounceable: false, testOnly: false });
+}
+
 export function selectPayoutWallet(publicKey: Buffer, expectedAddress: Address): { version: PayoutWalletVersion; wallet: PayoutWalletContract } {
   const candidates = PAYOUT_WALLET_FACTORIES.map(({ version, create }) => ({ version, wallet: create(publicKey) }));
   const matched = candidates.find((candidate) => candidate.wallet.address.equals(expectedAddress));
   if (!matched) {
-    const derived = candidates.map((candidate) => `${candidate.version}=${candidate.wallet.address.toRawString()}`).join(', ');
+    const derived = candidates.map((candidate) => `${candidate.version}=${toFriendlyAddress(candidate.wallet.address)}`).join(', ');
     throw new Error(`Payout signer does not match PAYOUT_WALLET_ADDRESS (derived from mnemonic: ${derived})`);
   }
   return matched;
@@ -145,7 +150,7 @@ export async function createMainnetTonWithdrawalClient(env: Record<string, strin
   const endpointUrl = endpoint.toString().replace(/\/$/, '').endsWith('/jsonRPC') ? endpoint.toString() : `${endpoint.toString().replace(/\/$/, '')}/jsonRPC`;
   const client = new TonClient({ endpoint: endpointUrl, apiKey: env.TONCENTER_API_KEY || undefined });
   const openedWallet = client.open(wallet as WalletContractV4);
-  const canonicalAddress = wallet.address.toString({ urlSafe: true, bounceable: true, testOnly: false });
+  const canonicalAddress = toFriendlyAddress(wallet.address);
   const isMasterchainFinalized = (messageHash: string, account: Address, queryByBody = false) =>
     tonCenterMessageIsMasterchainFinalized({ endpoint, apiKey: env.TONCENTER_API_KEY, messageHash, account, queryByBody });
   const makeMessage = (destination: string, amountNano: string, memo: string) => internal({

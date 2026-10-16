@@ -120,14 +120,15 @@ describe('mainnet payout wallet version detection', () => {
     ['v5r1', (publicKey: Buffer) => WalletContractV5R1.create({ workchain: 0, publicKey })],
   ])('accepts the %s address that belongs to the signer mnemonic', async (_version, create) => {
     const keyPair = await mnemonicToPrivateKey(signerMnemonic.split(' '));
-    const address = create(keyPair.publicKey).address.toString({ urlSafe: true, bounceable: true });
+    const address = create(keyPair.publicKey).address.toString({ urlSafe: true, bounceable: false });
     const client = await createMainnetTonWithdrawalClient({ ...payoutEnv(), PAYOUT_WALLET_ADDRESS: address });
     expect(client.address).toBe(address);
+    expect(client.address.startsWith('UQ')).toBe(true);
   });
 
   it('rejects an address that belongs to no supported wallet version', async () => {
     await expect(createMainnetTonWithdrawalClient({ ...payoutEnv(), PAYOUT_WALLET_ADDRESS: wallet }))
-      .rejects.toThrow(/does not match PAYOUT_WALLET_ADDRESS/);
+      .rejects.toThrow(/does not match PAYOUT_WALLET_ADDRESS \(derived from mnemonic: v5r1=UQ/);
   });
 
   it('rejects a malformed payout address before deriving the wallet', async () => {
