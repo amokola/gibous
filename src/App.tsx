@@ -173,11 +173,11 @@ export const App: React.FC = () => {
       timestamp: transaction.createdAt ? new Date(transaction.createdAt).toLocaleString() : 'Pending',
       status: transaction.status,
       description: transaction.type === 'withdraw' && (transaction.status === 'pending' || transaction.status === 'processing')
-        ? 'Gram withdrawal pending'
+        ? 'Withdrawal in progress'
         : transaction.type === 'withdraw' && transaction.status === 'failed'
-        ? 'Gram withdrawal failed · refunded'
+        ? 'Withdrawal didn’t go through'
         : transaction.type === 'withdrawal_refund'
-        ? 'Gram withdrawal refund'
+        ? 'GRAM returned'
         : transaction.status === 'pending'
         ? `Deposit pending (+${transaction.amountGram} GRAM)`
         : transaction.type === 'match_win'
@@ -191,14 +191,14 @@ export const App: React.FC = () => {
         : transaction.type === 'deposit'
         ? 'Gram deposit on TON'
         : transaction.type === 'withdraw'
-        ? 'Gram withdrawal on TON'
+        ? 'GRAM withdrawal'
         : `${String(transaction.type).replace(/_/g, ' ')}`,
       subtext: transaction.type === 'withdrawal_refund'
         ? 'Refunded to your balance'
         : transaction.type === 'withdraw'
         ? transaction.status === 'pending' || transaction.status === 'processing'
-          ? 'Processing on TON Mainnet…'
-          : transaction.status === 'failed' ? 'Refunded to your balance' : 'Completed on TON Mainnet'
+          ? 'Being processed…'
+          : transaction.status === 'failed' ? 'Your GRAM was returned to your balance' : 'Completed'
         : transaction.status === 'pending' ? 'Confirming on TON...' : 'Completed',
       txHash: transaction.txHash || transaction.boc,
       depositIntentId: transaction.depositIntentId,

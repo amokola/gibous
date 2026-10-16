@@ -25,6 +25,37 @@ import {
 let myTelegramId: number | null = null;
 let initialized = false;
 
+const TECHNICAL_ERROR_COPY: Record<string, string> = {
+  UNAUTHORIZED: 'Please reconnect to your account and try again.',
+  AUTH_FAILED: "We couldn't verify your account. Please reopen the app from Telegram.",
+  AUTH_TIMEOUT: 'Your sign-in took too long. Please reopen the app and try again.',
+  ALREADY_AUTHENTICATED: 'Please reopen the app to switch accounts.',
+  INVALID_STAKE: 'Choose a stake within the allowed range.',
+  ROOM_NOT_FOUND: 'Duel not found. Check the code and try again.',
+  ROOM_FULL: 'This duel is full.',
+  CREATE_FAILED: 'Could not create the duel. Please try again.',
+  JOIN_FAILED: 'Could not join this duel. It may no longer be available.',
+  CANCEL_FAILED: 'This duel can no longer be cancelled.',
+  ACTION_REJECTED: 'That move could not be made. Please try again.',
+  ACTION_RATE_LIMITED: "You're moving too quickly. Please wait a moment.",
+  RATE_LIMIT_EXCEEDED: "You're moving too quickly. Please wait a moment.",
+  INVALID_JSON: 'We could not process that request. Please try again.',
+  SCHEMA_VALIDATION_ERROR: 'We could not process that request. Please try again.',
+  INTERNAL_SERVER_ERROR: 'Something went wrong. Please try again.',
+  STATE_PERSISTENCE_FAILED: 'We could not save that move. Please try again.',
+  DEPOSIT_UNAVAILABLE: 'Deposits are temporarily unavailable. Please try again later.',
+  WITHDRAWAL_REJECTED: 'We could not process your withdrawal. Please review the details and try again.',
+  WITHDRAWAL_UNAVAILABLE: 'Withdrawals are temporarily unavailable. Please try again later.',
+  DEPOSIT_REJECTED: 'We could not process your deposit. Please try again.',
+  DEPOSIT_INTENT_FAILED: 'Could not start your deposit. Please try again.',
+  CANCEL_DEPOSIT_INTENT_FAILED: 'Could not cancel that deposit request. Please try again.',
+};
+
+function userFacingServerError(code?: string, _message?: string, fallback = 'Something went wrong. Please try again.') {
+  if (code) return TECHNICAL_ERROR_COPY[code] || fallback;
+  return fallback;
+}
+
 export function getMyTelegramId(): number | null {
   return myTelegramId;
 }
@@ -177,7 +208,10 @@ export function initEventRouter() {
   });
 
   multiplayerService.on<RematchFailedPayload>('REMATCH_FAILED', (payload) => {
-    useConnectionStore.getState().setError(payload.reason || 'Rematch failed. Please try again.');
+    const rematchMessage = /insufficient balance/i.test(payload.reason)
+      ? 'You need more GRAM to start a rematch.'
+      : 'Rematch failed. Please try again.';
+    useConnectionStore.getState().setError(rematchMessage);
   });
 
   // Connection events
@@ -204,8 +238,8 @@ export function initEventRouter() {
   });
 
   // Error events
-  multiplayerService.on<{ message?: string }>('ERROR', (payload) => {
-    useConnectionStore.getState().setError(payload.message || 'Something went wrong. Please try again.');
+  multiplayerService.on<{ code?: string; message?: string }>('ERROR', (payload) => {
+    useConnectionStore.getState().setError(userFacingServerError(payload.code, payload.message));
   });
 
   // Register every handler before opening the socket so an immediately
@@ -314,7 +348,7 @@ export function submitDeposit(payload: any): Promise<void> {
     }));
     cleanups.push(multiplayerService.on<any>('ERROR', (error, message: any) => {
       if (message?.requestId === requestId || error?.requestId === requestId) {
-        finish(() => reject(new Error(error?.message || 'Deposit submission was rejected.')));
+        finish(() => reject(new Error(userFacingServerError(error?.code, error?.message, 'Your deposit could not be completed. Please try again.'))));
       }
     }));
     timeout = setTimeout(() => finish(() => reject(new Error('Server timed out confirming the deposit submission.'))), 20_000);
@@ -340,7 +374,9 @@ function requestWithdrawalResponse<T>(requestType: 'REQUEST_WITHDRAWAL_QUOTE' | 
       if (message?.requestId === requestId) finish(() => resolve(response as T));
     }));
     cleanups.push(multiplayerService.on<any>('ERROR', (error, message: any) => {
-      if (message?.requestId === requestId || error?.requestId === requestId) finish(() => reject(new Error(error?.message || 'Withdrawal request failed.')));
+      if (message?.requestId === requestId || error?.requestId === requestId) {
+        finish(() => reject(new Error(userFacingServerError(error?.code, error?.message, 'Your withdrawal could not be processed. Please try again.'))));
+      }
     }));
     timeout = setTimeout(() => finish(() => reject(new Error('Withdrawal request timed out. Please check your account before retrying.'))), 20_000);
   });

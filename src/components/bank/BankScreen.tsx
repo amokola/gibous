@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useTonAddress, useTonWallet, useTonConnectUI } from '@tonconnect/ui-react';
 import { beginCell } from '@ton/core';
-import { Check, History, Wallet, Unlink, Loader2 } from 'lucide-react';
+import { History, Wallet, Unlink, Loader2, X } from 'lucide-react';
 import { GramIcon } from '../ui/GramIcon';
+import { Toast } from '../ui/Toast';
 import { BankVaultIcon, WalletDepositIcon, WalletWithdrawIcon } from '../icons/GameIcons';
 import { toNanoGram, formatGram } from '../../utils/tonUnits';
 import { getTonConnectNetworkId, type TonNetwork } from '../../../shared';
@@ -51,6 +53,13 @@ export interface BankTransactionItem {
   status?: 'pending' | 'processing' | 'completed' | 'failed' | 'confirmed';
 }
 
+interface WithdrawalProgress {
+  id: string;
+  amount: number;
+  walletAddress?: string;
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+}
+
 const EMPTY_TRANSACTIONS: BankTransactionItem[] = [];
 
 function formatNanoGram(value: string): string {
@@ -58,6 +67,24 @@ function formatNanoGram(value: string): string {
   const whole = nano / 1_000_000_000n;
   const fraction = (nano % 1_000_000_000n).toString().padStart(9, '0').replace(/0+$/, '');
   return fraction ? `${whole}.${fraction}` : whole.toString();
+}
+
+function friendlyBankError(error: unknown, fallback: string, action: 'deposit' | 'withdrawal' = 'deposit'): string {
+  const message = error instanceof Error ? error.message : '';
+  const normalized = message.toLowerCase();
+
+  if (/userreject|usercancel|user declined|cancel|closed/.test(normalized)) return 'Request cancelled.';
+  if (/insufficient|balance/.test(normalized)) {
+    return action === 'withdrawal'
+      ? 'We could not process this withdrawal. Check your available balance and try again.'
+      : 'Your wallet does not have enough TON to complete this transaction.';
+  }
+  if (/mainnet|network/.test(normalized)) return 'The network is temporarily unavailable. Please try again later.';
+  if (/quote.*(required|invalid|expired)|withdrawal.*(limit|amount|address)/.test(normalized)) {
+    return 'We could not process those withdrawal details. Please review them and try again.';
+  }
+  if (/timeout|timed out/.test(normalized)) return 'We could not confirm your request yet. Check your transaction history before trying again.';
+  return fallback;
 }
 
 export const BankScreen: React.FC<BankScreenProps> = ({
@@ -75,6 +102,9 @@ export const BankScreen: React.FC<BankScreenProps> = ({
   const [customWallet, setCustomWallet] = useState<string>('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [notification, setNotification] = useState<{ text: string; type: 'success' | 'info' | 'error' } | null>(null);
+  const [depositStatusMinimized, setDepositStatusMinimized] = useState(false);
+  const [withdrawalProgress, setWithdrawalProgress] = useState<WithdrawalProgress | null>(null);
+  const [withdrawalStatusMinimized, setWithdrawalStatusMinimized] = useState(false);
   const [transactions, setTransactions] = useState<BankTransactionItem[]>(initialTransactions);
   const [localInFlight, setLocalInFlight] = useState<{
     intentId: string;
@@ -88,6 +118,7 @@ export const BankScreen: React.FC<BankScreenProps> = ({
   const userFriendlyAddress = useTonAddress();
   const rawWallet = useTonWallet();
   const [tonConnectUI] = useTonConnectUI();
+  const appViewport = typeof document === 'undefined' ? null : document.querySelector('.app-viewport');
 
   const SYSTEM_DEPOSIT_ADDRESS =
     (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SYSTEM_DEPOSIT_ADDRESS) ||
@@ -149,6 +180,31 @@ export const BankScreen: React.FC<BankScreenProps> = ({
     return () => clearTimeout(timer);
   }, [localInFlight?.status]);
 
+  useEffect(() => {
+    if (localInFlight?.intentId) setDepositStatusMinimized(false);
+  }, [localInFlight?.intentId]);
+
+  useEffect(() => {
+    if (!withdrawalProgress) return;
+    const updated = transactions.find((transaction) => transaction.id === withdrawalProgress.id && transaction.type === 'withdraw');
+    if (!updated?.status) return;
+    const status = updated.status === 'confirmed' ? 'completed' : updated.status;
+    if (status !== withdrawalProgress.status) {
+      setWithdrawalProgress((previous) => previous?.id === withdrawalProgress.id ? { ...previous, status } : previous);
+    }
+  }, [transactions, withdrawalProgress?.id, withdrawalProgress?.status]);
+
+  useEffect(() => {
+    if (withdrawalProgress?.status !== 'completed' && withdrawalProgress?.status !== 'failed') return;
+    const id = withdrawalProgress.id;
+    const timer = setTimeout(() => setWithdrawalProgress((previous) => previous?.id === id ? null : previous), 5000);
+    return () => clearTimeout(timer);
+  }, [withdrawalProgress?.id, withdrawalProgress?.status]);
+
+  useEffect(() => {
+    if (withdrawalProgress?.id) setWithdrawalStatusMinimized(false);
+  }, [withdrawalProgress?.id]);
+
   const handleConnectWallet = () => {
     if (tonConnectUI?.openModal) {
       tonConnectUI.openModal();
@@ -193,14 +249,14 @@ export const BankScreen: React.FC<BankScreenProps> = ({
         intent = await multiplayerService.requestDepositIntent(nanoGramAmount, userFriendlyAddress);
       } catch (err: any) {
         setIsProcessing(false);
-        setNotification({ text: err?.message || 'Failed to request deposit intent.', type: 'error' });
+        setNotification({ text: friendlyBankError(err, 'Could not start your deposit. Please try again.'), type: 'error' });
         return;
       }
 
       if (!intent?.memo) {
         if (intent?.intentId) void multiplayerService.cancelDepositIntent(intent.intentId);
         setIsProcessing(false);
-        setNotification({ text: 'Server failed to provide a valid deposit memo.', type: 'error' });
+        setNotification({ text: 'Could not prepare your deposit. Please try again.', type: 'error' });
         return;
       }
 
@@ -215,7 +271,7 @@ export const BankScreen: React.FC<BankScreenProps> = ({
       } catch {
         if (intent?.intentId) void multiplayerService.cancelDepositIntent(intent.intentId);
         setIsProcessing(false);
-        setNotification({ text: 'Failed to encode deposit memo payload.', type: 'error' });
+        setNotification({ text: 'Could not prepare your deposit for signing. Please try again.', type: 'error' });
         return;
       }
 
@@ -279,7 +335,6 @@ export const BankScreen: React.FC<BankScreenProps> = ({
         text: `Transaction signed! Confirming ${depositAmount} GRAM on TON...`,
         type: 'info',
       });
-      setTimeout(() => setNotification(null), 4000);
     } catch (err: any) {
       setIsProcessing(false);
       const errorMsg = err?.message || '';
@@ -298,12 +353,11 @@ export const BankScreen: React.FC<BankScreenProps> = ({
       } else {
         setNotification({
           text: walletSigned
-            ? `Deposit signed, but submission was not confirmed${errorMsg ? `: ${errorMsg}` : '.'} Check your Vault before retrying.`
-            : errorMsg || 'Deposit failed. Please try again.',
+            ? 'Your deposit was sent, but we have not confirmed it yet. Check your transaction history before trying again.'
+            : friendlyBankError(err, 'Your deposit could not be completed. Please try again.'),
           type: 'error',
         });
       }
-      setTimeout(() => setNotification(null), 3500);
     }
   };
 
@@ -319,7 +373,7 @@ export const BankScreen: React.FC<BankScreenProps> = ({
 
     const targetAddress = (customWallet || userFriendlyAddress || '').trim();
     if (!targetAddress) {
-      setNotification({ text: 'Connect your wallet or enter a recipient TON address.', type: 'info' });
+      setNotification({ text: 'Connect your wallet or enter the address that should receive your GRAM.', type: 'info' });
       return;
     }
 
@@ -332,9 +386,9 @@ export const BankScreen: React.FC<BankScreenProps> = ({
         amountNano: nanoGramAmount,
       });
       setWithdrawalQuote(quote);
-      setNotification({ text: 'Review the quoted network fee and amount you will receive.', type: 'info' });
+      setNotification({ text: 'Check the withdrawal amount and network fee before confirming.', type: 'info' });
     } catch (error) {
-      setNotification({ text: error instanceof Error ? error.message : 'Could not create a withdrawal quote.', type: 'error' });
+      setNotification({ text: friendlyBankError(error, 'Could not prepare your withdrawal. Please try again.', 'withdrawal'), type: 'error' });
     } finally {
       setIsProcessing(false);
     }
@@ -344,18 +398,25 @@ export const BankScreen: React.FC<BankScreenProps> = ({
     if (!withdrawalQuote || !onConfirmWithdrawal) return;
     if (new Date(withdrawalQuote.expiresAt).getTime() <= Date.now()) {
       setWithdrawalQuote(null);
-      setNotification({ text: 'This fee quote expired. Request a new quote to continue.', type: 'error' });
+      setNotification({ text: 'This fee estimate expired. Request a new estimate to continue.', type: 'error' });
       return;
     }
     setIsProcessing(true);
     try {
       const accepted = await onConfirmWithdrawal(withdrawalQuote.quoteId);
-      setNotification({ text: `Withdrawal ${String(accepted.id).slice(0, 8)} is pending on TON Mainnet.`, type: 'info' });
+      setWithdrawalProgress({
+        id: String(accepted.id),
+        amount: Number(accepted.amountGram ?? withdrawAmount),
+        walletAddress: accepted.walletAddress || withdrawalQuote.walletAddress,
+        status: accepted.status === 'processing' ? 'processing' : 'pending',
+      });
+      setWithdrawalStatusMinimized(false);
+      setNotification({ text: 'Your withdrawal is being processed. You can follow its status in Transaction History.', type: 'info' });
       setWithdrawalQuote(null);
       setWithdrawAmount(0);
       setActivePanel('none');
     } catch (error) {
-      setNotification({ text: error instanceof Error ? error.message : 'Withdrawal confirmation failed.', type: 'error' });
+      setNotification({ text: friendlyBankError(error, 'Your withdrawal could not be confirmed. Please try again.', 'withdrawal'), type: 'error' });
     } finally {
       setIsProcessing(false);
     }
@@ -366,6 +427,18 @@ export const BankScreen: React.FC<BankScreenProps> = ({
     if (addr.length <= 14) return addr;
     return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
   };
+
+  const existingWithdrawal = transactions.find((transaction) =>
+    transaction.type === 'withdraw' && (transaction.status === 'pending' || transaction.status === 'processing')
+  );
+  const visibleWithdrawalProgress = withdrawalProgress ?? (existingWithdrawal
+    ? {
+        id: existingWithdrawal.id,
+        amount: Math.abs(existingWithdrawal.amount),
+        status: existingWithdrawal.status === 'processing' ? 'processing' as const : 'pending' as const,
+      }
+    : null);
+  const depositStatusVisible = Boolean(localInFlight || (activeDeposit && activeDeposit.status === 'pending'));
 
   return (
     <div className="w-full max-w-[420px] mx-auto h-auto flex flex-col gap-3.5 p-3 sm:p-4 select-none animate-fade-in pb-16 bg-[#fbfaf7] text-[#1a1a1a]">
@@ -436,75 +509,161 @@ export const BankScreen: React.FC<BankScreenProps> = ({
         </div>
       </div>
 
-      {/* Notification Toast */}
+      {/* Transient bank notifications */}
       {notification && (
-        <div
-          className={`border-2 border-black p-3 rounded-none flex items-center gap-2 font-sketch text-xs font-bold sketch-shadow-xs animate-fade-in ${
-            notification.type === 'error'
-              ? 'bg-[#fee2e2] text-[#9b2c2c]'
-              : notification.type === 'info'
-              ? 'bg-[#e0f2fe] text-[#0088cc]'
-              : 'bg-[#dcfce7] text-[#166534]'
-          }`}
-        >
-          <Check className="w-4 h-4 stroke-[3]" />
-          <span>{notification.text}</span>
+        <div className="absolute top-3 left-3 right-3 z-50 pointer-events-auto">
+          <Toast
+            type={notification.type}
+            message={notification.text}
+            duration={3500}
+            onClose={() => setNotification(null)}
+          />
         </div>
       )}
 
-      {/* 2b. In-Flight Deposit Stepper (Pending Blockchain Verification) */}
-      {(localInFlight || (activeDeposit && activeDeposit.status === 'pending')) && (
-        <div className={`w-full ${localInFlight?.status === 'expired' ? 'bg-[#fff1f2] border-[#9b2c2c]' : 'bg-[#f0fdf4] border-[#166534]'} border-2 p-3.5 sketch-shadow rounded-none flex flex-col gap-2.5 animate-fade-in`}>
-          <div className={`flex items-center justify-between border-b ${localInFlight?.status === 'expired' ? 'border-[#9b2c2c]/30' : 'border-[#166534]/30'} pb-2`}>
-            <div className="flex items-center gap-2">
-              <span className={`w-2.5 h-2.5 rounded-full ${localInFlight?.status === 'expired' ? 'bg-[#9b2c2c]' : localInFlight?.status === 'credited' ? 'bg-[#166534]' : 'bg-green-500 animate-pulse'}`} />
-              <span className={`font-sketch text-xs font-bold uppercase tracking-wider ${localInFlight?.status === 'expired' ? 'text-[#9b2c2c]' : 'text-[#166534]'}`}>
-                {localInFlight?.status === 'credited' ? 'Deposit Credited' : localInFlight?.status === 'expired' ? 'Deposit Expired' : 'Deposit In Progress'}
-              </span>
-            </div>
-            <span className={`font-sketch text-xs font-bold ${localInFlight?.status === 'expired' ? 'text-[#9b2c2c]' : 'text-[#166534]'}`}>
-              +{formatGram(localInFlight?.amount ?? activeDeposit?.amountGram ?? 0)} GRAM
-            </span>
-          </div>
+      {/* Floating, non-blocking deposit status */}
+      {(localInFlight || (activeDeposit && activeDeposit.status === 'pending')) && appViewport && createPortal((
+        <div className="absolute bottom-20 left-3 right-3 z-40 flex justify-end pointer-events-none">
+          {depositStatusMinimized ? (
+            <button
+              type="button"
+              onClick={() => setDepositStatusMinimized(false)}
+              className="pointer-events-auto max-w-full border-2 border-black bg-white px-3 py-2 font-sketch text-xs font-bold sketch-shadow-xs animate-fade-in"
+              aria-label="Show deposit status"
+            >
+              {localInFlight?.status === 'credited'
+                ? 'Deposit credited'
+                : localInFlight?.status === 'expired'
+                ? 'Deposit needs attention'
+                : 'Deposit confirming…'}
+            </button>
+          ) : (
+            <div
+              className={`pointer-events-auto w-full max-h-[55vh] overflow-y-auto ${localInFlight?.status === 'expired' ? 'bg-[#fff1f2] border-[#9b2c2c]' : 'bg-[#f0fdf4] border-[#166534]'} border-2 p-3.5 sketch-shadow rounded-none flex flex-col gap-2.5 animate-fade-in`}
+              role="status"
+              aria-live="polite"
+            >
+              <div className={`flex items-center justify-between border-b ${localInFlight?.status === 'expired' ? 'border-[#9b2c2c]/30' : 'border-[#166534]/30'} pb-2`}>
+                <div className="flex items-center gap-2">
+                  <span className={`w-2.5 h-2.5 rounded-full ${localInFlight?.status === 'expired' ? 'bg-[#9b2c2c]' : localInFlight?.status === 'credited' ? 'bg-[#166534]' : 'bg-green-500 animate-pulse'}`} />
+                  <span className={`font-sketch text-xs font-bold uppercase tracking-wider ${localInFlight?.status === 'expired' ? 'text-[#9b2c2c]' : 'text-[#166534]'}`}>
+                    {localInFlight?.status === 'credited' ? 'Deposit Credited' : localInFlight?.status === 'expired' ? 'Deposit Expired' : 'Deposit In Progress'}
+                  </span>
+                </div>
+                <span className={`font-sketch text-xs font-bold ${localInFlight?.status === 'expired' ? 'text-[#9b2c2c]' : 'text-[#166534]'}`}>
+                  +{formatGram(localInFlight?.amount ?? activeDeposit?.amountGram ?? 0)} GRAM
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setDepositStatusMinimized(true)}
+                  className="ml-1 p-1 hover:bg-black/10"
+                  aria-label="Minimize deposit status"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
 
-          <div className="flex flex-col gap-2 text-xs font-sketch font-bold">
-            {/* Step 1: Signed */}
-            <div className="flex items-center gap-2 text-[#166534]">
-              <span className="w-4 h-4 rounded-full bg-[#166534] text-white flex items-center justify-center text-[10px]">✓</span>
-              <span>1. Transaction signed in wallet</span>
-            </div>
+              <div className="flex flex-col gap-2 text-xs font-sketch font-bold">
+                {/* Step 1: Signed */}
+                <div className="flex items-center gap-2 text-[#166534]">
+                  <span className="w-4 h-4 rounded-full bg-[#166534] text-white flex items-center justify-center text-[10px]">✓</span>
+                  <span>1. Transaction signed in wallet</span>
+                </div>
 
-            {/* Step 2: Confirming */}
-            <div className={`flex items-center gap-2 ${localInFlight?.status === 'expired' ? 'text-[#9b2c2c]' : 'text-[#166534]'}`}>
-              {localInFlight?.status === 'credited' ? (
-                <span className="w-4 h-4 rounded-full bg-[#166534] text-white flex items-center justify-center text-[10px]">✓</span>
-              ) : localInFlight?.status === 'expired' ? (
-                <span className="w-4 h-4 rounded-full bg-[#9b2c2c] text-white flex items-center justify-center text-[10px]">!</span>
-              ) : (
-                <Loader2 className="w-4 h-4 animate-spin text-[#166534]" />
+                {/* Step 2: Confirming */}
+                <div className={`flex items-center gap-2 ${localInFlight?.status === 'expired' ? 'text-[#9b2c2c]' : 'text-[#166534]'}`}>
+                  {localInFlight?.status === 'credited' ? (
+                    <span className="w-4 h-4 rounded-full bg-[#166534] text-white flex items-center justify-center text-[10px]">✓</span>
+                  ) : localInFlight?.status === 'expired' ? (
+                    <span className="w-4 h-4 rounded-full bg-[#9b2c2c] text-white flex items-center justify-center text-[10px]">!</span>
+                  ) : (
+                    <Loader2 className="w-4 h-4 animate-spin text-[#166534]" />
+                  )}
+                  <span>
+                    {localInFlight?.status === 'credited' ? '2. Confirmed on TON blockchain' : localInFlight?.status === 'expired' ? '2. Confirmation window expired' : '2. Confirming on TON blockchain...'}
+                  </span>
+                </div>
+
+                {/* Step 3: Credited */}
+                <div className={`flex items-center gap-2 ${localInFlight?.status === 'credited' ? 'text-[#166534]' : localInFlight?.status === 'expired' ? 'text-[#9b2c2c]' : 'text-[#1a1a1a]/40'}`}>
+                  <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] ${localInFlight?.status === 'credited' ? 'bg-[#166534] text-white' : localInFlight?.status === 'expired' ? 'bg-[#9b2c2c] text-white' : 'border border-black/30'}`}>
+                    {localInFlight?.status === 'credited' ? '✓' : localInFlight?.status === 'expired' ? '!' : '3'}
+                  </span>
+                  <span>
+                    {localInFlight?.status === 'credited' ? '3. Balance credited!' : localInFlight?.status === 'expired' ? '3. No funds were credited' : '3. Crediting balance'}
+                  </span>
+                </div>
+              </div>
+              {localInFlight?.status === 'expired' && (
+                <p className="border-t border-[#9b2c2c]/30 pt-2 font-sketch text-[11px] text-[#9b2c2c]">
+                  This request expired before your balance was credited. Check your transaction history before starting another deposit.
+                </p>
               )}
-              <span>
-                {localInFlight?.status === 'credited' ? '2. Confirmed on TON blockchain' : localInFlight?.status === 'expired' ? '2. Confirmation window expired' : '2. Confirming on TON blockchain...'}
-              </span>
             </div>
-
-            {/* Step 3: Credited */}
-            <div className={`flex items-center gap-2 ${localInFlight?.status === 'credited' ? 'text-[#166534]' : localInFlight?.status === 'expired' ? 'text-[#9b2c2c]' : 'text-[#1a1a1a]/40'}`}>
-              <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] ${localInFlight?.status === 'credited' ? 'bg-[#166534] text-white' : localInFlight?.status === 'expired' ? 'bg-[#9b2c2c] text-white' : 'border border-black/30'}`}>
-                {localInFlight?.status === 'credited' ? '✓' : localInFlight?.status === 'expired' ? '!' : '3'}
-              </span>
-              <span>
-                {localInFlight?.status === 'credited' ? '3. Balance credited!' : localInFlight?.status === 'expired' ? '3. No funds were credited' : '3. Crediting balance'}
-              </span>
-            </div>
-          </div>
-          {localInFlight?.status === 'expired' && (
-            <p className="border-t border-[#9b2c2c]/30 pt-2 font-sketch text-[11px] text-[#9b2c2c]">
-              This request expired before your balance was credited. Check your transaction history before starting another deposit.
-            </p>
           )}
         </div>
-      )}
+      ), appViewport)}
+
+      {visibleWithdrawalProgress && appViewport && createPortal((
+        <div className={`absolute ${depositStatusVisible ? 'bottom-60' : 'bottom-20'} left-3 right-3 z-40 flex justify-end pointer-events-none`}>
+          {withdrawalStatusMinimized ? (
+            <button
+              type="button"
+              onClick={() => setWithdrawalStatusMinimized(false)}
+              className="pointer-events-auto max-w-full border-2 border-black bg-white px-3 py-2 font-sketch text-xs font-bold sketch-shadow-xs animate-fade-in"
+              aria-label="Show withdrawal status"
+            >
+              {visibleWithdrawalProgress.status === 'completed'
+                ? 'Withdrawal complete'
+                : visibleWithdrawalProgress.status === 'failed'
+                ? 'Withdrawal not completed'
+                : 'Withdrawal in progress…'}
+            </button>
+          ) : (
+            <div
+              className={`pointer-events-auto w-full max-h-[35vh] overflow-y-auto ${visibleWithdrawalProgress.status === 'completed' ? 'bg-[#f0fdf4] border-[#166534]' : visibleWithdrawalProgress.status === 'failed' ? 'bg-[#fff1f2] border-[#9b2c2c]' : 'bg-[#eff6ff] border-[#1a365d]'} border-2 p-3.5 sketch-shadow rounded-none flex flex-col gap-2 animate-fade-in`}
+              role="status"
+              aria-live="polite"
+            >
+              <div className={`flex items-center justify-between border-b ${visibleWithdrawalProgress.status === 'failed' ? 'border-[#9b2c2c]/30' : 'border-[#1a365d]/30'} pb-2`}>
+                <div className="flex items-center gap-2">
+                  {visibleWithdrawalProgress.status === 'pending' || visibleWithdrawalProgress.status === 'processing' ? (
+                    <Loader2 className="w-4 h-4 animate-spin text-[#1a365d]" />
+                  ) : (
+                    <span className={`w-2.5 h-2.5 rounded-full ${visibleWithdrawalProgress.status === 'completed' ? 'bg-[#166534]' : 'bg-[#9b2c2c]'}`} />
+                  )}
+                  <span className={`font-sketch text-xs font-bold uppercase tracking-wider ${visibleWithdrawalProgress.status === 'failed' ? 'text-[#9b2c2c]' : visibleWithdrawalProgress.status === 'completed' ? 'text-[#166534]' : 'text-[#1a365d]'}`}>
+                    {visibleWithdrawalProgress.status === 'completed' ? 'Withdrawal complete' : visibleWithdrawalProgress.status === 'failed' ? 'Withdrawal not completed' : 'Withdrawal in progress'}
+                  </span>
+                </div>
+                <span className="font-sketch text-xs font-bold text-[#1a365d]">
+                  {formatGram(visibleWithdrawalProgress.amount)} GRAM
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setWithdrawalStatusMinimized(true)}
+                  className="ml-1 p-1 hover:bg-black/10"
+                  aria-label="Minimize withdrawal status"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <p className="font-sketch text-xs font-bold text-[#1a1a1a]/80">
+                {visibleWithdrawalProgress.status === 'completed'
+                  ? 'Your GRAM has been sent to your wallet.'
+                  : visibleWithdrawalProgress.status === 'failed'
+                  ? 'Your GRAM was returned to your balance.'
+                  : 'We’re processing your withdrawal. You can keep using the app; this status will update automatically.'}
+              </p>
+              {visibleWithdrawalProgress.walletAddress && (
+                <p className="break-all font-mono text-[10px] text-[#1a1a1a]/60">
+                  To {formatShortAddress(visibleWithdrawalProgress.walletAddress)}
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+      ), appViewport)}
 
       {/* 3. SIDE-BY-SIDE HERO CARDS (DEPOSIT & WITHDRAW) */}
       <div className="grid grid-cols-2 gap-3">
@@ -688,7 +847,7 @@ export const BankScreen: React.FC<BankScreenProps> = ({
           {/* Destination Wallet Input */}
           <div>
             <label htmlFor="withdraw-recipient" className="font-sketch text-xs font-bold text-[#1a1a1a]/70 block mb-1">
-              Recipient TON Address:
+              Wallet address to receive GRAM:
             </label>
             <input
               id="withdraw-recipient"
@@ -696,7 +855,7 @@ export const BankScreen: React.FC<BankScreenProps> = ({
               value={customWallet}
               onChange={(e) => setCustomWallet(e.target.value)}
               className="w-full p-2 bg-[#f2efe9] border-2 border-black font-mono text-xs text-[#1a1a1a] focus:outline-none focus:bg-white"
-              placeholder={userFriendlyAddress || 'Connect wallet or enter address'}
+              placeholder={userFriendlyAddress || 'Connect wallet or paste receiving address'}
             />
           </div>
 
@@ -771,12 +930,12 @@ export const BankScreen: React.FC<BankScreenProps> = ({
 
           {withdrawalQuote ? (
             <div className="p-3 bg-[#f2efe9] border-2 border-black space-y-2 font-sketch text-xs">
-              <div className="font-bold uppercase">Review your Gram withdrawal · TON Mainnet</div>
-              <div className="flex justify-between"><span>Gross amount</span><b>{formatNanoGram(withdrawalQuote.grossAmountNano)} GRAM</b></div>
-              <div className="flex justify-between"><span>Quoted network fee</span><b>{formatNanoGram(withdrawalQuote.feeNano)} GRAM</b></div>
-              <div className="flex justify-between"><span>You receive</span><b>{formatNanoGram(withdrawalQuote.netAmountNano)} GRAM</b></div>
-              <div className="break-all text-[10px] text-[#1a1a1a]/60">To {withdrawalQuote.walletAddress}</div>
-              <div className="text-[10px] text-[#1a1a1a]/60">Quote expires {new Date(withdrawalQuote.expiresAt).toLocaleTimeString()}</div>
+              <div className="font-bold uppercase">Review your withdrawal</div>
+              <div className="flex justify-between"><span>Withdrawal amount</span><b>{formatNanoGram(withdrawalQuote.grossAmountNano)} GRAM</b></div>
+              <div className="flex justify-between"><span>Network fee</span><b>{formatNanoGram(withdrawalQuote.feeNano)} GRAM</b></div>
+              <div className="flex justify-between"><span>You'll receive</span><b>{formatNanoGram(withdrawalQuote.netAmountNano)} GRAM</b></div>
+              <div className="break-all text-[10px] text-[#1a1a1a]/60">Sending to {withdrawalQuote.walletAddress}</div>
+              <div className="text-[10px] text-[#1a1a1a]/60">Fee estimate expires at {new Date(withdrawalQuote.expiresAt).toLocaleTimeString()}</div>
               <button type="button" onClick={handleConfirmWithdrawal} disabled={isProcessing} className="w-full py-2.5 bg-[#1a365d] text-white border-2 border-black font-bold">
                 {isProcessing ? 'Confirming…' : 'Confirm withdrawal'}
               </button>
@@ -784,7 +943,7 @@ export const BankScreen: React.FC<BankScreenProps> = ({
             </div>
           ) : (
             <button type="button" onClick={handleWithdrawAction} disabled={isProcessing || withdrawAmount <= 0 || withdrawAmount > balance} className="w-full py-2.5 bg-[#1a365d] hover:bg-[#122844] text-white border-2 border-black font-sketch text-sm font-bold sketch-shadow-xs active:scale-[0.98] transition-all flex items-center justify-center gap-2">
-              {isProcessing ? 'Estimating fee...' : 'Withdraw'}
+              {isProcessing ? 'Checking network fee…' : 'Review withdrawal'}
             </button>
           )}
         </div>
