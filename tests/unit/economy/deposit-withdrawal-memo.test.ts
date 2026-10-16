@@ -216,7 +216,6 @@ describe('Server-Generated Deposit and Withdrawal Memos', () => {
       vi.stubEnv('PAYOUT_MIN_WITHDRAWAL_NANO', '100000000');
       vi.stubEnv('PAYOUT_MAX_WITHDRAWAL_NANO', '5000000000');
       vi.stubEnv('PAYOUT_USER_DAILY_LIMIT_NANO', '6000000000');
-      vi.stubEnv('PAYOUT_GLOBAL_DAILY_LIMIT_NANO', '20000000000');
       const telegramId = 880099;
       const user = await storage.getOrCreateUser({ id: telegramId, first_name: 'WithdrawerMemo' });
 

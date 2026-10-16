@@ -69,8 +69,6 @@ services:
         sync: false
       - key: PAYOUT_USER_DAILY_LIMIT_NANO
         sync: false
-      - key: PAYOUT_GLOBAL_DAILY_LIMIT_NANO
-        sync: false
       - key: PAYOUT_WALLET_RESERVE_NANO
         sync: false
 

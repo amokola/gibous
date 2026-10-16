@@ -36,7 +36,6 @@ describe.skipIf(!enabled)('PostgreSQL deposit and withdrawal transaction guarant
     process.env.PAYOUT_MIN_WITHDRAWAL_NANO = '100000000';
     process.env.PAYOUT_MAX_WITHDRAWAL_NANO = '5000000000';
     process.env.PAYOUT_USER_DAILY_LIMIT_NANO = '6000000000';
-    process.env.PAYOUT_GLOBAL_DAILY_LIMIT_NANO = '999999999999999999999999999999999999';
   });
 
   afterAll(async () => {
@@ -168,35 +167,23 @@ describe.skipIf(!enabled)('PostgreSQL deposit and withdrawal transaction guarant
     expect(withdrawals.rowCount).toBe(1);
   });
 
-  it('enforces the global daily cap across users in concurrent transactions', async () => {
-    const previousLimit = process.env.PAYOUT_GLOBAL_DAILY_LIMIT_NANO;
+  it('allows concurrent withdrawals by different users within individual daily limits', async () => {
     const first = await createFundedUser('8000000000');
     const second = await createFundedUser('8000000000');
     const quotes = await Promise.all([first, second].map(({ telegramId }) => storage.createWithdrawalQuote({
       telegramId, walletAddress: wallet, grossAmountNano: '4000000000', feeNano: '1000000', network: 'mainnet',
     })));
-    const utcStart = new Date();
-    utcStart.setUTCHours(0, 0, 0, 0);
-    const prior = await db.query<{ total: string }>(
-      'SELECT COALESCE(SUM(amount_nano), 0)::text AS total FROM withdrawals WHERE payout_eligible = TRUE AND created_at >= $1', [utcStart]
-    );
-    process.env.PAYOUT_GLOBAL_DAILY_LIMIT_NANO = (BigInt(prior.rows[0].total) + 4000000000n).toString();
-    try {
-      const inputs = [first, second];
-      const results = await Promise.all(quotes.map((quote, index) => {
-        if (!quote.success) throw new Error('Expected a valid quote');
-        return storage.confirmWithdrawalQuote({
-          telegramId: inputs[index].telegramId,
-          quoteId: quote.quote.quoteId,
-          operationKey: `pg-global-cap-${index}-${inputs[index].telegramId}`,
-        });
-      }));
+    const inputs = [first, second];
+    const results = await Promise.all(quotes.map((quote, index) => {
+      if (!quote.success) throw new Error('Expected a valid quote');
+      return storage.confirmWithdrawalQuote({
+        telegramId: inputs[index].telegramId,
+        quoteId: quote.quote.quoteId,
+        operationKey: `pg-independent-withdrawal-${index}-${inputs[index].telegramId}`,
+      });
+    }));
 
-      expect(results.filter((result) => result.success)).toHaveLength(1);
-      expect(results.filter((result) => !result.success && result.error?.includes('Global daily withdrawal limit'))).toHaveLength(1);
-    } finally {
-      process.env.PAYOUT_GLOBAL_DAILY_LIMIT_NANO = previousLimit;
-    }
+    expect(results.every((result) => result.success)).toBe(true);
   });
 
   it('rejects creating a deposit intent for an account that does not exist', async () => {

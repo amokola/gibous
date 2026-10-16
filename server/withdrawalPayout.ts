@@ -73,7 +73,7 @@ export function loadWithdrawalWorkerConfig(env: Record<string, string | undefine
   if (!reserveText || !/^\d+$/.test(reserveText) || BigInt(reserveText) <= 0n || !keyText) throw new Error('Payout reserve and transaction encryption key are required');
   const key = /^[0-9a-fA-F]{64}$/.test(keyText) ? Buffer.from(keyText, 'hex') : Buffer.from(keyText, 'base64');
   if (key.length !== 32) throw new Error('PAYOUT_TRANSACTION_ENCRYPTION_KEY must encode exactly 32 bytes');
-  for (const name of ['PAYOUT_MIN_WITHDRAWAL_NANO', 'PAYOUT_MAX_WITHDRAWAL_NANO', 'PAYOUT_USER_DAILY_LIMIT_NANO', 'PAYOUT_GLOBAL_DAILY_LIMIT_NANO']) {
+  for (const name of ['PAYOUT_MIN_WITHDRAWAL_NANO', 'PAYOUT_MAX_WITHDRAWAL_NANO', 'PAYOUT_USER_DAILY_LIMIT_NANO']) {
     if (!env[name] || !/^\d+$/.test(env[name]! ) || BigInt(env[name]!) <= 0n) throw new Error(`${name} must be a positive integer`);
   }
   if (BigInt(env.PAYOUT_MAX_WITHDRAWAL_NANO!) < BigInt(env.PAYOUT_MIN_WITHDRAWAL_NANO!)) throw new Error('Payout maximum must be at least the minimum');

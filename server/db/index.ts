@@ -1119,13 +1119,11 @@ export class DatabasePool {
       minimumNano: string;
       maximumNano: string;
       userDailyNano: string;
-      globalDailyNano: string;
     };
   }): Promise<{ success: boolean; error?: string; withdrawal?: any; transaction?: any; user?: any }> {
     const grossNano = BigInt(params.limits.minimumNano);
     const maxNano = BigInt(params.limits.maximumNano);
     const userDailyNano = BigInt(params.limits.userDailyNano);
-    const globalDailyNano = BigInt(params.limits.globalDailyNano);
 
     if (!this.usesPersistentDatabase()) {
       const quotes = this.inMemoryDb.get('withdrawal_quotes') || [];
@@ -1171,9 +1169,7 @@ export class DatabasePool {
       const userTotal = eligibleToday
         .filter((item: any) => Number(item.telegram_id) === params.telegramId)
         .reduce((sum: bigint, item: any) => sum + BigInt(String(item.amount_nano)), 0n);
-      const globalTotal = eligibleToday.reduce((sum: bigint, item: any) => sum + BigInt(String(item.amount_nano)), 0n);
       if (userTotal + quoteGrossNano > userDailyNano) return { success: false, error: 'User daily withdrawal limit exceeded' };
-      if (globalTotal + quoteGrossNano > globalDailyNano) return { success: false, error: 'Global daily withdrawal limit exceeded' };
 
       const amountNano = quoteGrossNano.toString();
       const newBalanceNano = (userNano - quoteGrossNano).toString();
@@ -1222,8 +1218,6 @@ export class DatabasePool {
     }
 
     return this.withTransaction(async (client) => {
-      // One global lock serializes service-wide daily-limit checks across all server instances.
-      await client.query("SELECT pg_advisory_xact_lock(hashtext('withdrawal-global-daily-limit'))");
       const quoteRes = await client.query('SELECT * FROM withdrawal_quotes WHERE id = $1 FOR UPDATE', [params.quoteId]);
       const quote = quoteRes.rows[0];
       if (!quote) return { success: false, error: 'Withdrawal quote not found' };
@@ -1270,23 +1264,13 @@ export class DatabasePool {
       }
       const dailyStart = await client.query("SELECT date_trunc('day', CURRENT_TIMESTAMP AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' AS starts_at");
       const startOfDay = dailyStart.rows[0].starts_at;
-      const [userDailyRes, globalDailyRes] = await Promise.all([
-        client.query(
-          `SELECT COALESCE(SUM(amount_nano), 0)::text AS total FROM withdrawals
-           WHERE payout_eligible = TRUE AND telegram_id = $1 AND created_at >= $2`,
-          [params.telegramId, startOfDay]
-        ),
-        client.query(
-          `SELECT COALESCE(SUM(amount_nano), 0)::text AS total FROM withdrawals
-           WHERE payout_eligible = TRUE AND created_at >= $1`,
-          [startOfDay]
-        ),
-      ]);
+      const userDailyRes = await client.query(
+        `SELECT COALESCE(SUM(amount_nano), 0)::text AS total FROM withdrawals
+         WHERE payout_eligible = TRUE AND telegram_id = $1 AND created_at >= $2`,
+        [params.telegramId, startOfDay]
+      );
       if (BigInt(userDailyRes.rows[0].total) + quoteGrossNano > userDailyNano) {
         return { success: false, error: 'User daily withdrawal limit exceeded' };
-      }
-      if (BigInt(globalDailyRes.rows[0].total) + quoteGrossNano > globalDailyNano) {
-        return { success: false, error: 'Global daily withdrawal limit exceeded' };
       }
 
       const currentNano = BigInt(String(userRow.balance_nano));

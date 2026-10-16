@@ -17,7 +17,7 @@ const validEnv = () => ({
   TONCENTER_API_URL: 'https://toncenter.com', PAYOUT_SIGNER_MNEMONIC: 'test-only secret words',
   PAYOUT_WALLET_RESERVE_NANO: '100000000', PAYOUT_TRANSACTION_ENCRYPTION_KEY: Buffer.alloc(32, 3).toString('hex'),
   PAYOUT_MIN_WITHDRAWAL_NANO: '100000000', PAYOUT_MAX_WITHDRAWAL_NANO: '5000000000',
-  PAYOUT_USER_DAILY_LIMIT_NANO: '6000000000', PAYOUT_GLOBAL_DAILY_LIMIT_NANO: '20000000000',
+  PAYOUT_USER_DAILY_LIMIT_NANO: '6000000000',
 });
 
 const invalidConfigCases: Array<[string, (env: Record<string, string | undefined>) => void, string]> = [
@@ -27,7 +27,6 @@ const invalidConfigCases: Array<[string, (env: Record<string, string | undefined
   ['a zero wallet reserve', (env) => { env.PAYOUT_WALLET_RESERVE_NANO = '0'; }, 'reserve'],
   ['an encryption key shorter than 32 bytes', (env) => { env.PAYOUT_TRANSACTION_ENCRYPTION_KEY = Buffer.alloc(31, 3).toString('hex'); }, 'exactly 32 bytes'],
   ['a fractional minimum withdrawal', (env) => { env.PAYOUT_MIN_WITHDRAWAL_NANO = '1.5'; }, 'positive integer'],
-  ['a zero global daily limit', (env) => { env.PAYOUT_GLOBAL_DAILY_LIMIT_NANO = '0'; }, 'positive integer'],
   ['a maximum withdrawal below the minimum', (env) => { env.PAYOUT_MAX_WITHDRAWAL_NANO = '99999999'; }, 'at least the minimum'],
 ];
 
@@ -40,7 +39,7 @@ const expandedInvalidConfigCases: Array<[string, (env: Record<string, string | u
   ['a zero minimum withdrawal', (env) => { env.PAYOUT_MIN_WITHDRAWAL_NANO = '0'; }, 'positive integer'],
   ['a nonnumeric maximum withdrawal', (env) => { env.PAYOUT_MAX_WITHDRAWAL_NANO = 'five'; }, 'positive integer'],
   ['a fractional user daily cap', (env) => { env.PAYOUT_USER_DAILY_LIMIT_NANO = '3.5'; }, 'positive integer'],
-  ['a negative global daily cap', (env) => { env.PAYOUT_GLOBAL_DAILY_LIMIT_NANO = '-2'; }, 'positive integer'],
+  ['a missing maximum withdrawal', (env) => { delete env.PAYOUT_MAX_WITHDRAWAL_NANO; }, 'positive integer'],
   ['a missing user daily cap', (env) => { delete env.PAYOUT_USER_DAILY_LIMIT_NANO; }, 'positive integer'],
 ];
 

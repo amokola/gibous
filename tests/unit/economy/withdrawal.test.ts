@@ -13,7 +13,6 @@ describe('Withdrawal Flow & Invariants', () => {
     vi.stubEnv('PAYOUT_MIN_WITHDRAWAL_NANO', '100000000');
     vi.stubEnv('PAYOUT_MAX_WITHDRAWAL_NANO', '5000000000');
     vi.stubEnv('PAYOUT_USER_DAILY_LIMIT_NANO', '6000000000');
-    vi.stubEnv('PAYOUT_GLOBAL_DAILY_LIMIT_NANO', '20000000000');
   });
 
   afterEach(() => {
@@ -331,10 +330,9 @@ describe('Withdrawal Flow & Invariants', () => {
     expect((db as any).inMemoryDb.get('withdrawal_quotes').find((item: any) => item.id === secondQuote.quote.quoteId)?.status).toBe('quoted');
   });
 
-  it('applies the global daily cap when users confirm quotes concurrently', async () => {
-    vi.stubEnv('PAYOUT_GLOBAL_DAILY_LIMIT_NANO', '6000000000');
+  it('allows separate users to confirm withdrawals concurrently within their individual daily caps', async () => {
     const telegramIds = [880024, 880025];
-    const users = await Promise.all(telegramIds.map((id) => storage.getOrCreateUser({ id, first_name: 'Global Cap Player' })));
+    const users = await Promise.all(telegramIds.map((id) => storage.getOrCreateUser({ id, first_name: 'Withdrawal Player' })));
     const db = DatabasePool.getInstance();
     for (const telegramId of telegramIds) {
       const account = db.getUserByTelegramId(telegramId)!;
@@ -351,10 +349,9 @@ describe('Withdrawal Flow & Invariants', () => {
       });
     }));
 
-    expect(results.filter((result) => result.success)).toHaveLength(1);
-    expect(results.filter((result) => !result.success && result.error?.includes('Global daily withdrawal limit'))).toHaveLength(1);
-    expect(users.reduce((total, user) => total + db.getTransactionsForUser(user.id).filter((tx: any) => tx.type === 'withdraw').length, 0)).toBe(1);
-    expect(telegramIds.reduce((total, id) => total + BigInt(db.getUserByTelegramId(id)!.balance_nano), 0n)).toBe(12000000000n);
+    expect(results.every((result) => result.success)).toBe(true);
+    expect(users.reduce((total, user) => total + db.getTransactionsForUser(user.id).filter((tx: any) => tx.type === 'withdraw').length, 0)).toBe(2);
+    expect(telegramIds.reduce((total, id) => total + BigInt(db.getUserByTelegramId(id)!.balance_nano), 0n)).toBe(8000000000n);
   });
 
   it('expires a quote at the exact expiry instant without changing the account', async () => {
@@ -416,7 +413,6 @@ describe('Withdrawal Flow & Invariants', () => {
     vi.stubEnv('PAYOUT_MIN_WITHDRAWAL_NANO', '1');
     vi.stubEnv('PAYOUT_MAX_WITHDRAWAL_NANO', '10000000000000000');
     vi.stubEnv('PAYOUT_USER_DAILY_LIMIT_NANO', '10000000000000000');
-    vi.stubEnv('PAYOUT_GLOBAL_DAILY_LIMIT_NANO', '10000000000000000');
     const telegramId = 880028;
     const user = await storage.getOrCreateUser({ id: telegramId, first_name: 'Big Integer Player' });
     const db = DatabasePool.getInstance();

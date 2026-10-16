@@ -64,7 +64,6 @@ describe.skipIf(!enabled)('PostgreSQL critical money movement scenarios', () => 
     process.env.PAYOUT_MIN_WITHDRAWAL_NANO = '100000000';
     process.env.PAYOUT_MAX_WITHDRAWAL_NANO = '5000000000';
     process.env.PAYOUT_USER_DAILY_LIMIT_NANO = '6000000000';
-    process.env.PAYOUT_GLOBAL_DAILY_LIMIT_NANO = '999999999999999999999999999999999999';
   });
 
   afterAll(async () => {
@@ -283,13 +282,12 @@ describe.skipIf(!enabled)('PostgreSQL critical money movement scenarios', () => 
         'zero gross quote', 'negative gross quote', 'negative fee quote', 'zero net quote', 'unbalanced gross-fee-net quote',
         'non-mainnet quote network', 'unknown quote status', 'consumed quote without withdrawal link', 'expired quote confirmation',
         'cross-owner quote confirmation', 'balance depleted after quoting', 'payouts disabled after quoting', 'user daily cap exceeded',
-        'global daily cap exceeded', 'zero-value withdrawal row', 'invalid withdrawal status', 'non-mainnet withdrawal row',
+        'invalid user daily limit configuration', 'zero-value withdrawal row', 'invalid withdrawal status', 'non-mainnet withdrawal row',
         'negative payout fencing token', 'invalid ledger transaction type', 'ledger operation-key collision rollback',
       ];
       it.each(mutationScenarios.map((scenario, index) => ({ scenario, caseNo: index + 1 })))('preserves financial invariants under $scenario', async ({ scenario, caseNo }) => {
         process.env.PAYOUT_NETWORK = 'mainnet';
         process.env.PAYOUT_USER_DAILY_LIMIT_NANO = '6000000000';
-        process.env.PAYOUT_GLOBAL_DAILY_LIMIT_NANO = '999999999999999999999999999999999999';
         const owner = await newUser('2000000000');
         const historical = await confirmedWithdrawal(owner.telegramId, `constraint-seed-${caseNo}-${owner.telegramId}`, '100000000');
         await db.query('UPDATE withdrawals SET payout_eligible = FALSE WHERE id = $1', [historical.id]);
@@ -331,12 +329,10 @@ describe.skipIf(!enabled)('PostgreSQL critical money movement scenarios', () => 
             process.env.PAYOUT_USER_DAILY_LIMIT_NANO = '999999999';
             expectedConfirmation = false;
             break;
-          case 14: {
-            const totals = await db.query<{ total: string }>("SELECT COALESCE(SUM(amount_nano),0)::text AS total FROM withdrawals WHERE payout_eligible = TRUE AND created_at >= date_trunc('day', CURRENT_TIMESTAMP AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'");
-            process.env.PAYOUT_GLOBAL_DAILY_LIMIT_NANO = (BigInt(totals.rows[0].total) + 999_999_999n).toString();
+          case 14:
+            process.env.PAYOUT_USER_DAILY_LIMIT_NANO = '0';
             expectedConfirmation = false;
             break;
-          }
           case 15: await expect(db.query("INSERT INTO withdrawals (telegram_id,wallet_address,amount_nano,amount_gram,fee_nano,net_amount_nano,network,status) VALUES ($1,$2,0,0,0,0,'mainnet','pending')", [owner.telegramId, vault])).rejects.toBeDefined(); break;
           case 16: await expect(db.query("UPDATE withdrawals SET status = 'corrupt' WHERE id = $1", [historical.id])).rejects.toBeDefined(); break;
           case 17: await expect(db.query("UPDATE withdrawals SET network = 'testnet' WHERE id = $1", [historical.id])).rejects.toBeDefined(); break;

@@ -7,7 +7,6 @@ interface WithdrawalLimits {
   minimumNano: string;
   maximumNano: string;
   userDailyNano: string;
-  globalDailyNano: string;
 }
 
 function readWithdrawalLimits(): WithdrawalLimits | null {
@@ -21,13 +20,11 @@ function readWithdrawalLimits(): WithdrawalLimits | null {
   const minimum = readPositive('PAYOUT_MIN_WITHDRAWAL_NANO');
   const maximum = readPositive('PAYOUT_MAX_WITHDRAWAL_NANO');
   const userDaily = readPositive('PAYOUT_USER_DAILY_LIMIT_NANO');
-  const globalDaily = readPositive('PAYOUT_GLOBAL_DAILY_LIMIT_NANO');
-  if (!minimum || !maximum || !userDaily || !globalDaily || maximum < minimum) return null;
+  if (!minimum || !maximum || !userDaily || maximum < minimum) return null;
   return {
     minimumNano: minimum.toString(),
     maximumNano: maximum.toString(),
     userDailyNano: userDaily.toString(),
-    globalDailyNano: globalDaily.toString(),
   };
 }
 

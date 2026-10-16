@@ -19,7 +19,6 @@ function configureWithdrawalLimits(overrides: Record<string, string> = {}) {
   vi.stubEnv('PAYOUT_MIN_WITHDRAWAL_NANO', '1');
   vi.stubEnv('PAYOUT_MAX_WITHDRAWAL_NANO', bigLimit);
   vi.stubEnv('PAYOUT_USER_DAILY_LIMIT_NANO', bigLimit);
-  vi.stubEnv('PAYOUT_GLOBAL_DAILY_LIMIT_NANO', bigLimit);
   for (const [key, value] of Object.entries(overrides)) vi.stubEnv(key, value);
 }
 
@@ -322,10 +321,10 @@ describe('100 additional withdrawal money-safety scenarios', () => {
         return storage.confirmWithdrawalQuote({ telegramId: id, quoteId: quote.quote.quoteId, operationKey: `user-cap-${id}` });
       });
       variants.push(async () => {
-        vi.stubEnv('PAYOUT_GLOBAL_DAILY_LIMIT_NANO', (amount - 1n).toString());
+        vi.stubEnv('PAYOUT_USER_DAILY_LIMIT_NANO', '0');
         const quote = await normal();
         if (!quote.success) return quote;
-        return storage.confirmWithdrawalQuote({ telegramId: id, quoteId: quote.quote.quoteId, operationKey: `global-cap-${id}` });
+        return storage.confirmWithdrawalQuote({ telegramId: id, quoteId: quote.quote.quoteId, operationKey: `invalid-user-cap-${id}` });
       });
       variants.push(async () => {
         const db = DatabasePool.getInstance();
