@@ -52,8 +52,12 @@ const TECHNICAL_ERROR_COPY: Record<string, string> = {
 };
 
 function userFacingServerError(code?: string, message?: string, fallback = 'Something went wrong. Please try again.') {
-  if (code === 'WITHDRAWAL_REJECTED' && /withdrawal amount.*outside.*limit|outside configured limit/i.test(message || '')) {
-    return 'That amount is outside the withdrawal limits. Please enter a different amount.';
+  if (code === 'WITHDRAWAL_REJECTED') {
+    const range = message?.match(/^Withdrawal amount must be between ([\d,.]+) and ([\d,.]+) GRAM\.$/i);
+    if (range) return `The minimum withdrawal is ${range[1]} GRAM, and the maximum is ${range[2]} GRAM.`;
+    if (/user daily withdrawal limit exceeded/i.test(message || '')) {
+      return "You've reached today's withdrawal limit. Try again after it resets.";
+    }
   }
   if (code) return TECHNICAL_ERROR_COPY[code] || fallback;
   return fallback;

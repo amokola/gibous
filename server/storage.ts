@@ -9,6 +9,17 @@ interface WithdrawalLimits {
   userDailyNano: string;
 }
 
+function formatNanoGramAmount(value: string): string {
+  const nano = BigInt(value);
+  const whole = nano / 1_000_000_000n;
+  const fraction = (nano % 1_000_000_000n).toString().padStart(9, '0').replace(/0+$/, '');
+  return fraction ? `${whole}.${fraction}` : whole.toString();
+}
+
+function withdrawalRangeError(limits: WithdrawalLimits): string {
+  return `Withdrawal amount must be between ${formatNanoGramAmount(limits.minimumNano)} and ${formatNanoGramAmount(limits.maximumNano)} GRAM.`;
+}
+
 function readWithdrawalLimits(): WithdrawalLimits | null {
   const readPositive = (name: string): bigint | null => {
     const value = process.env[name];
@@ -477,7 +488,7 @@ export class StorageService {
     const limits = readWithdrawalLimits();
     if (!limits) return { success: false as const, error: 'Withdrawal limits are not configured safely' };
     if (grossNano < BigInt(limits.minimumNano) || grossNano > BigInt(limits.maximumNano)) {
-      return { success: false as const, error: 'Withdrawal amount is outside configured limits' };
+      return { success: false as const, error: withdrawalRangeError(limits) };
     }
     const canonicalAddress = address.toString({ urlSafe: true, bounceable: true, testOnly: false });
     const quote = await this.db.createWithdrawalQuote({
@@ -509,7 +520,12 @@ export class StorageService {
       return { success: false as const, error: 'Automatic mainnet withdrawals are not configured safely' };
     }
     const result = await this.db.confirmWithdrawalQuote({ ...input, limits });
-    if (!result.success) return { success: false as const, error: result.error || 'Withdrawal confirmation failed' };
+    if (!result.success) {
+      if (result.error === 'Withdrawal amount is outside configured limits') {
+        return { success: false as const, error: withdrawalRangeError(limits) };
+      }
+      return { success: false as const, error: result.error || 'Withdrawal confirmation failed' };
+    }
     const snapshot = await this.getAccountSnapshot(input.telegramId);
     return {
       success: true as const,

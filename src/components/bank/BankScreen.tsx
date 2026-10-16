@@ -74,16 +74,15 @@ function friendlyBankError(error: unknown, fallback: string, action: 'deposit' |
   const normalized = message.toLowerCase();
 
   if (/userreject|usercancel|user declined|cancel|closed/.test(normalized)) return 'Request cancelled.';
-  if (/withdrawal.*limit|outside configured limit/.test(normalized)) {
-    return 'That amount is outside the withdrawal limits. Please enter a different amount.';
-  }
+  if (/^the minimum withdrawal is [\d,.]+ gram, and the maximum is [\d,.]+ gram\.$/i.test(message)) return message;
+  if (/you've reached today's withdrawal limit/i.test(normalized)) return message;
   if (/insufficient|balance/.test(normalized)) {
     return action === 'withdrawal'
       ? 'We could not process this withdrawal. Check your available balance and try again.'
       : 'Your wallet does not have enough TON to complete this transaction.';
   }
   if (/mainnet|network/.test(normalized)) return 'The network is temporarily unavailable. Please try again later.';
-  if (/quote.*(required|invalid|expired)|withdrawal.*(limit|amount|address)/.test(normalized)) {
+  if (/quote.*(required|invalid|expired)|withdrawal.*(amount|address)/.test(normalized)) {
     return 'We could not process those withdrawal details. Please review them and try again.';
   }
   if (/timeout|timed out/.test(normalized)) return 'We could not confirm your request yet. Check your transaction history before trying again.';
