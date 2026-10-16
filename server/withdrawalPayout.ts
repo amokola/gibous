@@ -1,6 +1,6 @@
-import crypto from 'node:crypto';
+import crypto, { pbkdf2Sync } from 'node:crypto';
 import { Address, beginCell, Cell, MessageRelaxed, storeMessage } from '@ton/core';
-import { mnemonicToPrivateKey } from '@ton/crypto';
+import { deriveEd25519Path, keyPairFromSeed, mnemonicToPrivateKey, mnemonicWordList } from '@ton/crypto';
 import { internal, SendMode, TonClient, WalletContractV3R2, WalletContractV4, WalletContractV5R1 } from '@ton/ton';
 import { StorageService } from './storage';
 
@@ -130,6 +130,44 @@ export function selectPayoutWallet(publicKey: Buffer, expectedAddress: Address):
   return matched;
 }
 
+/** Derives a standard BIP-39 mnemonic using TON's documented SLIP-0010 account path. */
+export async function bip39TonMnemonicToPrivateKey(words: string[]) {
+  if (words.length !== 12 && words.length !== 24) throw new Error('BIP-39 TON mnemonic must contain 12 or 24 words');
+  const normalizedWords = words.map((word) => word.normalize('NFKD').toLowerCase());
+  const indexes = normalizedWords.map((word) => mnemonicWordList.indexOf(word));
+  if (indexes.some((index) => index < 0)) throw new Error('BIP-39 TON mnemonic contains an unknown word');
+
+  const totalBits = indexes.length * 11;
+  const checksumBits = totalBits / 33;
+  const entropyBits = totalBits - checksumBits;
+  const bitString = indexes.map((index) => index.toString(2).padStart(11, '0')).join('');
+  const entropy = Buffer.alloc(entropyBits / 8);
+  for (let bit = 0; bit < entropyBits; bit += 1) {
+    if (bitString[bit] === '1') entropy[Math.floor(bit / 8)] |= 1 << (7 - (bit % 8));
+  }
+  const checksum = crypto.createHash('sha256').update(entropy).digest();
+  const checksumString = [...checksum].map((byte) => byte.toString(2).padStart(8, '0')).join('').slice(0, checksumBits);
+  if (bitString.slice(entropyBits) !== checksumString) throw new Error('BIP-39 TON mnemonic checksum is invalid');
+
+  const phrase = normalizedWords.join(' ');
+  const seed = pbkdf2Sync(phrase, 'mnemonic', 2048, 64, 'sha512');
+  const privateKeySeed = await deriveEd25519Path(seed, [44, 607, 0]);
+  return keyPairFromSeed(privateKeySeed);
+}
+
+async function derivePayoutSigner(mnemonicText: string, mnemonicType: string | undefined) {
+  const words = mnemonicText.normalize('NFKD').trim().split(/\s+/);
+  if (mnemonicType && mnemonicType !== 'ton' && mnemonicType !== 'bip39') {
+    throw new Error('PAYOUT_SIGNER_MNEMONIC_TYPE must be ton or bip39');
+  }
+  if (words.length === 12) {
+    if (mnemonicType === 'ton') throw new Error('12-word payout mnemonics must use the BIP-39 derivation');
+    return bip39TonMnemonicToPrivateKey(words);
+  }
+  if (mnemonicType === 'bip39') return bip39TonMnemonicToPrivateKey(words);
+  return mnemonicToPrivateKey(words);
+}
+
 export async function createMainnetTonWithdrawalClient(env: Record<string, string | undefined> = process.env): Promise<TonWithdrawalPayoutClient> {
   if (env.PAYOUT_NETWORK !== 'mainnet') throw new Error('Only TON Mainnet is supported for payouts');
   const endpointText = env.TONCENTER_API_URL;
@@ -145,7 +183,7 @@ export async function createMainnetTonWithdrawalClient(env: Record<string, strin
   } catch {
     throw new Error('PAYOUT_WALLET_ADDRESS is not a valid TON address');
   }
-  const keyPair = await mnemonicToPrivateKey(mnemonicText.trim().split(/\s+/));
+  const keyPair = await derivePayoutSigner(mnemonicText, env.PAYOUT_SIGNER_MNEMONIC_TYPE);
   const { wallet } = selectPayoutWallet(keyPair.publicKey, expectedAddress);
   const endpointUrl = endpoint.toString().replace(/\/$/, '').endsWith('/jsonRPC') ? endpoint.toString() : `${endpoint.toString().replace(/\/$/, '')}/jsonRPC`;
   const client = new TonClient({ endpoint: endpointUrl, apiKey: env.TONCENTER_API_KEY || undefined });

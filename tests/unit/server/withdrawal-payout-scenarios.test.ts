@@ -5,6 +5,7 @@ import { WalletContractV4, WalletContractV5R1 } from '@ton/ton';
 import { DatabasePool } from '../../../server/db';
 import { StorageService } from '../../../server/storage';
 import {
+  bip39TonMnemonicToPrivateKey,
   createMainnetTonWithdrawalClient,
   loadWithdrawalWorkerConfig,
   tonCenterMessageIsMasterchainFinalized,
@@ -139,6 +140,36 @@ describe('mainnet payout wallet version detection', () => {
   it('requires a payout address', async () => {
     await expect(createMainnetTonWithdrawalClient(payoutEnv()))
       .rejects.toThrow('PAYOUT_WALLET_ADDRESS is required');
+  });
+
+  it('derives a 12-word BIP-39 TON signer at the standard account path', async () => {
+    const phrase = [...Array(11).fill('abandon'), 'about'].join(' ');
+    const keyPair = await bip39TonMnemonicToPrivateKey(phrase.split(' '));
+    expect(keyPair.publicKey.toString('hex')).toBe('7952e94118f34607c75e23258dd9220d66ccac5a3ee074125c25068e8107bfbf');
+    const address = WalletContractV5R1.create({ workchain: 0, publicKey: keyPair.publicKey }).address
+      .toString({ urlSafe: true, bounceable: false });
+    expect(address).toBe('UQBHyu-oZVDHRYQ1-rKlGqpHy5yAqanPBirEQNMNOmfHLtaT');
+
+    const client = await createMainnetTonWithdrawalClient({
+      ...payoutEnv(), PAYOUT_SIGNER_MNEMONIC: phrase, PAYOUT_WALLET_ADDRESS: address,
+    });
+    expect(client.address).toBe(address);
+  });
+
+  it('rejects a 12-word BIP-39 phrase with a bad checksum', async () => {
+    await expect(bip39TonMnemonicToPrivateKey('abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon'.split(' ')))
+      .rejects.toThrow('checksum is invalid');
+  });
+
+  it('allows an explicit BIP-39 derivation selector for 24-word phrases', async () => {
+    const phrase = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art';
+    const keyPair = await bip39TonMnemonicToPrivateKey(phrase.split(' '));
+    const address = WalletContractV5R1.create({ workchain: 0, publicKey: keyPair.publicKey }).address
+      .toString({ urlSafe: true, bounceable: false });
+    const client = await createMainnetTonWithdrawalClient({
+      ...payoutEnv(), PAYOUT_SIGNER_MNEMONIC: phrase, PAYOUT_SIGNER_MNEMONIC_TYPE: 'bip39', PAYOUT_WALLET_ADDRESS: address,
+    });
+    expect(client.address).toBe(address);
   });
 });
 
